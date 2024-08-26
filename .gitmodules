@@ -1,0 +1,3 @@
+[submodule "external/kamping"]
+	path = external/kamping
+	url = https://github.com/kamping-site/kamping
