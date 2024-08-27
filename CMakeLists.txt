@@ -51,6 +51,13 @@ message(STATUS "Build Flags: ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_
 find_package(MPI REQUIRED)
 message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
 
+set(TLX_USE_LTO ON)
+add_subdirectory(external/tlx)
+
+# IPS40 doesn't compile wihtout linking to TBB
+set(IPS4O_DISABLE_PARALLEL OFF)
+add_subdirectory(external/ips4o)
+
 add_subdirectory(external/kamping)
 
 # Create a library containing all implementation, to be linked against by executables
@@ -67,6 +74,8 @@ message(STATUS "CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(dss_base PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(dss_base PRIVATE kamping)
 target_link_libraries(dss_base PRIVATE MPI::MPI_CXX)
+target_link_libraries(dss_base PUBLIC tlx)
+target_link_libraries(dss_base PUBLIC ips4o)
 
 set(StringSorting "src/string_sorting")
 add_subdirectory(src)
