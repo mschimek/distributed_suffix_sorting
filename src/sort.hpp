@@ -13,140 +13,139 @@
 #include <algorithm>
 #include <iterator>
 #include <limits>
-#include <tlx/container/loser_tree.hpp>
 #include <vector>
 
+#include <tlx/container/loser_tree.hpp>
+
 #include "ips4o.hpp"
-#include "kamping/collectives/alltoall.hpp"
 #include "kamping/collectives/allgather.hpp"
+#include "kamping/collectives/alltoall.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/data_buffer.hpp"
 #include "kamping/named_parameters.hpp"
+#include "printing.hpp"
 
 namespace dsss::mpi {
 
 template <typename DataType, class Compare>
-inline void sort(std::vector<DataType>& local_data, Compare comp,
-                 kamping::Communicator<>& comm) {
-  // Sort locally
-  ips4o::sort(local_data.begin(), local_data.end(), comp);
+inline void sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicator<>& comm) {
+    // Sort locally
+    ips4o::sort(local_data.begin(), local_data.end(), comp);
 
-  // Compute the local splitters given the sorted data
-  const size_t local_n = local_data.size();
-  auto nr_splitters = std::min<size_t>(comm.size() - 1, local_n);
-  auto splitter_dist = local_n / (nr_splitters + 1);
+    // Compute the local splitters given the sorted data
+    const size_t local_n = local_data.size();
+    auto nr_splitters = std::min<size_t>(comm.size() - 1, local_n);
+    auto splitter_dist = local_n / (nr_splitters + 1);
 
-  std::vector<DataType> local_splitters;
-  local_splitters.reserve(nr_splitters);
-  for (size_t i = 1; i <= nr_splitters; ++i) {
-    local_splitters.emplace_back(local_data[i * splitter_dist]);
-  }
-
-  // Distribute the local splitters, which results in the set of global
-  // splitters. Those are then sorted ...
-
-  auto global_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
-  ips4o::sort(global_splitters.begin(), global_splitters.end(), comp);
-
-  // ... to get the final set of splitters.
-  nr_splitters = std::min<size_t>(comm.size() - 1, global_splitters.size());
-  splitter_dist = global_splitters.size() / (nr_splitters + 1);
-  local_splitters.clear();
-  for (size_t i = 1; i <= nr_splitters; ++i) {
-    local_splitters.emplace_back(global_splitters[i * splitter_dist]);
-  }
-
-  // Use the final set of splitters to find the intervals
-  std::vector<int> interval_sizes;
-  size_t element_pos = 0;
-  splitter_dist = local_n / (nr_splitters + 1);
-
-  for (size_t i = 0; i < local_splitters.size(); ++i) {
-    element_pos = ((i + 1) * splitter_dist);
-    while (element_pos > 0 &&
-           !comp(local_data[element_pos], local_splitters[i])) {
-      --element_pos;
+    std::vector<DataType> local_splitters;
+    local_splitters.reserve(nr_splitters);
+    for (size_t i = 1; i <= nr_splitters; ++i) {
+        local_splitters.emplace_back(local_data[i * splitter_dist]);
     }
-    while (element_pos < local_n &&
-           comp(local_data[element_pos], local_splitters[i])) {
-      ++element_pos;
+
+    // Distribute the local splitters, which results in the set of global
+    // splitters. Those are then sorted ...
+
+    auto global_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
+    ips4o::sort(global_splitters.begin(), global_splitters.end(), comp);
+
+    // ... to get the final set of splitters.
+    nr_splitters = std::min<size_t>(comm.size() - 1, global_splitters.size());
+    splitter_dist = global_splitters.size() / (nr_splitters + 1);
+    local_splitters.clear();
+    for (size_t i = 1; i <= nr_splitters; ++i) {
+        local_splitters.emplace_back(global_splitters[i * splitter_dist]);
     }
-    interval_sizes.emplace_back(element_pos);
-  }
-  interval_sizes.emplace_back(local_n);
-  for (size_t i = interval_sizes.size() - 1; i > 0; --i) {
-    interval_sizes[i] -= interval_sizes[i - 1];
-  }
 
-  std::vector<int> receiving_sizes =
-      comm.alltoall(kamping::send_buf(interval_sizes));
+    // Use the final set of splitters to find the intervals
+    std::vector<int> interval_sizes;
 
-  for (size_t i = interval_sizes.size(); i < comm.size(); ++i) {
-    interval_sizes.emplace_back(0);
-  }
+    size_t element_pos = 0;
+    splitter_dist = local_n / (nr_splitters + 1);
 
-  local_data = comm.alltoallv(kamping::send_buf(local_data),
-                              kamping::send_counts(interval_sizes));
+    for (size_t i = 0; i < local_splitters.size(); ++i) {
+        element_pos = ((i + 1) * splitter_dist);
+        while (element_pos > 0 && !comp(local_data[element_pos], local_splitters[i])) {
+            --element_pos;
+        }
+        while (element_pos < local_n && comp(local_data[element_pos], local_splitters[i])) {
+            ++element_pos;
+        }
+        interval_sizes.emplace_back(element_pos);
+    }
+    interval_sizes.emplace_back(local_n);
+    for (size_t i = interval_sizes.size() - 1; i > 0; --i) {
+        interval_sizes[i] -= interval_sizes[i - 1];
+    }
 
-  //   if (false && local_data.size() > 1024 * 1024) {
-  //     std::vector<decltype(local_data.cbegin())> string_it(comm.size(),
-  //                                                          local_data.cbegin());
-  //     std::vector<decltype(local_data.cbegin())> end_it(
-  //         comm.size(), local_data.cbegin() + receiving_sizes[0]);
+    std::vector<int> receiving_sizes = comm.alltoall(kamping::send_buf(interval_sizes));
 
-  //     [[maybe_unused]] size_t received_elements = receiving_sizes[0];
-  //     for (size_t i = 1; i < comm.size(); ++i) {
-  //       string_it[i] = string_it[i - 1] + receiving_sizes[i - 1];
-  //       received_elements += receiving_sizes[i];
-  //       end_it[i] = end_it[i - 1] + receiving_sizes[i];
-  //     }
+    for (size_t i = interval_sizes.size(); i < comm.size(); ++i) {
+        interval_sizes.emplace_back(0);
+    }
 
-  //     struct item_compare {
-  //       item_compare(Compare compare) : comp_(compare) {}
+    local_data =
+        comm.alltoallv(kamping::send_buf(local_data), kamping::send_counts(interval_sizes));
 
-  //       bool operator()(const DataType& a, const DataType& b) {
-  //         return comp_(a, b);
-  //       }
+    //   if (false && local_data.size() > 1024 * 1024) {
+    //     std::vector<decltype(local_data.cbegin())> string_it(comm.size(),
+    //                                                          local_data.cbegin());
+    //     std::vector<decltype(local_data.cbegin())> end_it(
+    //         comm.size(), local_data.cbegin() + receiving_sizes[0]);
 
-  //      private:
-  //       Compare comp_;
-  //     };  // struct item_compare
+    //     [[maybe_unused]] size_t received_elements = receiving_sizes[0];
+    //     for (size_t i = 1; i < comm.size(); ++i) {
+    //       string_it[i] = string_it[i - 1] + receiving_sizes[i - 1];
+    //       received_elements += receiving_sizes[i];
+    //       end_it[i] = end_it[i - 1] + receiving_sizes[i];
+    //     }
 
-  //     tlx::LoserTreeCopy<false, DataType, item_compare> lt(comm.size(),
-  //                                                          item_compare(comp));
+    //     struct item_compare {
+    //       item_compare(Compare compare) : comp_(compare) {}
 
-  //     size_t filled_sources = 0;
-  //     for (size_t i = 0; i < comm.size(); ++i) {
-  //       if (string_it[i] >= end_it[i]) {
-  //         lt.insert_start(nullptr, i, true);
-  //       } else {
-  //         lt.insert_start(&*string_it[i], i, false);
-  //         ++filled_sources;
-  //       }
-  //     }
+    //       bool operator()(const DataType& a, const DataType& b) {
+    //         return comp_(a, b);
+    //       }
 
-  //     lt.init();
+    //      private:
+    //       Compare comp_;
+    //     };  // struct item_compare
 
-  //     std::vector<DataType> result;
-  //     result.reserve(local_data.size());
-  //     while (filled_sources) {
-  //       int32_t source = lt.min_source();
-  //       result.push_back(*string_it[source]);
-  //       ++string_it[source];
-  //       if (string_it[source] < end_it[source]) {
-  //         lt.delete_min_insert(&*string_it[source], false);
-  //       } else {
-  //         lt.delete_min_insert(nullptr, true);
-  //         --filled_sources;
-  //       }
-  //     }
-  //     local_data = std::move(result);
-  //   } else if (local_data.size() > 0) {
-  //     ips4o::sort(local_data.begin(), local_data.end(), comp);
-  //   }
-  ips4o::sort(local_data.begin(), local_data.end(), comp);
+    //     tlx::LoserTreeCopy<false, DataType, item_compare> lt(comm.size(),
+    //                                                          item_compare(comp));
+
+    //     size_t filled_sources = 0;
+    //     for (size_t i = 0; i < comm.size(); ++i) {
+    //       if (string_it[i] >= end_it[i]) {
+    //         lt.insert_start(nullptr, i, true);
+    //       } else {
+    //         lt.insert_start(&*string_it[i], i, false);
+    //         ++filled_sources;
+    //       }
+    //     }
+
+    //     lt.init();
+
+    //     std::vector<DataType> result;
+    //     result.reserve(local_data.size());
+    //     while (filled_sources) {
+    //       int32_t source = lt.min_source();
+    //       result.push_back(*string_it[source]);
+    //       ++string_it[source];
+    //       if (string_it[source] < end_it[source]) {
+    //         lt.delete_min_insert(&*string_it[source], false);
+    //       } else {
+    //         lt.delete_min_insert(nullptr, true);
+    //         --filled_sources;
+    //       }
+    //     }
+    //     local_data = std::move(result);
+    //   } else if (local_data.size() > 0) {
+    //     ips4o::sort(local_data.begin(), local_data.end(), comp);
+    //   }
+    ips4o::sort(local_data.begin(), local_data.end(), comp);
 }
 
-}  // namespace dsss::mpi
+} // namespace dsss::mpi
 
 /******************************************************************************/

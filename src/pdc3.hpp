@@ -1,4 +1,380 @@
+#pragma once
+
+#include <algorithm>
+#include <cstdint>
+#include <functional>
 #include <iostream>
+#include <numeric>
+#include <string>
+#include <vector>
+
+#include "kamping/collectives/allgather.hpp"
+#include "kamping/collectives/alltoall.hpp"
+#include "kamping/collectives/barrier.hpp"
+#include "kamping/collectives/bcast.hpp"
+#include "kamping/collectives/exscan.hpp"
+#include "kamping/collectives/gather.hpp"
+#include "kamping/collectives/reduce.hpp"
+#include "kamping/collectives/scatter.hpp"
+#include "kamping/communicator.hpp"
+#include "kamping/data_buffer.hpp"
+#include "kamping/mpi_ops.hpp"
+#include "kamping/named_parameters.hpp"
+#include "kassert/kassert.hpp"
+#include "mpi_util.hpp"
+#include "printing.hpp"
+#include "sort.hpp"
+#include "util.hpp"
+
+struct SampleString {
+    SampleString() : letters({0, 0, 0}), index(0) {}
+    SampleString(std::array<int, 3> _letters, int _index) : letters(_letters), index(_index) {}
+
+    bool operator<(const SampleString& other) const {
+        for (uint i = 0; i < letters.size(); i++) {
+            if (letters[i] != other.letters[i]) {
+                return letters[i] < other.letters[i];
+            }
+        }
+        return index < other.index;
+    }
+
+    std::array<int, 3> letters;
+    int index;
+};
+
+std::ostream& operator<<(std::ostream& os, const SampleString& sample) {
+    auto [a, b, c] = sample.letters;
+    os << "(" << a << "," << b << "," << c << ") " << sample.index;
+    return os;
+}
+
+struct RankIndex {
+    int rank;
+    int index;
+};
+
+std::ostream& operator<<(std::ostream& os, const RankIndex& rank_index) {
+    os << "(" << rank_index.rank << " " << rank_index.index << ")";
+    return os;
+}
 
 
-int main() { std::cout << "hello pdc3 \n"; }
+struct LookupTableCmp {
+    int cmpL[3][3][3];
+    int cmpR[3][3][3];
+
+    constexpr LookupTableCmp() : cmpL{}, cmpR{} {
+        // > 0, > 0
+        for (int i = 1; i < 3; i++) {
+            for (int j = 1; j < 3; j++) {
+                cmpL[i][j][0] = 2; // rank1
+                cmpR[i][j][0] = 2; // rank1
+            }
+        }
+        // = 0, = 0
+        cmpL[0][0][0] = 0; // char1
+        cmpL[0][0][1] = 2; // rank1
+        cmpR[0][0][0] = 0; // char1
+        cmpR[0][0][1] = 2; // rank1
+
+        // = 0, = 1
+        cmpL[0][1][0] = 0; // char1
+        cmpL[0][1][1] = 2; // rank1
+        cmpR[0][1][0] = 0; // char1
+        cmpR[0][1][1] = 3; // rank2
+
+        // = 0, = 2
+        cmpL[0][2][0] = 0; // char1
+        cmpL[0][2][1] = 1; // char2
+        cmpL[0][2][2] = 3; // rank2
+        cmpR[0][2][0] = 0; // char1
+        cmpR[0][2][1] = 1; // char2
+        cmpR[0][2][2] = 3; // rank2
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                if (i > j) {
+                    for (int k = 0; k < 3; k++) {
+                        cmpL[i][j][k] = cmpR[j][i][k];
+                        cmpR[i][j][k] = cmpL[j][i][k];
+                    }
+                }
+            }
+        }
+    }
+};
+// precomputes lookuptable at compile time
+constexpr LookupTableCmp LT;
+
+struct MergeSamples {
+    MergeSamples() : arr({0, 0, 0, 0, 0}) {}
+    // char1, char2, rank1, rank2, index
+    MergeSamples(int char1, int char2, int rank1, int rank2, int index)
+        : arr{char1, char2, rank1, rank2, index} {}
+
+    int index() const { return arr[4]; }
+
+    std::array<int, 5> arr;
+};
+
+
+std::ostream& operator<<(std::ostream& os, const MergeSamples& m) {
+    os << "(" << m.arr[0] << "," << m.arr[1] << "," << m.arr[2] << "," << m.arr[3] << ","
+       << m.arr[4] << ")";
+    return os;
+}
+
+bool operator<(const MergeSamples& a, const MergeSamples& b) {
+    int i1 = a.arr[4] % 3;
+    int i2 = b.arr[4] % 3;
+    for (int k = 0; k < 3; k++) {
+        int l = LT.cmpL[i1][i2][k];
+        int r = LT.cmpR[i1][i2][k];
+        if (a.arr[l] != b.arr[r]) {
+            return a.arr[l] < b.arr[r];
+        }
+    }
+    return false;
+}
+
+// maps the index i from a recursive dc3 call back to the global index
+int map_back(int i, int n) {
+    int n0 = (n + 2) / 3;
+    return i < n0 ? 3 * i + 1 : 3 * (i - n0) + 2;
+}
+
+std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& comm) {
+    using namespace kamping;
+
+    int process_rank = comm.rank();
+    int num_processes = comm.size();
+    int root_rank = 0;
+    int last_process = num_processes - 1;
+
+    // check if padding exists
+    if (process_rank == last_process) {
+        int n = local_string.size();
+        KASSERT(local_string[n - 1] == 0);
+        KASSERT(local_string[n - 2] == 0);
+        KASSERT(local_string[n - 3] == 0);
+    }
+
+    // figure out lengths of the other strings
+    auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
+    int64_t total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), 0) - 3;
+    chars_at_proc.back() -= 3;
+
+    // number of chars before processor i
+    std::vector<int> chars_before(num_processes);
+    std::exclusive_scan(chars_at_proc.begin(), chars_at_proc.end(), chars_before.begin(), 0);
+    std::vector<int64_t> num_mod = {(total_chars + 2) / 3, (total_chars + 1) / 3, total_chars / 3};
+
+    // n0 + n2 to account for possible dummy sample of n1
+    int64_t num_samples = num_mod[0] + num_mod[2];
+    bool n1_padding = total_chars % 3 == 1;
+
+    // process i sends first two characters to process i - 1
+    KASSERT(local_string.size() >= 2u);
+    std::vector<int> send_chars = {local_string[0], local_string[1]};
+    std::vector<int> recv_chars(2);
+    mpi_util::ishift_left(send_chars, recv_chars, comm);
+    if (process_rank < last_process) {
+        local_string.insert(local_string.end(), recv_chars.begin(), recv_chars.end());
+    }
+    // TODO: barrier necessary?
+    comm.barrier();
+
+    // position of first mod 0 character
+    uint offset = chars_before[process_rank] % 3;
+    offset = (3 - offset) % 3;
+
+    // compute local sample strings
+    std::vector<SampleString> local_samples;
+    for (uint i = 0; i + 2 < local_string.size(); i++) {
+        if (i % 3 != offset) {
+            int index = chars_before[process_rank] + i;
+            std::array<int, 3> letters = {local_string[i],
+                                          local_string[i + 1],
+                                          local_string[i + 2]};
+            local_samples.push_back(SampleString(letters, index));
+        }
+    }
+    // keep a padding sample for last process of in case n mod 3 == 1
+    if (process_rank == last_process && total_chars % 3 != 1) {
+        local_samples.pop_back();
+    }
+
+    // TODO: remove this code later
+    mpi_util::check_expected_size(num_samples, local_samples.size(), comm);
+
+    // sort local samples
+    dsss::mpi::sort(local_samples, std::less<>{}, comm);
+
+    // processor i + 1 sends first sample to processor i
+    KASSERT(local_string.size() >= 1u);
+    SampleString send_sample = local_samples.front();
+    SampleString recv_sample;
+    mpi_util::ishift_left(send_sample, recv_sample, comm);
+    if (process_rank < last_process) {
+        local_samples.push_back(recv_sample);
+    }
+    comm.barrier();
+
+    // create lexicographic ranks using a prefix sum
+    std::vector<RankIndex> local_ranks;
+    int num_ranks = local_samples.size();
+
+    // subtract sample from next processor, except for last
+    if (process_rank < last_process) {
+        num_ranks--;
+    }
+    local_ranks.reserve(num_ranks);
+
+    // compute local ranks
+    int prev_rank = 0;
+    for (int i = 0; i < num_ranks - 1; i++) {
+        int changed = local_samples[i].letters != local_samples[i + 1].letters ? 1 : 0;
+        int index = local_samples[i].index;
+        local_ranks.emplace_back(prev_rank, index);
+        prev_rank += changed;
+    }
+    local_ranks.emplace_back(prev_rank, local_samples[num_ranks - 1].index);
+
+    // TODO: remove this code later
+    mpi_util::check_expected_size(num_samples, local_ranks.size(), comm);
+
+    // shift ranks by 1 + prefix sum
+    auto ranks_before = comm.exscan(send_buf(prev_rank), op(ops::plus<>{}));
+    std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
+        x.rank += 1 + ranks_before.front();
+    });
+
+    // last processor checks if all ranks are distinct
+    bool chars_distinct = prev_rank >= num_samples;
+    comm.bcast_single(send_recv_buf(chars_distinct), root(last_process));
+
+    if (!chars_distinct) {
+        // reorder rank sorted by (i mod 3, i div 3) using sorting or permutation
+        auto mod_div = [&](RankIndex const& a, RankIndex const& b) {
+            int a_mod3 = a.index % 3;
+            int b_mod3 = b.index % 3;
+            if (a_mod3 != b_mod3) {
+                return a_mod3 < b_mod3;
+            }
+            return a.index / 3 < b.index / 3;
+        };
+        dsss::mpi::sort(local_ranks, mod_div, comm);
+
+        // for now sequential SA on root process
+        auto global_ranks = comm.gatherv(send_buf(local_ranks));
+        std::vector<int> SA;
+        if (process_rank == root_rank) {
+            std::vector<int> ranks;
+            for (auto [rank, index]: global_ranks) {
+                ranks.push_back(rank);
+            }
+            SA = slow_suffixarray(ranks);
+            global_ranks.clear();
+            for (uint i = 0; i < SA.size(); i++) {
+                int global_index = map_back(SA[i], total_chars);
+                global_ranks.emplace_back(i + 1, global_index);
+            }
+            // redistribute result and continue in distributed fashion
+        }
+        auto by_second = [&](RankIndex const& a, RankIndex const& b) { return a.index < b.index; };
+        std::sort(global_ranks.begin(), global_ranks.end(), by_second);
+
+        local_ranks.clear();
+        // send to each processor the size of its local_string
+        // only relevant to root
+        std::vector<int> send_cnts(num_processes);
+        for (uint i = 0; i < global_ranks.size(); i++) {
+            size_t index = global_ranks[i].index;
+            // check to which process this index belongs
+            for (int j = 0; j < num_processes; j++) {
+                if (index < chars_at_proc[j]) {
+                    send_cnts[j]++;
+                    break;
+                }
+                index -= chars_at_proc[j];
+            }
+        }
+
+        // removing n1 padding
+        if (process_rank == root_rank) {
+            KASSERT(std::accumulate(send_cnts.begin(), send_cnts.end(), 0) + n1_padding
+                    == (int)global_ranks.size());
+        }
+
+        comm.scatterv(send_buf(global_ranks),
+                      recv_buf<resize_to_fit>(local_ranks),
+                      send_counts(send_cnts));
+        // check_expected_size(num_samples, local_ranks, comm);
+        // TODO: recursively call SA
+    }
+
+    std::vector<MergeSamples> merge_samples;
+    merge_samples.reserve(chars_at_proc[process_rank]);
+
+    // processor i sends first two ranks to processor i - 1
+    std::vector<RankIndex> send_rank = {local_ranks[0], local_ranks[1]};
+    std::vector<RankIndex> recv_rank(2);
+    mpi_util::ishift_left(send_rank, recv_rank, comm);
+    if (process_rank < last_process) {
+        local_ranks.insert(local_ranks.end(), recv_rank.begin(), recv_rank.end());
+    }
+
+    // add two padding with rank 0
+    if (process_rank == last_process) {
+        local_ranks.push_back(RankIndex(0, total_chars));
+        local_ranks.push_back(RankIndex(0, total_chars));
+    }
+
+    int pos = 0;
+    int rank1_offset[3] = {0, 0, 0};
+    int rank2_offset[3] = {1, 1, 2};
+    print_concatenated(local_ranks, comm);
+
+    // for each index in local string
+    for (int i = 0; i < (int)chars_at_proc[process_rank]; i++) {
+        // convert global index to local index
+        // for mod 0, find next mod 1 position
+        // for mod 1,2 find next mod 1, 2 position
+        while (i > local_ranks[pos].index - chars_before[process_rank]) {
+            pos++;
+            KASSERT(pos < (int)local_ranks.size(),
+                    "i=" + std::to_string(i) + " pos=" + std::to_string(pos)
+                        + " process_rank=" + std::to_string(process_rank));
+        }
+        int local_index = i;
+        int global_index = local_index + chars_before[process_rank];
+        int mod = global_index % 3;
+
+        KASSERT(local_index + 1 < (int)local_string.size(),
+                "i=" + std::to_string(i) + " pos=" + std::to_string(pos)
+                    + " process_rank=" + std::to_string(process_rank));
+        KASSERT(pos + rank1_offset[mod] < (int)local_ranks.size());
+        KASSERT(pos + rank2_offset[mod] < (int)local_ranks.size());
+
+        int char1 = local_string[local_index];
+        int char2 = local_string[local_index + 1];
+        int rank1 = local_ranks[pos + rank1_offset[mod]].rank;
+        int rank2 = local_ranks[pos + rank2_offset[mod]].rank;
+        merge_samples.emplace_back(char1, char2, rank1, rank2, global_index);
+    }
+
+    dsss::mpi::sort(merge_samples, std::less<>{}, comm);
+
+    std::vector<int> local_SA;
+    // remove 2 paddings
+    local_SA.reserve(merge_samples.size());
+    for (uint i = 0; i < merge_samples.size(); i++) {
+        local_SA.push_back(merge_samples[i].index());
+    }
+
+    print_concatenated(local_string, comm);
+    print_concatenated(local_SA, comm);
+
+    // return local_SA;
+    return std::vector<int>();
+}

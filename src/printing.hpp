@@ -2,17 +2,19 @@
 //
 // Copyright 2022 The KaMPIng Authors
 //
-// KaMPIng is free software : you can redistribute it and/or modify it under the terms of the GNU Lesser General Public
-// License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later
-// version. KaMPIng is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-// implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
-// for more details.
+// KaMPIng is free software : you can redistribute it and/or modify it under the terms of the GNU
+// Lesser General Public License as published by the Free Software Foundation, either version 3 of
+// the License, or (at your option) any later version. KaMPIng is distributed in the hope that it
+// will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
 //
-// You should have received a copy of the GNU Lesser General Public License along with KaMPIng.  If not, see
-// <https://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Lesser General Public License along with KaMPIng.  If
+// not, see <https://www.gnu.org/licenses/>.
+#pragma once
 
 #include <vector>
 
+#include "kamping/collectives/allgather.hpp"
 #include "kamping/communicator.hpp"
 
 namespace kamping {
@@ -22,13 +24,12 @@ namespace kamping {
 /// @tparam T Type of the elements contained in the container.
 /// @param result The container whose elements are printed.
 /// @param comm KaMPIng communicator to get the rank of the PE.
-template <
-    template <typename...>
-    typename ContainerType,
-    template <typename, template <typename...> typename>
-    typename... Plugins,
-    typename T>
-void print_result(ContainerType<T> const& result, Communicator<ContainerType, Plugins...> const& comm) {
+template <template <typename...> typename ContainerType,
+          template <typename, template <typename...> typename>
+          typename... Plugins,
+          typename T>
+void print_result(ContainerType<T> const& result,
+                  Communicator<ContainerType, Plugins...> const& comm) {
     for (auto const& elem: result) {
         std::cout << "[PE " << comm.rank() << "] " << elem << "\n";
     }
@@ -41,12 +42,10 @@ void print_result(ContainerType<T> const& result, Communicator<ContainerType, Pl
 /// @tparam Plugins Types of the communicator's plugins.
 /// @param result The elements to be printed. Streamed to std::cout.
 /// @param comm KaMPIng communicator to get the rank of the PE.
-template <
-    template <typename...>
-    typename ContainerType,
-    template <typename, template <typename...> typename>
-    typename... Plugins,
-    typename T>
+template <template <typename...> typename ContainerType,
+          template <typename, template <typename...> typename>
+          typename... Plugins,
+          typename T>
 void print_result(T const& result, Communicator<ContainerType, Plugins...> const& comm) {
     std::cout << "[PE " << comm.rank() << "] " << result << std::endl;
 }
@@ -70,6 +69,25 @@ template <typename Communicator>
 void print_on_root(std::string const& str, Communicator const& comm) {
     if (comm.is_root()) {
         print_result(str, comm);
+    }
+}
+
+// concatenated local vectors and print contents
+template <typename Communicator, typename T>
+void print_concatenated(std::vector<T> const& local_data, Communicator const& comm) {
+    auto [recv_buffer, recv_counts] = comm.allgatherv(send_buf(local_data), recv_counts_out());
+    if (comm.is_root()) {
+        int i = 0;
+        int rank = 0;
+        for (int cnt: recv_counts) {
+            std::cout << "[PE " << rank << "] ";
+            for (int j = 0; j < cnt; j++) {
+                std::cout << recv_buffer[i++] << " ";
+            }
+            std::cout << "\n";
+            rank++;
+        }
+        std::cout << "\n";
     }
 }
 } // namespace kamping

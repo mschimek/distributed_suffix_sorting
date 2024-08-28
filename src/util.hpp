@@ -1,0 +1,24 @@
+#pragma once
+
+#include <numeric>
+#include <vector>
+
+bool cmp_substrings(std::vector<int>& arr, int a, int b) {
+    int m = arr.size();
+    int j = 0;
+    while (a + j < m && b + j < m && arr[a + j] == arr[b + j]) {
+        j++;
+    }
+    if (a + j == m)
+        return true; // substring "a" ended first
+    if (b + j == m)
+        return false; // substring "b" ended first
+    return arr[a + j] < arr[b + j];
+}
+
+std::vector<int> slow_suffixarray(std::vector<int>& arr) {
+    std::vector<int> sa(arr.size());
+    std::iota(sa.begin(), sa.end(), 0);
+    std::sort(sa.begin(), sa.end(), [&arr](int a, int b) { return cmp_substrings(arr, a, b); });
+    return sa;
+}
