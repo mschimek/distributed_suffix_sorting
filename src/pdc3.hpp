@@ -59,82 +59,57 @@ std::ostream& operator<<(std::ostream& os, const RankIndex& rank_index) {
     return os;
 }
 
+struct DC3Param {
+    static const unsigned int X = 3;
+    static const unsigned int D = 2;
 
-struct LookupTableCmp {
-    int cmpL[3][3][3];
-    int cmpR[3][3][3];
-
-    constexpr LookupTableCmp() : cmpL{}, cmpR{} {
-        // > 0, > 0
-        for (int i = 1; i < 3; i++) {
-            for (int j = 1; j < 3; j++) {
-                cmpL[i][j][0] = 2; // rank1
-                cmpR[i][j][0] = 2; // rank1
-            }
-        }
-        // = 0, = 0
-        cmpL[0][0][0] = 0; // char1
-        cmpL[0][0][1] = 2; // rank1
-        cmpR[0][0][0] = 0; // char1
-        cmpR[0][0][1] = 2; // rank1
-
-        // = 0, = 1
-        cmpL[0][1][0] = 0; // char1
-        cmpL[0][1][1] = 2; // rank1
-        cmpR[0][1][0] = 0; // char1
-        cmpR[0][1][1] = 3; // rank2
-
-        // = 0, = 2
-        cmpL[0][2][0] = 0; // char1
-        cmpL[0][2][1] = 1; // char2
-        cmpL[0][2][2] = 3; // rank2
-        cmpR[0][2][0] = 0; // char1
-        cmpR[0][2][1] = 1; // char2
-        cmpR[0][2][2] = 3; // rank2
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                if (i > j) {
-                    for (int k = 0; k < 3; k++) {
-                        cmpL[i][j][k] = cmpR[j][i][k];
-                        cmpR[i][j][k] = cmpL[j][i][k];
-                    }
-                }
-            }
-        }
-    }
+    static const unsigned int DC[D];
+    static const int cmpDepthRanks[X][X][3];
 };
-// precomputes lookuptable at compile time
-constexpr LookupTableCmp LT;
+
+const unsigned int DC3Param::DC[] = {1, 2};
+
+const int DC3Param::cmpDepthRanks[3][3][3] = {
+    {{1, 0, 0}, {1, 0, 1}, {2, 1, 1}},
+    {{1, 1, 0}, {0, 0, 0}, {0, 0, 0}},
+    {{2, 1, 1}, {0, 0, 0}, {0, 0, 0}},
+};
+
 
 struct MergeSamples {
-    MergeSamples() : arr({0, 0, 0, 0, 0}) {}
-    // char1, char2, rank1, rank2, index
-    MergeSamples(int char1, int char2, int rank1, int rank2, int index)
-        : arr{char1, char2, rank1, rank2, index} {}
+    MergeSamples() : chars({0, 0}), ranks({0, 0}), index(0) {}
+    MergeSamples(int char1, int char2, int rank1, int rank2, int idx)
+        : chars({char1, char2}),
+          ranks({rank1, rank2}),
+          index(idx) {}
 
-    int index() const { return arr[4]; }
-
-    std::array<int, 5> arr;
+    std::array<int, 2> chars;
+    std::array<int, 2> ranks;
+    int index;
 };
 
 
 std::ostream& operator<<(std::ostream& os, const MergeSamples& m) {
-    os << "(" << m.arr[0] << "," << m.arr[1] << "," << m.arr[2] << "," << m.arr[3] << ","
-       << m.arr[4] << ")";
+    os << m.chars[0] << " " << m.chars[1] << " " << m.ranks[0] << " " << m.ranks[1] << " "
+       << m.index;
     return os;
 }
 
+
 bool operator<(const MergeSamples& a, const MergeSamples& b) {
-    int i1 = a.arr[4] % 3;
-    int i2 = b.arr[4] % 3;
-    for (int k = 0; k < 3; k++) {
-        int l = LT.cmpL[i1][i2][k];
-        int r = LT.cmpR[i1][i2][k];
-        if (a.arr[l] != b.arr[r]) {
-            return a.arr[l] < b.arr[r];
+    int i1 = a.index % 3;
+    int i2 = b.index % 3;
+    auto [d, r1, r2] = DC3Param::cmpDepthRanks[i1][i2];
+
+    // compare first d chars
+    for (int k = 0; k < d; k++) {
+        if (a.chars[k] != b.chars[k]) {
+            return a.chars[k] < b.chars[k];
         }
     }
-    return false;
+
+    // tie breaking using ranks
+    return a.ranks[r1] < b.ranks[r2];
 }
 
 // maps the index i from a recursive dc3 call back to the global index
@@ -369,7 +344,7 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
     // remove 2 paddings
     local_SA.reserve(merge_samples.size());
     for (uint i = 0; i < merge_samples.size(); i++) {
-        local_SA.push_back(merge_samples[i].index());
+        local_SA.push_back(merge_samples[i].index);
     }
 
     print_concatenated(local_string, comm);
