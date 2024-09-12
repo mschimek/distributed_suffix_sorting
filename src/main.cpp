@@ -21,6 +21,7 @@
 #include "kamping/collectives/exscan.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
+#include "mpi_util.hpp"
 #include "pdc3.hpp"
 #include "printing.hpp"
 #include "sort.hpp"
@@ -41,9 +42,10 @@ int main() {
     kamping::Environment e;
     Communicator comm;
 
-    int n = 10;
     int rank = comm.rank();
     int size = comm.size();
+
+    int n = 10;
     std::vector<int> local_data(n, rank);
 
     // add padding

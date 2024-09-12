@@ -74,7 +74,7 @@ void print_on_root(std::string const& str, Communicator const& comm) {
 
 // concatenated local vectors and print contents
 template <typename Communicator, typename T>
-void print_concatenated(std::vector<T> const& local_data, Communicator const& comm) {
+void print_concatenated(T const& local_data, Communicator const& comm) {
     auto [recv_buffer, recv_counts] = comm.allgatherv(send_buf(local_data), recv_counts_out());
     if (comm.is_root()) {
         int i = 0;
