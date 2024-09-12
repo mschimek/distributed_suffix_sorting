@@ -3,27 +3,49 @@
 #include "kamping/collectives/exscan.hpp"
 #include "kamping/collectives/reduce.hpp"
 #include "kamping/communicator.hpp"
-#include "kamping/p2p/irecv.hpp"
-#include "kamping/p2p/isend.hpp"
+#include "kamping/p2p/recv.hpp"
+#include "kamping/p2p/send.hpp"
+#include "kassert/kassert.hpp"
 #include "printing.hpp"
 
 namespace mpi_util {
 
 using namespace kamping;
 
-// sends T from processor i to processor i - 1 without blocking
-// assumes recv_buffer to have already the correct size
+// sends T from processor i to processor i - 1 with blocking
 template <typename T>
-void ishift_left(T& send_buffer, T& recv_buffer, Communicator<>& comm) {
+T shift_left(T& local_value, Communicator<>& comm) {
+    int process_rank = comm.rank();
+    int num_processes = comm.size();
+    T received_value;
+
+    if (process_rank > 0) {
+        comm.send(send_buf(local_value), destination(process_rank - 1));
+    }
+    if (process_rank < num_processes - 1) {
+        comm.recv(recv_buf(received_value), recv_count(1), source(process_rank + 1));
+    }
+    return received_value;
+}
+
+// sends T from processor i to processor i - 1 with blocking
+template <typename T>
+std::vector<T> shift_left(std::vector<T>& local_data, int count, Communicator<>& comm) {
     int process_rank = comm.rank();
     int num_processes = comm.size();
 
+    KASSERT(count <= local_data.size());
+
+    std::vector<T> send_buffer(local_data.begin(), local_data.begin() + count);
+    std::vector<T> recv_buffer(count);
+
     if (process_rank > 0) {
-        comm.isend(send_buf(send_buffer), destination(process_rank - 1));
+        comm.send(send_buf(send_buffer), destination(process_rank - 1));
     }
     if (process_rank < num_processes - 1) {
-        comm.irecv(recv_buf(recv_buffer), source(process_rank + 1));
+        comm.recv(recv_buf(recv_buffer), recv_count(count), source(process_rank + 1));
     }
+    return recv_buffer;
 }
 
 // sums up local sizes and checks against expected_size

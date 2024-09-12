@@ -150,9 +150,7 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
 
     // process i sends first two characters to process i - 1
     KASSERT(local_string.size() >= 2u);
-    std::vector<int> send_chars = {local_string[0], local_string[1]};
-    std::vector<int> recv_chars(2);
-    mpi_util::ishift_left(send_chars, recv_chars, comm);
+    std::vector<int> recv_chars = mpi_util::shift_left(local_string, 2, comm);
     if (process_rank < last_process) {
         local_string.insert(local_string.end(), recv_chars.begin(), recv_chars.end());
     }
@@ -187,9 +185,7 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
 
     // processor i + 1 sends first sample to processor i
     KASSERT(local_string.size() >= 1u);
-    SampleString send_sample = local_samples.front();
-    SampleString recv_sample;
-    mpi_util::ishift_left(send_sample, recv_sample, comm);
+    SampleString recv_sample = mpi_util::shift_left(local_samples.front(), comm);
     if (process_rank < last_process) {
         local_samples.push_back(recv_sample);
     }
@@ -292,9 +288,7 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
     merge_samples.reserve(chars_at_proc[process_rank]);
 
     // processor i sends first two ranks to processor i - 1
-    std::vector<RankIndex> send_rank = {local_ranks[0], local_ranks[1]};
-    std::vector<RankIndex> recv_rank(2);
-    mpi_util::ishift_left(send_rank, recv_rank, comm);
+    std::vector<RankIndex> recv_rank = mpi_util::shift_left(local_ranks, 2, comm);
     if (process_rank < last_process) {
         local_ranks.insert(local_ranks.end(), recv_rank.begin(), recv_rank.end());
     }
