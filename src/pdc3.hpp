@@ -30,7 +30,6 @@
 namespace dsss::dc3 {
 
 using namespace kamping;
-
 struct SampleString {
     SampleString() : letters({0, 0, 0}), index(0) {}
     SampleString(std::array<int, 3> _letters, int _index) : letters(_letters), index(_index) {}
@@ -58,6 +57,16 @@ struct RankIndex {
     int rank;
     int index;
 };
+
+bool cmp_by_index(const RankIndex& a, const RankIndex& b) { return a.index < b.index; }
+bool cmp_mod_div_3(const RankIndex& a, const RankIndex& b) {
+    const int a_mod3 = a.index % 3;
+    const int b_mod3 = b.index % 3;
+    if (a_mod3 != b_mod3) {
+        return a_mod3 < b_mod3;
+    }
+    return a.index / 3 < b.index / 3;
+}
 
 std::ostream& operator<<(std::ostream& os, const RankIndex& rank_index) {
     os << "(" << rank_index.rank << " " << rank_index.index << ")";
@@ -128,6 +137,189 @@ void add_padding(std::vector<int>& local_data, Communicator<>& comm) {
         local_data.push_back(padding);
     }
 }
+void remove_padding(std::vector<int>& local_data, Communicator<>& comm) {
+    if (comm.rank() == comm.size() - 1) {
+        local_data.pop_back();
+        local_data.pop_back();
+        local_data.pop_back();
+    }
+}
+
+// compute samples strings of length 3 according to difference cover {1, 2}
+std::vector<SampleString> compute_sample_strings(std::vector<int>& local_string,
+                                                 int chars_before,
+                                                 int total_chars,
+                                                 Communicator<>& comm) {
+    // position of first mod 0 character
+    uint offset = chars_before % 3;
+    offset = (3 - offset) % 3;
+
+    // compute local sample strings
+    std::vector<SampleString> local_samples;
+    for (uint i = 0; i + 2 < local_string.size(); i++) {
+        if (i % 3 != offset) {
+            int index = chars_before + i;
+            std::array<int, 3> letters = {local_string[i],
+                                          local_string[i + 1],
+                                          local_string[i + 2]};
+            local_samples.push_back(SampleString(letters, index));
+        }
+    }
+    // keep a padding sample for last process of in case n mod 3 == 1
+    std::array<int, 3> padding = {0, 0, 0};
+    const bool is_last_rank = comm.rank() == comm.size() - 1;
+    if (is_last_rank && total_chars % 3 != 1 && local_samples.back().letters == padding) {
+        local_samples.pop_back();
+    }
+    return local_samples;
+}
+
+// create lexicographic ranks using a prefix sum
+std::vector<RankIndex> compute_lexicographic_ranks(std::vector<SampleString>& local_samples,
+                                                   int num_samples,
+                                                   Communicator<>& comm) {
+    std::vector<RankIndex> local_ranks;
+
+    // exclude sample from process i + 1
+    int num_ranks = local_samples.size() - 1;
+    local_ranks.reserve(num_ranks);
+
+    // compute local ranks
+    int prev_rank = 0;
+    for (int i = 0; i < num_ranks; i++) {
+        KASSERT(i + 1 < (int)local_samples.size());
+        local_ranks.emplace_back(prev_rank, local_samples[i].index);
+        int changed = local_samples[i].letters != local_samples[i + 1].letters ? 1 : 0;
+        prev_rank += changed;
+    }
+
+    // TODO: remove this code later
+    mpi_util::check_expected_size(num_samples, local_ranks.size(), comm);
+
+    // shift ranks by 1 + prefix sum
+    int ranks_before = mpi_util::ex_prefix_sum(prev_rank, comm);
+    std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
+        x.rank += 1 + ranks_before;
+    });
+    return local_ranks;
+}
+
+bool check_chars_distinct(std::vector<RankIndex>& local_ranks,
+                          int num_samples,
+                          Communicator<>& comm) {
+    int last_rank = local_ranks.empty() ? 0 : local_ranks.back().rank;
+    bool chars_distinct = last_rank >= num_samples;
+    comm.bcast_single(send_recv_buf(chars_distinct), root(comm.size() - 1));
+    return chars_distinct;
+}
+
+std::vector<MergeSamples> construct_merge_samples(std::vector<int>& local_string,
+                                                  std::vector<RankIndex>& local_ranks,
+                                                  int chars_before,
+                                                  int chars_at_proc) {
+    int pos = 0;
+    int rank1_offset[3] = {0, 0, 0};
+    int rank2_offset[3] = {1, 1, 1};
+    std::vector<MergeSamples> merge_samples;
+    merge_samples.reserve(chars_at_proc);
+
+    // for each index in local string
+    for (int i = 0; i < chars_at_proc; i++) {
+        // convert global index to local index
+        // for mod 0, find next mod 1 position
+        // for mod 1,2 find next mod 1, 2 position
+        while (i > local_ranks[pos].index - chars_before) {
+            pos++;
+            KASSERT(pos < (int)local_ranks.size());
+        }
+
+        int local_index = i;
+        int global_index = local_index + chars_before;
+        int mod = global_index % 3;
+
+        KASSERT(local_index + 1 < (int)local_string.size());
+        KASSERT(pos + rank1_offset[mod] < (int)local_ranks.size());
+        KASSERT(pos + rank2_offset[mod] < (int)local_ranks.size());
+
+        int char1 = local_string[local_index];
+        int char2 = local_string[local_index + 1];
+        int rank1 = local_ranks[pos + rank1_offset[mod]].rank;
+        int rank2 = local_ranks[pos + rank2_offset[mod]].rank;
+        merge_samples.emplace_back(char1, char2, rank1, rank2, global_index);
+    }
+    return merge_samples;
+}
+
+// sequential SACA and sequential computation ranks computation on root process
+void sequential_sa_and_local_ranks(std::vector<RankIndex>& local_ranks,
+                                   std::vector<size_t>& chars_at_proc,
+                                   int total_chars,
+                                   Communicator<>& comm) {
+    std::vector<RankIndex> global_ranks = comm.gatherv(send_buf(local_ranks));
+    std::vector<int> SA;
+    if (comm.rank() == 0) {
+        std::vector<int> ranks;
+        for (auto [rank, index]: global_ranks) {
+            ranks.push_back(rank);
+        }
+        // TODO: better sequential SACA
+        SA = slow_suffixarray(ranks);
+        global_ranks.clear();
+        for (uint i = 0; i < SA.size(); i++) {
+            int global_index = map_back(SA[i], total_chars);
+            global_ranks.emplace_back(i + 1, global_index);
+        }
+    }
+
+    std::sort(global_ranks.begin(), global_ranks.end(), cmp_by_index);
+    // alternative
+    // local_ranks = mpi_util::distribute_data_custom(global_ranks, local_sample_size, comm);
+
+    local_ranks.clear();
+    // send to each processor the size of its local_string
+    // only relevant to root
+    std::vector<int> send_cnts(comm.size());
+    for (uint i = 0; i < global_ranks.size(); i++) {
+        int index = global_ranks[i].index;
+        // check to which process this index belongs
+        for (int j = 0; j < (int)comm.size(); j++) {
+            if (index < (int)chars_at_proc[j]) {
+                send_cnts[j]++;
+                break;
+            }
+            index -= chars_at_proc[j];
+        }
+    }
+
+    comm.scatterv(send_buf(global_ranks),
+                  recv_buf<resize_to_fit>(local_ranks),
+                  send_counts(send_cnts));
+}
+
+std::vector<int> pdc3(std::vector<int>& local_string, Communicator<>& comm);
+
+void handle_recursive_call(std::vector<RankIndex>& local_ranks,
+                           int total_chars,
+                           Communicator<>& comm) {
+    auto get_rank = [](RankIndex& r) -> int { return r.rank; };
+    std::vector<int> recursive_string = extract_attribute<RankIndex, int>(local_ranks, get_rank);
+
+    // free memory
+    local_ranks.clear();
+    local_ranks.shrink_to_fit();
+
+    std::vector<int> SA = pdc3(recursive_string, comm);
+
+    size_t local_SA_size = SA.size();
+    size_t elements_before = mpi_util::ex_prefix_sum(local_SA_size, comm);
+
+    local_ranks.reserve(SA.size());
+    for (uint i = 0; i < SA.size(); i++) {
+        int global_index = map_back(SA[i], total_chars);
+        int rank = 1 + i + elements_before;
+        local_ranks.emplace_back(rank, global_index);
+    }
+}
 
 constexpr static bool DBG = false;
 
@@ -151,43 +343,15 @@ std::vector<int> pdc3(std::vector<int>& local_string, Communicator<>& comm) {
 
     // n0 + n2 to account for possible dummy sample of n1
     int64_t num_samples = num_mod[0] + num_mod[2];
-    bool n1_padding = total_chars % 3 == 1;
 
     if (DBG)
-        print_concatenated(local_string, comm);
+        print_concatenated(local_string, comm, "local string");
 
-    // process i sends first two characters to process i - 1
-    KASSERT(local_string.size() >= 2u);
-    std::vector<int> recv_chars = mpi_util::shift_left(local_string, 2, comm);
-    if (process_rank < last_process) {
-        local_string.insert(local_string.end(), recv_chars.begin(), recv_chars.end());
-    }
+    mpi_util::shift_entries_left(local_string, 2, comm);
 
-    // TODO: barrier necessary?
-    comm.barrier();
-
-    // position of first mod 0 character
-    uint offset = chars_before[process_rank] % 3;
-    offset = (3 - offset) % 3;
-
-    // compute local sample strings
-    std::vector<SampleString> local_samples;
-    for (uint i = 0; i + 2 < local_string.size(); i++) {
-        if (i % 3 != offset) {
-            int index = chars_before[process_rank] + i;
-            std::array<int, 3> letters = {local_string[i],
-                                          local_string[i + 1],
-                                          local_string[i + 2]};
-            local_samples.push_back(SampleString(letters, index));
-        }
-    }
-    // keep a padding sample for last process of in case n mod 3 == 1
-    std::array<int, 3> padding = {0, 0, 0};
-    if (process_rank == last_process && total_chars % 3 != 1
-        && local_samples.back().letters == padding) {
-        local_samples.pop_back();
-    }
-    size_t local_sample_size = local_samples.size();
+    std::vector<SampleString> local_samples =
+        compute_sample_strings(local_string, chars_before[process_rank], total_chars, comm);
+    const size_t local_sample_size = local_samples.size();
 
     if (DBG) {
         print_concatenated(local_samples, comm, "local_samples");
@@ -207,163 +371,53 @@ std::vector<int> pdc3(std::vector<int>& local_string, Communicator<>& comm) {
     }
 
     // processor i + 1 sends first sample to processor i
+    // adds a dummy sample for last process
     KASSERT(local_string.size() >= 1u);
     SampleString recv_sample = mpi_util::shift_left(local_samples.front(), comm);
-    // adds dummy sample for last process
     local_samples.push_back(recv_sample);
-    comm.barrier();
 
     if (DBG)
         print_concatenated(local_samples, comm, "local samples after shift");
 
-    // create lexicographic ranks using a prefix sum
-    std::vector<RankIndex> local_ranks;
-    // exclude sample for next process
-    int num_ranks = local_samples.size() - 1;
-    local_ranks.reserve(num_ranks);
+    std::vector<RankIndex> local_ranks =
+        compute_lexicographic_ranks(local_samples, num_samples, comm);
 
-    // compute local ranks
-    int prev_rank = 0;
-    for (int i = 0; i < num_ranks; i++) {
-        KASSERT(i + 1 < (int)local_samples.size());
-        local_ranks.emplace_back(prev_rank, local_samples[i].index);
-        int changed = local_samples[i].letters != local_samples[i + 1].letters ? 1 : 0;
-        prev_rank += changed;
-    }
-
-    // TODO: remove this code later
-    mpi_util::check_expected_size(num_samples, local_ranks.size(), comm);
-
-    // shift ranks by 1 + prefix sum
-    int ranks_before = mpi_util::ex_prefix_sum(prev_rank, comm);
-    std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
-        x.rank += 1 + ranks_before;
-    });
+    // free memory of samples
+    local_samples.clear();
+    local_samples.shrink_to_fit();
 
     if (DBG)
         print_concatenated(local_ranks, comm, "local ranks");
 
-    // last processor checks if all ranks are distinct
-    // int last_rank = local_ranks.back().rank;
-    int last_rank = local_ranks.empty() ? 0 : local_ranks.back().rank;
-    bool chars_distinct = last_rank >= num_samples;
-    comm.bcast_single(send_recv_buf(chars_distinct), root(last_process));
+    bool chars_distinct = check_chars_distinct(local_ranks, num_samples, comm);
 
     if (DBG)
         print_on_root("chars distinct: " + std::to_string(chars_distinct), comm);
 
-    auto by_second = [&](RankIndex const& a, RankIndex const& b) { return a.index < b.index; };
     if (chars_distinct) {
-        mpi::sort(local_ranks, by_second, comm);
+        mpi::sort(local_ranks, cmp_by_index, comm);
         local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
     } else {
         // reorder rank sorted by (i mod 3, i div 3) using sorting or permutation
-        auto mod_div = [&](RankIndex const& a, RankIndex const& b) {
-            int a_mod3 = a.index % 3;
-            int b_mod3 = b.index % 3;
-            if (a_mod3 != b_mod3) {
-                return a_mod3 < b_mod3;
-            }
-            return a.index / 3 < b.index / 3;
-        };
-        mpi::sort(local_ranks, mod_div, comm);
+        mpi::sort(local_ranks, cmp_mod_div_3, comm);
+
+        // can happen for small inputs
+        KASSERT(local_ranks.size() >= 2u);
 
         constexpr bool use_recursion = true;
         if (use_recursion) {
             if (DBG)
                 print_on_root("--> recursion", comm);
 
-            std::vector<int> recursive_string;
-            recursive_string.reserve(local_ranks.size());
-            for (RankIndex& ri: local_ranks) {
-                recursive_string.push_back(ri.rank);
-            }
-
-            // can skip? to little number of chars for small inputs
-            recursive_string =
-                mpi_util::distribute_data_custom(recursive_string, local_sample_size, comm);
-
-            local_ranks.clear();
-            // recursive_string = mpi_util::distribute_data(recursive_string, comm);
-            if (DBG)
-                print_concatenated(recursive_string, comm, "recursive string");
-            std::vector<int> SA = pdc3(recursive_string, comm);
-            // SA = mpi_util::distribute_data(SA, comm);
-            // SA = mpi_util::distribute_data_custom(SA, local_sample_size, comm);
-
-            size_t local_SA_size = SA.size();
-            size_t elements_before = mpi_util::ex_prefix_sum(local_SA_size, comm);
-
-            local_ranks.reserve(SA.size());
-            for (uint i = 0; i < SA.size(); i++) {
-                int global_index = map_back(SA[i], total_chars);
-                int rank = 1 + i + elements_before;
-                local_ranks.emplace_back(rank, global_index);
-            }
-            mpi::sort(local_ranks, by_second, comm);
+            handle_recursive_call(local_ranks, total_chars, comm);
+            mpi::sort(local_ranks, cmp_by_index, comm);
             local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
         } else {
-            // for now sequential SA on root process
-            auto global_ranks = comm.gatherv(send_buf(local_ranks));
-            std::vector<int> SA;
-            if (process_rank == root_rank) {
-                std::vector<int> ranks;
-                for (auto [rank, index]: global_ranks) {
-                    ranks.push_back(rank);
-                }
-                SA = slow_suffixarray(ranks);
-                global_ranks.clear();
-                for (uint i = 0; i < SA.size(); i++) {
-                    int global_index = map_back(SA[i], total_chars);
-                    global_ranks.emplace_back(i + 1, global_index);
-                }
-                // redistribute result and continue in distributed fashion
-            }
-            // print_vector(global_ranks);
-
-            auto by_second = [&](RankIndex const& a, RankIndex const& b) {
-                return a.index < b.index;
-            };
-            std::sort(global_ranks.begin(), global_ranks.end(), by_second);
-
-            local_ranks.clear();
-            // send to each processor the size of its local_string
-            // only relevant to root
-            std::vector<int> send_cnts(num_processes);
-            for (uint i = 0; i < global_ranks.size(); i++) {
-                size_t index = global_ranks[i].index;
-                // check to which process this index belongs
-                for (int j = 0; j < num_processes; j++) {
-                    if (index < chars_at_proc[j]) {
-                        send_cnts[j]++;
-                        break;
-                    }
-                    index -= chars_at_proc[j];
-                }
-            }
-
-            // removing n1 padding
-            if (process_rank == root_rank) {
-                KASSERT(std::accumulate(send_cnts.begin(), send_cnts.end(), 0) + n1_padding
-                        == (int)global_ranks.size());
-            }
-
-            comm.scatterv(send_buf(global_ranks),
-                          recv_buf<resize_to_fit>(local_ranks),
-                          send_counts(send_cnts));
-            if (DBG)
-                print_concatenated(local_ranks, comm, "local_ranks");
+            sequential_sa_and_local_ranks(local_ranks, chars_at_proc, total_chars, comm);
         }
     }
 
-    std::vector<MergeSamples> merge_samples;
-    merge_samples.reserve(chars_at_proc[process_rank]);
-
-    // processor i sends first two ranks to processor i - 1
-    std::vector<RankIndex> recv_rank = mpi_util::shift_left(local_ranks, 2, comm);
-    if (process_rank < last_process) {
-        local_ranks.insert(local_ranks.end(), recv_rank.begin(), recv_rank.end());
-    }
+    mpi_util::shift_entries_left(local_ranks, 2, comm);
 
     // add two paddings with rank 0
     if (process_rank == last_process) {
@@ -378,34 +432,14 @@ std::vector<int> pdc3(std::vector<int>& local_string, Communicator<>& comm) {
         print_concatenated(local_sample_size, comm, "local_sample_size");
         print_concatenated(local_ranks_size, comm, "local_ranks_size");
     }
+    std::vector<MergeSamples> merge_samples = construct_merge_samples(local_string,
+                                                                      local_ranks,
+                                                                      chars_before[process_rank],
+                                                                      chars_at_proc[process_rank]);
 
-    int pos = 0;
-    int rank1_offset[3] = {0, 0, 0};
-    int rank2_offset[3] = {1, 1, 1};
-    // for each index in local string
-    for (int i = 0; i < (int)chars_at_proc[process_rank]; i++) {
-        // convert global index to local index
-        // for mod 0, find next mod 1 position
-        // for mod 1,2 find next mod 1, 2 position
-        while (i > local_ranks[pos].index - chars_before[process_rank]) {
-            pos++;
-            KASSERT(pos < (int)local_ranks.size());
-        }
-
-        int local_index = i;
-        int global_index = local_index + chars_before[process_rank];
-        int mod = global_index % 3;
-
-        KASSERT(local_index + 1 < (int)local_string.size());
-        KASSERT(pos + rank1_offset[mod] < (int)local_ranks.size());
-        KASSERT(pos + rank2_offset[mod] < (int)local_ranks.size());
-
-        int char1 = local_string[local_index];
-        int char2 = local_string[local_index + 1];
-        int rank1 = local_ranks[pos + rank1_offset[mod]].rank;
-        int rank2 = local_ranks[pos + rank2_offset[mod]].rank;
-        merge_samples.emplace_back(char1, char2, rank1, rank2, global_index);
-    }
+    // free memory of local_ranks
+    local_ranks.clear();
+    local_ranks.shrink_to_fit();
 
     if (DBG)
         print_concatenated(merge_samples, comm, "merge samples before sorting");
@@ -415,12 +449,8 @@ std::vector<int> pdc3(std::vector<int>& local_string, Communicator<>& comm) {
     if (DBG)
         print_concatenated(merge_samples, comm, "merge samples after sorting");
 
-    std::vector<int> local_SA;
-    // remove 2 paddings
-    local_SA.reserve(merge_samples.size());
-    for (uint i = 0; i < merge_samples.size(); i++) {
-        local_SA.push_back(merge_samples[i].index);
-    }
+    auto get_index = [](MergeSamples& m) { return m.index; };
+    std::vector<int> local_SA = extract_attribute<MergeSamples, int>(merge_samples, get_index);
 
     if (DBG) {
         print_concatenated(local_string, comm);
@@ -432,16 +462,12 @@ std::vector<int> pdc3(std::vector<int>& local_string, Communicator<>& comm) {
         local_string.pop_back();
         local_string.pop_back();
     }
+    remove_padding(local_string, comm);
 
     if (DBG) {
-        if (process_rank == last_process) {
-            local_string.pop_back();
-            local_string.pop_back();
-            local_string.pop_back();
-        }
         bool sa_ok = check_suffixarray(local_SA, local_string, comm);
         if (!sa_ok) {
-            std::vector<int> global_string = comm.gatherv(kamping::send_buf(local_string));
+            std::vector<int> global_string = comm.gatherv(send_buf(local_string));
             if (process_rank == root_rank) {
                 std::vector<int> sa_correct = slow_suffixarray(global_string);
                 std::cout << "correct SA: \n";
@@ -451,7 +477,6 @@ std::vector<int> pdc3(std::vector<int>& local_string, Communicator<>& comm) {
         KASSERT(sa_ok);
         print_on_root("--> SA ok", comm);
     }
-
     return local_SA;
 }
 

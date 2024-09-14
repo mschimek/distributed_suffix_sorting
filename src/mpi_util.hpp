@@ -59,6 +59,15 @@ std::vector<T> shift_left(std::vector<T>& local_data, int count, Communicator<>&
     return recv_buffer;
 }
 
+// applies a left shift and pushes entries to vector of receiver
+template <typename T>
+void shift_entries_left(std::vector<T>& local_data, int count, Communicator<>& comm) {
+    std::vector<T> recv_data = mpi_util::shift_left(local_data, count, comm);
+    if (comm.rank() < comm.size() - 1) {
+        local_data.insert(local_data.end(), recv_data.begin(), recv_data.end());
+    }
+}
+
 // sends T from processor i to processor i + 1 with blocking
 template <typename T>
 T shift_right(T& local_value, Communicator<>& comm) {
@@ -165,7 +174,8 @@ std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
     int num_processes = comm.size();
     int local_size = local_data.size();
 
-    KASSERT(all_reduce_sum(local_size, comm) == all_reduce_sum(local_target_size, comm), "total and target size don't match");
+    KASSERT(all_reduce_sum(local_size, comm) == all_reduce_sum(local_target_size, comm),
+            "total and target size don't match");
 
     std::vector<int> target_sizes = comm.allgather(send_buf(local_target_size));
     std::vector<int> preceding_target_size(num_processes);

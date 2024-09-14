@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <iostream>
 #include <numeric>
 #include <vector>
@@ -34,6 +35,17 @@ void print_substrings(std::vector<int>& arr) {
         }
         std::cout << "\n";
     }
+}
+
+template <typename Combined, typename Extracted>
+std::vector<Extracted> extract_attribute(std::vector<Combined>& combined,
+                                         std::function<Extracted(Combined&)> get_attribute) {
+    std::vector<Extracted> extracted;
+    extracted.reserve(combined.size());
+    for (Combined& c: combined) {
+        extracted.push_back(get_attribute(c));
+    }
+    return extracted;
 }
 
 } // namespace dsss
