@@ -1,7 +1,10 @@
 #pragma once
 
+#include <iostream>
 #include <numeric>
 #include <vector>
+
+namespace dsss {
 
 bool cmp_substrings(std::vector<int>& arr, int a, int b) {
     int m = arr.size();
@@ -22,3 +25,15 @@ std::vector<int> slow_suffixarray(std::vector<int>& arr) {
     std::sort(sa.begin(), sa.end(), [&arr](int a, int b) { return cmp_substrings(arr, a, b); });
     return sa;
 }
+
+void print_substrings(std::vector<int>& arr) {
+    for (uint i = 0; i < arr.size(); i++) {
+        std::cout << i << ": ";
+        for (uint j = i; j < arr.size(); j++) {
+            std::cout << arr[j] << "";
+        }
+        std::cout << "\n";
+    }
+}
+
+} // namespace dsss

@@ -74,11 +74,12 @@ void print_on_root(std::string const& str, Communicator const& comm) {
 
 // concatenated local vectors and print contents
 template <typename Communicator, typename T>
-void print_concatenated(T const& local_data, Communicator const& comm) {
+void print_concatenated(T const& local_data, Communicator const& comm, std::string msg = "") {
     auto [recv_buffer, recv_counts] = comm.allgatherv(send_buf(local_data), recv_counts_out());
     if (comm.is_root()) {
         int i = 0;
         int rank = 0;
+        std::cout << msg << "\n";
         for (int cnt: recv_counts) {
             std::cout << "[PE " << rank << "] ";
             for (int j = 0; j < cnt; j++) {
@@ -89,5 +90,13 @@ void print_concatenated(T const& local_data, Communicator const& comm) {
         }
         std::cout << "\n";
     }
+}
+
+template <typename T>
+void print_vector(std::vector<T>& v) {
+    for (auto& x: v) {
+        std::cout << x << " ";
+    }
+    std::cout << "\n";
 }
 } // namespace kamping

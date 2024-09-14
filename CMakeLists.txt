@@ -40,7 +40,7 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -DDEBUG -march=native -ggdb")
 
 # Default to Release builds
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE "Release")
+  # set(CMAKE_BUILD_TYPE "Release")
 endif()
 
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")

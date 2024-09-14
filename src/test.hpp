@@ -12,10 +12,10 @@
 #include "kamping/named_parameters.hpp"
 #include "printing.hpp"
 
-namespace test {
+namespace dsss::test {
 std::vector<int> generate_random_data(int n, int max_value, int seed) {
     std::mt19937 rng(seed);
-    std::uniform_int_distribution<std::mt19937::result_type> dist(0, max_value);
+    std::uniform_int_distribution<std::mt19937::result_type> dist(1, max_value);
     std::vector<int> v(n);
     for (int i = 0; i < n; i++) {
         v[i] = dist(rng);
