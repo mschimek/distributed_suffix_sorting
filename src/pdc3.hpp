@@ -23,10 +23,13 @@
 #include "kassert/kassert.hpp"
 #include "mpi_util.hpp"
 #include "printing.hpp"
+#include "sa_check.hpp"
 #include "sort.hpp"
 #include "util.hpp"
 
 namespace dsss::dc3 {
+
+using namespace kamping;
 
 struct SampleString {
     SampleString() : letters({0, 0, 0}), index(0) {}
@@ -50,8 +53,6 @@ std::ostream& operator<<(std::ostream& os, const SampleString& sample) {
     os << "(" << a << "," << b << "," << c << ") " << sample.index;
     return os;
 }
-
-constexpr static bool DBG = false;
 
 struct RankIndex {
     int rank;
@@ -119,21 +120,24 @@ int map_back(int i, int n) {
     return i < n0 ? 3 * i + 1 : 3 * (i - n0) + 2;
 }
 
-std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& comm) {
-    using namespace kamping;
-
-    int process_rank = comm.rank();
-    int num_processes = comm.size();
-    int root_rank = 0;
-    int last_process = num_processes - 1;
-
-    // check if padding exists
-    if (process_rank == last_process) {
-        int n = local_string.size();
-        KASSERT(local_string[n - 1] == 0);
-        KASSERT(local_string[n - 2] == 0);
-        KASSERT(local_string[n - 3] == 0);
+void add_padding(std::vector<int>& local_data, Communicator<>& comm) {
+    constexpr int padding = 0;
+    if (comm.rank() == comm.size() - 1) {
+        local_data.push_back(padding);
+        local_data.push_back(padding);
+        local_data.push_back(padding);
     }
+}
+
+constexpr static bool DBG = false;
+
+std::vector<int> pdc3(std::vector<int>& local_string, Communicator<>& comm) {
+    const int process_rank = comm.rank();
+    const int num_processes = comm.size();
+    const int root_rank = 0;
+    const int last_process = num_processes - 1;
+
+    add_padding(local_string, comm);
 
     // figure out lengths of the other strings
     auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
@@ -148,6 +152,9 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
     // n0 + n2 to account for possible dummy sample of n1
     int64_t num_samples = num_mod[0] + num_mod[2];
     bool n1_padding = total_chars % 3 == 1;
+
+    if (DBG)
+        print_concatenated(local_string, comm);
 
     // process i sends first two characters to process i - 1
     KASSERT(local_string.size() >= 2u);
@@ -180,6 +187,7 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
         && local_samples.back().letters == padding) {
         local_samples.pop_back();
     }
+    size_t local_sample_size = local_samples.size();
 
     if (DBG) {
         print_concatenated(local_samples, comm, "local_samples");
@@ -191,6 +199,13 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
     // sort local samples
     mpi::sort(local_samples, std::less<>{}, comm);
 
+    // can happen for small inputs
+    KASSERT(local_samples.size() > 0u);
+
+    if (DBG) {
+        print_concatenated(local_samples, comm, "local_samples after sort");
+    }
+
     // processor i + 1 sends first sample to processor i
     KASSERT(local_string.size() >= 1u);
     SampleString recv_sample = mpi_util::shift_left(local_samples.front(), comm);
@@ -199,7 +214,7 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
     comm.barrier();
 
     if (DBG)
-        print_concatenated(local_samples, comm, "local samples");
+        print_concatenated(local_samples, comm, "local samples after shift");
 
     // create lexicographic ranks using a prefix sum
     std::vector<RankIndex> local_ranks;
@@ -229,15 +244,18 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
         print_concatenated(local_ranks, comm, "local ranks");
 
     // last processor checks if all ranks are distinct
-    bool chars_distinct = prev_rank >= num_samples;
+    // int last_rank = local_ranks.back().rank;
+    int last_rank = local_ranks.empty() ? 0 : local_ranks.back().rank;
+    bool chars_distinct = last_rank >= num_samples;
     comm.bcast_single(send_recv_buf(chars_distinct), root(last_process));
 
     if (DBG)
         print_on_root("chars distinct: " + std::to_string(chars_distinct), comm);
 
+    auto by_second = [&](RankIndex const& a, RankIndex const& b) { return a.index < b.index; };
     if (chars_distinct) {
-        auto by_second = [&](RankIndex const& a, RankIndex const& b) { return a.index < b.index; };
         mpi::sort(local_ranks, by_second, comm);
+        local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
     } else {
         // reorder rank sorted by (i mod 3, i div 3) using sorting or permutation
         auto mod_div = [&](RankIndex const& a, RankIndex const& b) {
@@ -250,15 +268,40 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
         };
         mpi::sort(local_ranks, mod_div, comm);
 
-        bool use_recursion = false;
+        constexpr bool use_recursion = true;
         if (use_recursion) {
-            // std::vector<int> recursive_string;
-            // recursive_string.reserve(local_ranks.size());
-            // for(RankIndex &ri : local_ranks) {
-            //     recursive_string.push_back(ri.rank);
-            // }
-            // std::vector<int> SA = pdc3(recursive_string, comm);
+            if (DBG)
+                print_on_root("--> recursion", comm);
 
+            std::vector<int> recursive_string;
+            recursive_string.reserve(local_ranks.size());
+            for (RankIndex& ri: local_ranks) {
+                recursive_string.push_back(ri.rank);
+            }
+
+            // can skip? to little number of chars for small inputs
+            recursive_string =
+                mpi_util::distribute_data_custom(recursive_string, local_sample_size, comm);
+
+            local_ranks.clear();
+            // recursive_string = mpi_util::distribute_data(recursive_string, comm);
+            if (DBG)
+                print_concatenated(recursive_string, comm, "recursive string");
+            std::vector<int> SA = pdc3(recursive_string, comm);
+            // SA = mpi_util::distribute_data(SA, comm);
+            // SA = mpi_util::distribute_data_custom(SA, local_sample_size, comm);
+
+            size_t local_SA_size = SA.size();
+            size_t elements_before = mpi_util::ex_prefix_sum(local_SA_size, comm);
+
+            local_ranks.reserve(SA.size());
+            for (uint i = 0; i < SA.size(); i++) {
+                int global_index = map_back(SA[i], total_chars);
+                int rank = 1 + i + elements_before;
+                local_ranks.emplace_back(rank, global_index);
+            }
+            mpi::sort(local_ranks, by_second, comm);
+            local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
         } else {
             // for now sequential SA on root process
             auto global_ranks = comm.gatherv(send_buf(local_ranks));
@@ -308,8 +351,6 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
             comm.scatterv(send_buf(global_ranks),
                           recv_buf<resize_to_fit>(local_ranks),
                           send_counts(send_cnts));
-            // check_expected_size(num_samples, local_ranks, comm);
-            // TODO: recursively call SA
             if (DBG)
                 print_concatenated(local_ranks, comm, "local_ranks");
         }
@@ -330,8 +371,13 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
         local_ranks.push_back(RankIndex(0, total_chars));
     }
 
-    if (DBG)
+    if (DBG) {
+        size_t local_ranks_size = local_ranks.size();
+        print_concatenated(local_string, comm, "local string");
         print_concatenated(local_ranks, comm, "local ranks");
+        print_concatenated(local_sample_size, comm, "local_sample_size");
+        print_concatenated(local_ranks_size, comm, "local_ranks_size");
+    }
 
     int pos = 0;
     int rank1_offset[3] = {0, 0, 0};
@@ -362,12 +408,12 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
     }
 
     if (DBG)
-        print_concatenated(merge_samples, comm, "merge samples");
+        print_concatenated(merge_samples, comm, "merge samples before sorting");
 
     mpi::sort(merge_samples, std::less<>{}, comm);
 
     if (DBG)
-        print_concatenated(merge_samples, comm, "merge samples");
+        print_concatenated(merge_samples, comm, "merge samples after sorting");
 
     std::vector<int> local_SA;
     // remove 2 paddings
@@ -387,7 +433,26 @@ std::vector<int> pdc3(std::vector<int>& local_string, kamping::Communicator<>& c
         local_string.pop_back();
     }
 
+    if (DBG) {
+        if (process_rank == last_process) {
+            local_string.pop_back();
+            local_string.pop_back();
+            local_string.pop_back();
+        }
+        bool sa_ok = check_suffixarray(local_SA, local_string, comm);
+        if (!sa_ok) {
+            std::vector<int> global_string = comm.gatherv(kamping::send_buf(local_string));
+            if (process_rank == root_rank) {
+                std::vector<int> sa_correct = slow_suffixarray(global_string);
+                std::cout << "correct SA: \n";
+                print_vector(sa_correct);
+            }
+        }
+        KASSERT(sa_ok);
+        print_on_root("--> SA ok", comm);
+    }
+
     return local_SA;
 }
 
-} // namespace dsss
+} // namespace dsss::dc3

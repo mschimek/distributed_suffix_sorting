@@ -40,13 +40,6 @@ void test_sorting(kamping::Communicator<>& comm) {
     test::test_sorting(repeats, n, call_sorter, comm);
 }
 
-void add_padding(std::vector<int>& local_data, kamping::Communicator<>& comm) {
-    if (comm.rank() == comm.size() - 1) {
-        local_data.push_back(0);
-        local_data.push_back(0);
-        local_data.push_back(0);
-    }
-}
 void test_pdc3(int repeats, int n, int alphabet_size, kamping::Communicator<>& comm) {
     int rank = comm.rank();
     int cnt_correct = 0;
@@ -56,8 +49,6 @@ void test_pdc3(int repeats, int n, int alphabet_size, kamping::Communicator<>& c
         std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
         std::vector<int> local_data_copy = local_data;
         std::vector<int> global_data = comm.gatherv(kamping::send_buf(local_data_copy));
-
-        add_padding(local_data, comm);
 
         auto sa = dc3::pdc3(local_data, comm);
         bool sa_ok = check_suffixarray(sa, local_data_copy, comm);
@@ -86,7 +77,6 @@ void run_pdc3(std::vector<int>& local_data, kamping::Communicator<>& comm) {
     // copy without padding, checker should not receive padding
     std::vector<int> local_data_copy = local_data;
     std::vector<int> global_data = comm.gatherv(kamping::send_buf(local_data_copy));
-    add_padding(local_data, comm);
 
     if (comm.rank() == 0) {
         print_substrings(global_data);
@@ -111,13 +101,6 @@ int main() {
     kamping::Environment e;
     Communicator comm;
 
-    test_pdc3(100, 9, 2, comm);
-    test_pdc3(100, 10, 2, comm);
-    test_pdc3(100, 11, 2, comm);
-    test_pdc3(100, 9, 6, comm);
-    test_pdc3(100, 10, 6, comm);
-    test_pdc3(100, 11, 6, comm);
-
     test_pdc3(100, 99, 2, comm);
     test_pdc3(100, 100, 2, comm);
     test_pdc3(100, 101, 2, comm);
@@ -125,9 +108,9 @@ int main() {
     test_pdc3(100, 100, 6, comm);
     test_pdc3(100, 101, 6, comm);
 
-    // int n = 9;
+    // int n = 10;
     // int alphabet_size = 2;
-    // int seed = 2 + comm.rank();
+    // int seed = comm.rank();
     // std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
     // run_pdc3(local_data, comm);
 
