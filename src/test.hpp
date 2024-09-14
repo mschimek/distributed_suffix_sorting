@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <numeric>
 #include <random>
 #include <ratio>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "kamping/collectives/gather.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
+#include "mpi_util.hpp"
 #include "printing.hpp"
 
 namespace dsss::test {
@@ -42,4 +44,37 @@ void test_sorting(int repeats,
     }
 }
 
-} // namespace test
+void test_distribute_data_custom(int repeats, kamping::Communicator<>& comm) {
+    int avg_size = 100;
+    for (int r = 0; r < repeats; r++) {
+        std::vector<int> initial_size(comm.size());
+        std::vector<int> target_size(comm.size());
+
+        // random distribution of intial and target sizes
+        int seed = 0; // same seed for all processes
+        std::mt19937 rng(seed);
+        std::uniform_int_distribution<std::mt19937::result_type> dist(0, 2 * avg_size);
+        for (uint i = 0; i < comm.size(); i++) {
+            initial_size[i] = dist(rng);
+            target_size[i] = dist(rng);
+        }
+
+        // ensure sum of sizes are equal
+        int sum_inital = std::accumulate(initial_size.begin(), initial_size.end(), 0);
+        int sum_target = std::accumulate(target_size.begin(), target_size.end(), 0);
+        if (sum_target > sum_inital) {
+            initial_size.back() += sum_target - sum_inital;
+        } else if (sum_target < sum_inital) {
+            target_size.back() += sum_inital - sum_target;
+        }
+        std::vector<int> local_data(initial_size[comm.rank()], comm.rank());
+        std::vector<int> rcv_data =
+            mpi_util::distribute_data_custom(local_data, target_size[comm.rank()], comm);
+
+        std::vector<int> global_data = comm.allgatherv(kamping::send_buf(local_data));
+        std::vector<int> global_rcv_data = comm.allgatherv(kamping::send_buf(rcv_data));
+        KASSERT(target_size[comm.rank()] == (int)rcv_data.size());
+        KASSERT(global_data == global_rcv_data);
+    }
+}
+} // namespace dsss::test

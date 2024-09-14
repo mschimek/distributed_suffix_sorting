@@ -4,6 +4,7 @@
 #include "kamping/collectives/reduce.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/mpi_ops.hpp"
+#include "kamping/named_parameters.hpp"
 #include "kamping/p2p/recv.hpp"
 #include "kamping/p2p/send.hpp"
 #include "kassert/kassert.hpp"
@@ -125,7 +126,7 @@ T ex_prefix_sum(T& local_data, Communicator<>& comm) {
 
 
 // adapted from: https://github.com/kurpicz/dsss/blob/master/dsss/mpi/distribute_data.hpp
-// distributs data such that each process i < comm.size() has n / comm.size() elements 
+// distributs data such that each process i < comm.size() has n / comm.size() elements
 // and the first process has the remaining elements.
 template <typename DataType>
 std::vector<DataType> distribute_data(std::vector<DataType>& local_data, Communicator<>& comm) {
@@ -147,6 +148,36 @@ std::vector<DataType> distribute_data(std::vector<DataType>& local_data, Communi
          ++cur_rank) {
         const size_t to_send =
             std::min(((cur_rank + 1) * local_size) - preceding_size, local_data_size);
+        send_cnts[cur_rank] = to_send;
+        local_data_size -= to_send;
+        preceding_size += to_send;
+    }
+    send_cnts.back() += local_data_size;
+
+    std::vector<DataType> result = comm.alltoallv(send_buf(local_data), send_counts(send_cnts));
+    return result;
+}
+
+template <typename DataType>
+std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
+                                             int local_target_size,
+                                             Communicator<>& comm) {
+    int num_processes = comm.size();
+    int local_size = local_data.size();
+
+    KASSERT(all_reduce_sum(local_size, comm) == all_reduce_sum(local_target_size, comm), "total and target size don't match");
+
+    std::vector<int> target_sizes = comm.allgather(send_buf(local_target_size));
+    std::vector<int> preceding_target_size(num_processes);
+    std::exclusive_scan(target_sizes.begin(), target_sizes.end(), target_sizes.begin(), 0);
+
+    int local_data_size = local_data.size();
+    int preceding_size = comm.exscan(send_buf(local_size), op(ops::plus<>{}))[0];
+
+    std::vector<int> send_cnts(num_processes, 0);
+    for (int cur_rank = 0; cur_rank < num_processes - 1 && local_data_size > 0; cur_rank++) {
+        int to_send = std::max(0, target_sizes[cur_rank + 1] - preceding_size);
+        to_send = std::min(to_send, local_data_size);
         send_cnts[cur_rank] = to_send;
         local_data_size -= to_send;
         preceding_size += to_send;
