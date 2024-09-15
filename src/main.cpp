@@ -20,8 +20,8 @@
 
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
-#include "kassert/kassert.hpp"
-#include "mpi_util.hpp"
+#include "kamping/measurements/timer.hpp"
+#include "kamping/measurements/printer.hpp"
 #include "pdc3.hpp"
 #include "printing.hpp"
 #include "sa_check.hpp"
@@ -50,7 +50,9 @@ void test_pdc3(int repeats, int n, int alphabet_size, kamping::Communicator<>& c
         std::vector<int> local_data_copy = local_data;
         std::vector<int> global_data = comm.gatherv(kamping::send_buf(local_data_copy));
 
-        auto sa = dc3::pdc3(local_data, comm);
+        dc3::PDC3 pdc3(comm);
+        auto sa = pdc3.call_pdc3(local_data);
+
         bool sa_ok = check_suffixarray(sa, local_data_copy, comm);
         cnt_correct += sa_ok;
         if (!sa_ok) {
@@ -83,7 +85,8 @@ void run_pdc3(std::vector<int>& local_data, kamping::Communicator<>& comm) {
     }
     print_concatenated(local_data, comm, "local data");
 
-    auto sa = dc3::pdc3(local_data, comm);
+    dc3::PDC3 pdc3(comm);
+    auto sa = pdc3.call_pdc3(local_data);
 
     print_concatenated(sa, comm, "SA");
 
@@ -101,18 +104,25 @@ int main() {
     kamping::Environment e;
     Communicator comm;
 
-    test_pdc3(100, 99, 2, comm);
-    test_pdc3(100, 100, 2, comm);
-    test_pdc3(100, 101, 2, comm);
-    test_pdc3(100, 99, 6, comm);
-    test_pdc3(100, 100, 6, comm);
-    test_pdc3(100, 101, 6, comm);
+    // test_pdc3(100, 99, 2, comm);
+    // test_pdc3(100, 100, 2, comm);
+    // test_pdc3(100, 101, 2, comm);
+    // test_pdc3(100, 99, 6, comm);
+    // test_pdc3(100, 100, 6, comm);
+    // test_pdc3(100, 101, 6, comm);
 
-    // int n = 10;
-    // int alphabet_size = 2;
-    // int seed = comm.rank();
-    // std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
-    // run_pdc3(local_data, comm);
+    int n = 1e5 / comm.size();
+    int alphabet_size = 3;
+    int seed = comm.rank();
+    std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
+
+    dc3::PDC3 pdc3(comm);
+    auto sa = pdc3.call_pdc3(local_data);
+
+    bool sa_ok = check_suffixarray(sa, local_data, comm);
+    if (comm.rank() == 0) {
+        std::cout << "sa_ok: " << sa_ok << "\n";
+    }
 
     return 0;
 }
