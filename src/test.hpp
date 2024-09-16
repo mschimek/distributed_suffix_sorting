@@ -15,10 +15,12 @@
 #include "printing.hpp"
 
 namespace dsss::test {
-std::vector<int> generate_random_data(int n, int max_value, int seed) {
+
+template<typename T>
+std::vector<T> generate_random_data(int n, int max_value, int seed) {
     std::mt19937 rng(seed);
-    std::uniform_int_distribution<std::mt19937::result_type> dist(1, max_value);
-    std::vector<int> v(n);
+    std::uniform_int_distribution<T> dist(1, max_value);
+    std::vector<T> v(n);
     for (int i = 0; i < n; i++) {
         v[i] = dist(rng);
     }
@@ -36,7 +38,7 @@ void test_sorting(int repeats,
     int max_value = 1e6;
     for (int i = 0; i < repeats; i++) {
         int seed = i * size + rank;
-        std::vector<int> local_data = generate_random_data(local_size, max_value, seed);
+        std::vector<int> local_data = generate_random_data<int>(local_size, max_value, seed);
         comm.barrier();
         distributed_sorter(local_data, comm);
         auto sorted_sequence = comm.gatherv(send_buf(local_data));

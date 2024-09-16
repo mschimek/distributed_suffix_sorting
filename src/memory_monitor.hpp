@@ -9,6 +9,9 @@
 #include <string>
 #include <vector>
 
+namespace dsss::monitor {
+
+
 struct MemoryKey {
     int64_t memory;
     std::string key;
@@ -52,7 +55,7 @@ struct MemoryMonitor {
     void add_memory(std::vector<T>& vec, std::string key = "") {
         int64_t memory = get_memory_vector(vec);
         current_memory += memory;
-        memory_history.push_back({current_memory, "add_"+ key});
+        memory_history.push_back({current_memory, "add_" + key});
     }
 
     template <typename T>
@@ -78,3 +81,10 @@ struct MemoryMonitor {
     int64_t current_memory;
     std::vector<MemoryKey> memory_history;
 };
+
+// singleton instance
+inline MemoryMonitor& get_monitor_instance() {
+    static MemoryMonitor monitor;
+    return monitor;
+}
+} // namespace dsss::monitor

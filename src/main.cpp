@@ -1,22 +1,9 @@
-// This file is part of KaMPIng.
-//
-// Copyright 2023 The KaMPIng Authors
-//
-// KaMPIng is free software : you can redistribute it and/or modify it under the
-// terms of the GNU Lesser General Public License as published by the Free
-// Software Foundation, either version 3 of the License, or (at your option) any
-// later version. KaMPIng is distributed in the hope that it will be useful, but
-// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-// FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
-// for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with KaMPIng.  If not, see <https://www.gnu.org/licenses/>.
-
+#include <cstdint>
 #include <functional>
 #include <iostream>
 
 #include <mpi.h>
+#include <sys/types.h>
 
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/printer.hpp"
@@ -48,11 +35,12 @@ void test_pdc3(int repeats, int n, int alphabet_size, Communicator<>& comm) {
 
     for (int i = 0; i < repeats; i++) {
         int seed = i * comm.size() + rank;
-        std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
-        std::vector<int> local_data_copy = local_data;
-        std::vector<int> global_data = comm.gatherv(send_buf(local_data_copy));
+        std::vector<uint32_t> local_data =
+            test::generate_random_data<uint32_t>(n, alphabet_size, seed);
+        std::vector<uint32_t> local_data_copy = local_data;
+        std::vector<uint32_t> global_data = comm.gatherv(send_buf(local_data_copy));
 
-        dc3::PDC3 pdc3(comm);
+        dc3::PDC3<uint32_t, uint32_t> pdc3(comm);
         auto sa = pdc3.call_pdc3(local_data);
 
         bool sa_ok = check_suffixarray(sa, local_data_copy, comm);
@@ -65,7 +53,7 @@ void test_pdc3(int repeats, int n, int alphabet_size, Communicator<>& comm) {
                 std::cout << "input: \n";
                 print_vector(global_data);
 
-                std::vector<int> global_sa = slow_suffixarray(global_data);
+                std::vector<uint32_t> global_sa = slow_suffixarray<uint32_t, uint32_t>(global_data);
                 std::cout << "correct SA: \n";
                 print_vector(global_sa);
             }
@@ -77,17 +65,17 @@ void test_pdc3(int repeats, int n, int alphabet_size, Communicator<>& comm) {
     }
 }
 
-void run_pdc3(std::vector<int>& local_data, Communicator<>& comm) {
+void run_pdc3(std::vector<uint32_t>& local_data, Communicator<>& comm) {
     // copy without padding, checker should not receive padding
-    std::vector<int> local_data_copy = local_data;
-    std::vector<int> global_data = comm.gatherv(send_buf(local_data_copy));
+    std::vector<uint32_t> local_data_copy = local_data;
+    std::vector<uint32_t> global_data = comm.gatherv(send_buf(local_data_copy));
 
     if (comm.rank() == 0) {
         print_substrings(global_data);
     }
     print_concatenated(local_data, comm, "local data");
 
-    dc3::PDC3 pdc3(comm);
+    dc3::PDC3<uint32_t, uint32_t> pdc3(comm);
     auto sa = pdc3.call_pdc3(local_data);
 
     print_concatenated(sa, comm, "SA");
@@ -96,7 +84,7 @@ void run_pdc3(std::vector<int>& local_data, Communicator<>& comm) {
     if (comm.rank() == 0) {
         std::cout << "SA ok: " << sa_ok << std::endl;
 
-        std::vector<int> global_sa = slow_suffixarray(global_data);
+        std::vector<uint32_t> global_sa = slow_suffixarray<uint32_t, uint32_t>(global_data);
         std::cout << "correct SA: \n";
         print_vector(global_sa);
     }
@@ -109,15 +97,22 @@ void run_tests_pdc3(Communicator<>& comm) {
     test_pdc3(100, 99, 6, comm);
     test_pdc3(100, 100, 6, comm);
     test_pdc3(100, 101, 6, comm);
+
+    test_pdc3(10, 1e4, 2, comm);
+    test_pdc3(10, 1e4, 6, comm);
 }
 
 void run_pdc3(Communicator<>& comm) {
-    int n = 1e7 / comm.size();
+    using char_type = uint8_t;
+    using index_type = uint32_t;
+
+    int n = 1e8 / comm.size();
     int alphabet_size = 3;
     int seed = comm.rank();
-    std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
+    std::vector<char_type> local_data =
+        test::generate_random_data<char_type>(n, alphabet_size, seed);
 
-    dc3::PDC3 pdc3(comm);
+    dc3::PDC3<char_type, index_type> pdc3(comm);
     pdc3.reset();
     auto sa = pdc3.call_pdc3(local_data);
 
@@ -136,7 +131,6 @@ int main() {
     Communicator comm;
 
     // run_tests_pdc3(comm);
-
     run_pdc3(comm);
 
     return 0;
