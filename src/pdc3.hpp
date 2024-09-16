@@ -328,8 +328,8 @@ public:
     }
 
     constexpr static bool DBG = false;
-    constexpr static bool REPORT_TIME = false;
-    constexpr static bool REPORT_MEMORY = false;
+    constexpr static bool use_recursion = false;
+
 
     std::vector<int> call_pdc3(std::vector<int>& local_string) {
         timer.start("pdc3");
@@ -417,7 +417,6 @@ public:
             // can happen for small inputs
             KASSERT(local_ranks.size() >= 2u);
 
-            constexpr bool use_recursion = false;
             if (use_recursion) {
                 handle_recursive_call(local_ranks, total_chars);
 
@@ -477,22 +476,28 @@ public:
 
         timer.stop(); // pdc3
 
-        if (recursion_depth == 0 && REPORT_TIME) {
-            timer.aggregate_and_print(measurements::SimpleJsonPrinter<>{});
-            timer.aggregate_and_print(measurements::FlatPrinter{});
-            std::cout << "\n";
-        }
-        if (recursion_depth == 0 && REPORT_MEMORY) {
-            comm.barrier();
-            // std::string msg = "History \n" + memory_monitor.history_mb_to_string() + "\n";
-            // print_result_on_root(msg, comm);
-
-            MemoryKey peak_memory = memory_monitor.get_peak_memory();
-            std::string msg2 = "Memory peak: " + peak_memory.to_string_mb();
-            print_result(msg2, comm);
-            memory_monitor.reset();
-        }
         return local_SA;
+    }
+
+    void report_time() {
+        timer.aggregate_and_print(measurements::SimpleJsonPrinter<>{});
+        timer.aggregate_and_print(measurements::FlatPrinter{});
+        std::cout << "\n";
+    }
+
+    void report_memory() {
+        comm.barrier();
+        // std::string msg = "History \n" + memory_monitor.history_mb_to_string() + "\n";
+        // print_result_on_root(msg, comm);
+
+        MemoryKey peak_memory = memory_monitor.get_peak_memory();
+        std::string msg2 = "Memory peak: " + peak_memory.to_string_mb();
+        print_result(msg2, comm);
+    }
+
+    void reset() {
+        memory_monitor.reset();
+        recursion_depth = 0;
     }
 
     Communicator<>& comm;

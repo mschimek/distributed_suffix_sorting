@@ -30,17 +30,19 @@
 #include "util.hpp"
 
 using namespace dsss;
+using namespace kamping;
 
-void test_sorting(kamping::Communicator<>& comm) {
+
+void test_sorting(Communicator<>& comm) {
     int repeats = 10;
     int n = 1e4;
-    auto call_sorter = [&](std::vector<int>& local_data, kamping::Communicator<>& comm) {
+    auto call_sorter = [&](std::vector<int>& local_data, Communicator<>& comm) {
         dsss::mpi::sort(local_data, std::less<>{}, comm);
     };
     test::test_sorting(repeats, n, call_sorter, comm);
 }
 
-void test_pdc3(int repeats, int n, int alphabet_size, kamping::Communicator<>& comm) {
+void test_pdc3(int repeats, int n, int alphabet_size, Communicator<>& comm) {
     int rank = comm.rank();
     int cnt_correct = 0;
 
@@ -48,7 +50,7 @@ void test_pdc3(int repeats, int n, int alphabet_size, kamping::Communicator<>& c
         int seed = i * comm.size() + rank;
         std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
         std::vector<int> local_data_copy = local_data;
-        std::vector<int> global_data = comm.gatherv(kamping::send_buf(local_data_copy));
+        std::vector<int> global_data = comm.gatherv(send_buf(local_data_copy));
 
         dc3::PDC3 pdc3(comm);
         auto sa = pdc3.call_pdc3(local_data);
@@ -56,16 +58,16 @@ void test_pdc3(int repeats, int n, int alphabet_size, kamping::Communicator<>& c
         bool sa_ok = check_suffixarray(sa, local_data_copy, comm);
         cnt_correct += sa_ok;
         if (!sa_ok) {
-            kamping::print_concatenated(sa, comm);
+            print_concatenated(sa, comm);
 
             if (rank == 0) {
                 std::cout << "SA incorrect with seed " << seed << std::endl;
                 std::cout << "input: \n";
-                kamping::print_vector(global_data);
+                print_vector(global_data);
 
                 std::vector<int> global_sa = slow_suffixarray(global_data);
                 std::cout << "correct SA: \n";
-                kamping::print_vector(global_sa);
+                print_vector(global_sa);
             }
             return;
         }
@@ -75,10 +77,10 @@ void test_pdc3(int repeats, int n, int alphabet_size, kamping::Communicator<>& c
     }
 }
 
-void run_pdc3(std::vector<int>& local_data, kamping::Communicator<>& comm) {
+void run_pdc3(std::vector<int>& local_data, Communicator<>& comm) {
     // copy without padding, checker should not receive padding
     std::vector<int> local_data_copy = local_data;
-    std::vector<int> global_data = comm.gatherv(kamping::send_buf(local_data_copy));
+    std::vector<int> global_data = comm.gatherv(send_buf(local_data_copy));
 
     if (comm.rank() == 0) {
         print_substrings(global_data);
@@ -96,11 +98,11 @@ void run_pdc3(std::vector<int>& local_data, kamping::Communicator<>& comm) {
 
         std::vector<int> global_sa = slow_suffixarray(global_data);
         std::cout << "correct SA: \n";
-        kamping::print_vector(global_sa);
+        print_vector(global_sa);
     }
 }
 
-void run_tests_pdc3(kamping::Communicator<>& comm) {
+void run_tests_pdc3(Communicator<>& comm) {
     test_pdc3(100, 99, 2, comm);
     test_pdc3(100, 100, 2, comm);
     test_pdc3(100, 101, 2, comm);
@@ -109,28 +111,31 @@ void run_tests_pdc3(kamping::Communicator<>& comm) {
     test_pdc3(100, 101, 6, comm);
 }
 
+void run_pdc3(Communicator<>& comm) {
+    int n = 1e5 / comm.size();
+    int alphabet_size = 3;
+    int seed = comm.rank();
+    std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
+
+    dc3::PDC3 pdc3(comm);
+    auto sa = pdc3.call_pdc3(local_data);
+
+    pdc3.report_time();
+    pdc3.report_memory();
+
+    bool sa_ok = check_suffixarray(sa, local_data, comm);
+    if (comm.rank() == 0) {
+        std::cout << "sa_ok: " << sa_ok << "\n";
+    }
+}
 
 int main() {
-    using namespace kamping;
-    kamping::Environment e;
+    Environment e;
     Communicator comm;
 
-    run_tests_pdc3(comm);
+    // run_tests_pdc3(comm);
 
-
-    // int n = 1e5 / comm.size();
-    // int alphabet_size = 3;
-    // int seed = comm.rank();
-    // std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
-
-    // dc3::PDC3 pdc3(comm);
-    // auto sa = pdc3.call_pdc3(local_data);
-
-    // bool sa_ok = check_suffixarray(sa, local_data, comm);
-    // if (comm.rank() == 0) {
-    //     std::cout << "sa_ok: " << sa_ok << "\n";
-    // }
-
+    run_pdc3(comm);
 
     return 0;
 }
