@@ -112,7 +112,7 @@ void run_tests_pdc3(Communicator<>& comm) {
 }
 
 void run_pdc3(Communicator<>& comm) {
-    int n = 1e5 / comm.size();
+    int n = 1e6 / comm.size();
     int alphabet_size = 3;
     int seed = comm.rank();
     std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
@@ -122,6 +122,7 @@ void run_pdc3(Communicator<>& comm) {
 
     pdc3.report_time();
     pdc3.report_memory();
+    pdc3.report_stats();
 
     bool sa_ok = check_suffixarray(sa, local_data, comm);
     if (comm.rank() == 0) {

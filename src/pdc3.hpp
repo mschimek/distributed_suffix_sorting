@@ -224,6 +224,7 @@ public:
 
     bool check_chars_distinct(std::vector<RankIndex>& local_ranks, int num_samples) {
         int last_rank = local_ranks.empty() ? 0 : local_ranks.back().rank;
+        stats.highest_ranks.push_back(last_rank);
         bool chars_distinct = last_rank >= num_samples;
         comm.bcast_single(send_recv_buf(chars_distinct), root(comm.size() - 1));
         return chars_distinct;
@@ -327,9 +328,19 @@ public:
         memory_monitor.add_memory(local_ranks, "ranks");
     }
 
-    constexpr static bool DBG = false;
-    constexpr static bool use_recursion = false;
+    struct Statistics {
+        void reset() {
+            max_depth = 0;
+            string_sizes.clear();
+        }
 
+        int max_depth = 0;
+        std::vector<int> string_sizes;
+        std::vector<int> highest_ranks;
+    };
+
+    constexpr static bool DBG = false;
+    constexpr static bool use_recursion = true;
 
     std::vector<int> call_pdc3(std::vector<int>& local_string) {
         timer.start("pdc3");
@@ -342,6 +353,9 @@ public:
         auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
         int64_t total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), 0) - 3;
         chars_at_proc.back() -= 3;
+
+        stats.max_depth = std::max(stats.max_depth, recursion_depth);
+        stats.string_sizes.push_back(total_chars);
 
         // number of chars before processor i
         std::vector<int> chars_before(comm.size());
@@ -480,9 +494,11 @@ public:
     }
 
     void report_time() {
+        comm.barrier();
         timer.aggregate_and_print(measurements::SimpleJsonPrinter<>{});
         timer.aggregate_and_print(measurements::FlatPrinter{});
         std::cout << "\n";
+        comm.barrier();
     }
 
     void report_memory() {
@@ -493,17 +509,34 @@ public:
         MemoryKey peak_memory = memory_monitor.get_peak_memory();
         std::string msg2 = "Memory peak: " + peak_memory.to_string_mb();
         print_result(msg2, comm);
+        comm.barrier();
+    }
+
+    void report_stats() {
+        comm.barrier();
+        if (comm.rank() == comm.size() - 1) {
+            std::cout << "\nStatistics:\n";
+            std::cout << "max depth: " << stats.max_depth << std::endl;
+            std::cout << "string sizes: ";
+            print_vector(stats.string_sizes);
+            std::cout << "highest rank: ";
+            print_vector(stats.highest_ranks);
+            std::cout << "\n";
+        }
+        comm.barrier();
     }
 
     void reset() {
         memory_monitor.reset();
         recursion_depth = 0;
+        stats.reset();
     }
 
     Communicator<>& comm;
     measurements::Timer<Communicator<>> timer;
     MemoryMonitor memory_monitor;
     int recursion_depth;
+    Statistics stats;
 };
 
 } // namespace dsss::dc3
