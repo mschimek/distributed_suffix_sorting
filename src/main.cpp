@@ -112,7 +112,7 @@ void run_tests_pdc3(Communicator<>& comm) {
 }
 
 void run_pdc3(Communicator<>& comm) {
-    int n = 1e6 / comm.size();
+    int n = 1e7 / comm.size();
     int alphabet_size = 3;
     int seed = comm.rank();
     std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);

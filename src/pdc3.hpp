@@ -188,7 +188,7 @@ public:
         if (is_last_rank && total_chars % 3 != 1 && local_samples.back().letters == padding) {
             local_samples.pop_back();
         }
-        memory_monitor.add_memory(local_samples, "samples_create");
+        memory_monitor.add_memory(local_samples, "samples");
         return local_samples;
     }
 
@@ -218,7 +218,7 @@ public:
         std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
             x.rank += 1 + ranks_before;
         });
-        memory_monitor.add_memory(local_ranks, "ranks_create");
+        memory_monitor.add_memory(local_ranks, "ranks");
         return local_ranks;
     }
 
@@ -264,7 +264,7 @@ public:
             int rank2 = local_ranks[pos + rank2_offset[mod]].rank;
             merge_samples.emplace_back(char1, char2, rank1, rank2, global_index);
         }
-        memory_monitor.add_memory(merge_samples, "merge_samples_create");
+        memory_monitor.add_memory(merge_samples, "merge_samples");
         return merge_samples;
     }
 
@@ -309,6 +309,7 @@ public:
         local_ranks.shrink_to_fit();
 
         recursion_depth++;
+        // memory of SA is counted in recursive call
         std::vector<int> SA = call_pdc3(recursive_string);
         recursion_depth--;
 
@@ -326,15 +327,19 @@ public:
             local_ranks.emplace_back(rank, global_index);
         }
         memory_monitor.add_memory(local_ranks, "ranks");
+        memory_monitor.remove_memory(local_ranks, "SA delete");
     }
 
     struct Statistics {
         void reset() {
             max_depth = 0;
             string_sizes.clear();
+            local_string_sizes.clear();
+            highest_ranks.clear();
         }
 
         int max_depth = 0;
+        std::vector<int> local_string_sizes;
         std::vector<int> string_sizes;
         std::vector<int> highest_ranks;
     };
@@ -347,7 +352,7 @@ public:
 
         const int process_rank = comm.rank();
         add_padding(local_string);
-        memory_monitor.add_memory(local_string, "local_string");
+        memory_monitor.add_memory(local_string, "string");
 
         // figure out lengths of the other strings
         auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
@@ -356,6 +361,7 @@ public:
 
         stats.max_depth = std::max(stats.max_depth, recursion_depth);
         stats.string_sizes.push_back(total_chars);
+        stats.local_string_sizes.push_back(local_string.size());
 
         // number of chars before processor i
         std::vector<int> chars_before(comm.size());
@@ -367,10 +373,10 @@ public:
         // n0 + n2 to account for possible dummy sample of n1
         int64_t num_samples = num_mod[0] + num_mod[2];
 
-        memory_monitor.remove_memory(local_string, "shift_left_string");
+        memory_monitor.remove_memory(local_string, "shift_string");
         mpi_util::shift_entries_left(local_string, 2, comm);
         local_string.shrink_to_fit();
-        memory_monitor.add_memory(local_string, "shift_left_string");
+        memory_monitor.add_memory(local_string, "shift_string");
 
 
         std::vector<SampleString> local_samples =
@@ -393,17 +399,17 @@ public:
 
         // adds a dummy sample for last process
         KASSERT(local_string.size() >= 1u);
-        memory_monitor.remove_memory(local_samples, "shift_left_samples");
+        memory_monitor.remove_memory(local_samples, "shift_samples");
         SampleString recv_sample = mpi_util::shift_left(local_samples.front(), comm);
         local_samples.push_back(recv_sample);
         local_samples.shrink_to_fit();
-        memory_monitor.add_memory(local_samples, "shift_left_samples");
+        memory_monitor.add_memory(local_samples, "shift_samples");
 
         std::vector<RankIndex> local_ranks =
             compute_lexicographic_ranks(local_samples, num_samples);
 
         // free memory of samples
-        memory_monitor.remove_memory(local_samples, "samples_delete");
+        memory_monitor.remove_memory(local_samples, "samples");
         local_samples.clear();
         local_samples.shrink_to_fit();
 
@@ -484,9 +490,11 @@ public:
 
         auto get_index = [](MergeSamples& m) { return m.index; };
         std::vector<int> local_SA = extract_attribute<MergeSamples, int>(merge_samples, get_index);
-        memory_monitor.add_memory(local_SA, "SA");
+        memory_monitor.add_memory(local_SA, "SA"); 
 
         clean_up(local_string);
+
+        memory_monitor.remove_memory(merge_samples, "merge_samples");
 
         timer.stop(); // pdc3
 
@@ -501,14 +509,25 @@ public:
         comm.barrier();
     }
 
-    void report_memory() {
+    void report_memory(bool print_history = false) {
         comm.barrier();
-        // std::string msg = "History \n" + memory_monitor.history_mb_to_string() + "\n";
-        // print_result_on_root(msg, comm);
+        if (print_history) {
+            std::string msg = "History \n" + memory_monitor.history_mb_to_string() + "\n";
+            print_result_on_root(msg, comm);
+        }
 
         MemoryKey peak_memory = memory_monitor.get_peak_memory();
         std::string msg2 = "Memory peak: " + peak_memory.to_string_mb();
         print_result(msg2, comm);
+
+        int64_t local_string_bytes = stats.local_string_sizes.front() * sizeof(int);
+        double blow_up_factor = (double)peak_memory.get_memory_bytes() / local_string_bytes;
+        std::stringstream ss;
+        ss << "Blow up factor: " << std::fixed << std::setprecision(2) << blow_up_factor << "\n";
+        print_result(ss.str(), comm);
+
+        std::cout << "size vec: " << sizeof(std::vector<MergeSamples>) << "\n";
+
         comm.barrier();
     }
 

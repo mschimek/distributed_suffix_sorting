@@ -13,6 +13,8 @@ struct MemoryKey {
     int64_t memory;
     std::string key;
 
+    int64_t get_memory_bytes() const { return memory; }
+
     double get_memory_mb() const {
         double memory_mb = (double)memory / 1e6;
         return memory_mb;
@@ -50,14 +52,14 @@ struct MemoryMonitor {
     void add_memory(std::vector<T>& vec, std::string key = "") {
         int64_t memory = get_memory_vector(vec);
         current_memory += memory;
-        memory_history.push_back({current_memory, key});
+        memory_history.push_back({current_memory, "add_"+ key});
     }
 
     template <typename T>
     void remove_memory(std::vector<T>& vec, std::string key = "") {
         int64_t memory = get_memory_vector(vec);
         current_memory -= memory;
-        memory_history.push_back({current_memory, key});
+        memory_history.push_back({current_memory, "rm_" + key});
     }
 
     std::string history_mb_to_string() {
