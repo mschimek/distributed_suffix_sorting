@@ -128,7 +128,7 @@ bool operator<(const MergeSamples& a, const MergeSamples& b) {
 
 class PDC3 {
 public:
-    PDC3(Communicator<>& _comm) : comm(_comm), recursion_depth(0) {}
+    PDC3(Communicator<>& _comm) : comm(_comm) {}
 
     // maps the index i from a recursive dc3 call back to the global index
     int map_back(int i, int n) {
@@ -526,8 +526,6 @@ public:
         ss << "Blow up factor: " << std::fixed << std::setprecision(2) << blow_up_factor << "\n";
         print_result(ss.str(), comm);
 
-        std::cout << "size vec: " << sizeof(std::vector<MergeSamples>) << "\n";
-
         comm.barrier();
     }
 
@@ -549,13 +547,14 @@ public:
         memory_monitor.reset();
         recursion_depth = 0;
         stats.reset();
+        timer.clear();
     }
 
     Communicator<>& comm;
     measurements::Timer<Communicator<>> timer;
     MemoryMonitor memory_monitor;
-    int recursion_depth;
     Statistics stats;
+    int recursion_depth;
 };
 
 } // namespace dsss::dc3

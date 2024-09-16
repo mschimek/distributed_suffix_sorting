@@ -118,6 +118,7 @@ void run_pdc3(Communicator<>& comm) {
     std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
 
     dc3::PDC3 pdc3(comm);
+    pdc3.reset();
     auto sa = pdc3.call_pdc3(local_data);
 
     pdc3.report_time();

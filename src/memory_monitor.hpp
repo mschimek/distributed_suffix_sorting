@@ -45,7 +45,7 @@ struct MemoryMonitor {
 
     template <typename T>
     int64_t get_memory_vector(std::vector<T>& v) const {
-        return sizeof(T) * v.capacity();
+        return sizeof(T) * v.capacity() + sizeof(std::vector<T>);
     }
 
     template <typename T>
