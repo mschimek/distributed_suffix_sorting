@@ -170,7 +170,7 @@ public:
 
         // compute local sample strings
         std::vector<SampleString> local_samples;
-        int size_estimate = ((local_string.size() + 2) / 3) * 2; 
+        int size_estimate = ((local_string.size() + 2) / 3) * 2;
         local_samples.reserve(size_estimate);
 
         for (uint i = 0; i + 2 < local_string.size(); i++) {
@@ -269,15 +269,14 @@ public:
 
     // sequential SACA and sequential computation ranks computation on root process
     void sequential_sa_and_local_ranks(std::vector<RankIndex>& local_ranks,
-                                       std::vector<size_t>& chars_at_proc,
+                                       int local_sample_size,
                                        int total_chars) {
         std::vector<RankIndex> global_ranks = comm.gatherv(send_buf(local_ranks));
         std::vector<int> SA;
         if (comm.rank() == 0) {
-            std::vector<int> ranks;
-            for (auto [rank, index]: global_ranks) {
-                ranks.push_back(rank);
-            }
+            auto get_rank = [](RankIndex& r) -> int { return r.rank; };
+            std::vector<int> ranks = extract_attribute<RankIndex, int>(global_ranks, get_rank);
+
             // TODO: better sequential SACA
             SA = slow_suffixarray(ranks);
             global_ranks.clear();
@@ -285,31 +284,13 @@ public:
                 int global_index = map_back(SA[i], total_chars);
                 global_ranks.emplace_back(i + 1, global_index);
             }
+            std::sort(global_ranks.begin(), global_ranks.end(), cmp_by_index);
         }
 
-        std::sort(global_ranks.begin(), global_ranks.end(), cmp_by_index);
-        // alternative
-        // local_ranks = mpi_util::distribute_data_custom(global_ranks, local_sample_size, comm);
-
+        memory_monitor.remove_memory(local_ranks, "seq_ranks");
         local_ranks.clear();
-        // send to each processor the size of its local_string
-        // only relevant to root
-        std::vector<int> send_cnts(comm.size());
-        for (uint i = 0; i < global_ranks.size(); i++) {
-            int index = global_ranks[i].index;
-            // check to which process this index belongs
-            for (int j = 0; j < (int)comm.size(); j++) {
-                if (index < (int)chars_at_proc[j]) {
-                    send_cnts[j]++;
-                    break;
-                }
-                index -= chars_at_proc[j];
-            }
-        }
-
-        comm.scatterv(send_buf(global_ranks),
-                      recv_buf<resize_to_fit>(local_ranks),
-                      send_counts(send_cnts));
+        local_ranks = mpi_util::distribute_data_custom(global_ranks, local_sample_size, comm);
+        memory_monitor.add_memory(local_ranks, "seq_ranks");
     }
 
     std::vector<int> pdc3(std::vector<int>& local_string);
@@ -347,8 +328,8 @@ public:
     }
 
     constexpr static bool DBG = false;
-    constexpr static bool REPORT_TIME = true;
-    constexpr static bool REPORT_MEMORY = true;
+    constexpr static bool REPORT_TIME = false;
+    constexpr static bool REPORT_MEMORY = false;
 
     std::vector<int> call_pdc3(std::vector<int>& local_string) {
         timer.start("pdc3");
@@ -376,7 +357,7 @@ public:
         mpi_util::shift_entries_left(local_string, 2, comm);
         local_string.shrink_to_fit();
         memory_monitor.add_memory(local_string, "shift_left_string");
-        
+
 
         std::vector<SampleString> local_samples =
             compute_sample_strings(local_string, chars_before[process_rank], total_chars);
@@ -436,7 +417,7 @@ public:
             // can happen for small inputs
             KASSERT(local_ranks.size() >= 2u);
 
-            constexpr bool use_recursion = true;
+            constexpr bool use_recursion = false;
             if (use_recursion) {
                 handle_recursive_call(local_ranks, total_chars);
 
@@ -451,7 +432,9 @@ public:
                     mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
                 memory_monitor.add_memory(local_ranks, "ranks_dist");
             } else {
-                sequential_sa_and_local_ranks(local_ranks, chars_at_proc, total_chars);
+                timer.start("sequential_SA");
+                sequential_sa_and_local_ranks(local_ranks, local_sample_size, total_chars);
+                timer.stop();
             }
         }
 

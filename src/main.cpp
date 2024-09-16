@@ -19,9 +19,9 @@
 #include <mpi.h>
 
 #include "kamping/communicator.hpp"
-#include "kamping/named_parameters.hpp"
-#include "kamping/measurements/timer.hpp"
 #include "kamping/measurements/printer.hpp"
+#include "kamping/measurements/timer.hpp"
+#include "kamping/named_parameters.hpp"
 #include "pdc3.hpp"
 #include "printing.hpp"
 #include "sa_check.hpp"
@@ -99,30 +99,38 @@ void run_pdc3(std::vector<int>& local_data, kamping::Communicator<>& comm) {
         kamping::print_vector(global_sa);
     }
 }
+
+void run_tests_pdc3(kamping::Communicator<>& comm) {
+    test_pdc3(100, 99, 2, comm);
+    test_pdc3(100, 100, 2, comm);
+    test_pdc3(100, 101, 2, comm);
+    test_pdc3(100, 99, 6, comm);
+    test_pdc3(100, 100, 6, comm);
+    test_pdc3(100, 101, 6, comm);
+}
+
+
 int main() {
     using namespace kamping;
     kamping::Environment e;
     Communicator comm;
 
-    // test_pdc3(100, 99, 2, comm);
-    // test_pdc3(100, 100, 2, comm);
-    // test_pdc3(100, 101, 2, comm);
-    // test_pdc3(100, 99, 6, comm);
-    // test_pdc3(100, 100, 6, comm);
-    // test_pdc3(100, 101, 6, comm);
+    run_tests_pdc3(comm);
 
-    int n = 1e5 / comm.size();
-    int alphabet_size = 3;
-    int seed = comm.rank();
-    std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
 
-    dc3::PDC3 pdc3(comm);
-    auto sa = pdc3.call_pdc3(local_data);
+    // int n = 1e5 / comm.size();
+    // int alphabet_size = 3;
+    // int seed = comm.rank();
+    // std::vector<int> local_data = test::generate_random_data(n, alphabet_size, seed);
 
-    bool sa_ok = check_suffixarray(sa, local_data, comm);
-    if (comm.rank() == 0) {
-        std::cout << "sa_ok: " << sa_ok << "\n";
-    }
+    // dc3::PDC3 pdc3(comm);
+    // auto sa = pdc3.call_pdc3(local_data);
+
+    // bool sa_ok = check_suffixarray(sa, local_data, comm);
+    // if (comm.rank() == 0) {
+    //     std::cout << "sa_ok: " << sa_ok << "\n";
+    // }
+
 
     return 0;
 }

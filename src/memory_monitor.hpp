@@ -60,7 +60,6 @@ struct MemoryMonitor {
         memory_history.push_back({current_memory, key});
     }
 
-
     std::string history_mb_to_string() {
         std::string out = "";
         for (auto& m: memory_history) {
