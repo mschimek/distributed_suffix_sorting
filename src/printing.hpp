@@ -73,8 +73,11 @@ void print_on_root(std::string const& str, Communicator const& comm) {
 }
 
 // concatenated local vectors and print contents
-template <typename Communicator, typename T>
-void print_concatenated(T const& local_data, Communicator const& comm, std::string msg = "") {
+template <typename T>
+void print_concatenated(T const& local_data,
+                        Communicator<> const& comm,
+                        std::string msg = "",
+                        std::string sep = " ") {
     auto [recv_buffer, recv_counts] = comm.allgatherv(send_buf(local_data), recv_counts_out());
     if (comm.is_root()) {
         int i = 0;
@@ -83,7 +86,7 @@ void print_concatenated(T const& local_data, Communicator const& comm, std::stri
         for (int cnt: recv_counts) {
             std::cout << "[PE " << rank << "] ";
             for (int j = 0; j < cnt; j++) {
-                std::cout << recv_buffer[i++] << " ";
+                std::cout << recv_buffer[i++] << sep;
             }
             std::cout << "\n";
             rank++;
@@ -92,10 +95,41 @@ void print_concatenated(T const& local_data, Communicator const& comm, std::stri
     }
 }
 
+
+void print_concatenated_string(std::string const& local_str,
+                               Communicator<> const& comm,
+                               std::string msg = "") {
+    std::vector<char> chars(local_str.begin(), local_str.end());
+    print_concatenated(chars, comm, msg, "");
+}
+
+// T must implement to_string
 template <typename T>
-void print_vector(std::vector<T>& v) {
-    for (auto& x: v) {
-        std::cout << x << " ";
+void print_concatenated_string(std::vector<T> const& local_data,
+                               Communicator<> const& comm,
+                               std::string msg = "") {
+    std::string local_str;
+    bool is_first = true;
+    for (auto& x: local_data) {
+        if (!is_first) {
+            local_str += ' ';
+        }
+        local_str += x.to_string();
+        is_first = false;
+    }
+    print_concatenated_string(local_str, comm, msg);
+}
+
+
+// template <typename Container, typename T>
+void print_vector(auto& vec, std::string sep = " ") {
+    bool is_first = true;
+    for (auto& x: vec) {
+        if (!is_first) {
+            std::cout << sep;
+        }
+        is_first = false;
+        std::cout << x;
     }
     std::cout << "\n";
 }

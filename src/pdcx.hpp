@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "difference_cover.hpp"
 #include "kamping/collectives/allgather.hpp"
 #include "kamping/collectives/barrier.hpp"
 #include "kamping/collectives/bcast.hpp"
@@ -26,11 +25,12 @@
 #include "sort.hpp"
 #include "util.hpp"
 
-namespace dsss::dc3 {
+namespace dsss::dcx {
 
 using namespace kamping;
 
 struct Statistics {
+    Statistics() : max_depth(0) {}
     void reset() {
         max_depth = 0;
         string_sizes.clear();
@@ -39,7 +39,7 @@ struct Statistics {
         char_type_used.clear();
     }
 
-    int max_depth = 0;
+    int max_depth;
     std::vector<uint64_t> local_string_sizes;
     std::vector<uint64_t> string_sizes;
     std::vector<uint64_t> highest_ranks;
@@ -52,16 +52,19 @@ inline Statistics& get_stats_instance() {
     return stats;
 }
 
-template <typename char_type, typename index_type>
-class PDC3 {
+template <typename char_type, typename index_type, typename DC>
+class PDCX {
     struct SampleString {
-        SampleString() : letters({0, 0, 0}), index(0) {}
-        SampleString(std::array<char_type, 3> _letters, index_type _index)
+        SampleString() {
+            letters.fill(0);
+            index = 0;
+        }
+        SampleString(std::array<char_type, DC::X> _letters, index_type _index)
             : letters(_letters),
               index(_index) {}
 
         bool operator<(const SampleString& other) const {
-            for (uint i = 0; i < letters.size(); i++) {
+            for (uint i = 0; i < DC::X; i++) {
                 if (letters[i] != other.letters[i]) {
                     return letters[i] < other.letters[i];
                 }
@@ -71,12 +74,15 @@ class PDC3 {
 
         std::string to_string() const {
             std::stringstream ss;
-            auto [a, b, c] = letters;
-            ss << "(" << a << "," << b << "," << c << ") " << index;
+            ss << "(" << letters[0];
+            for (uint i = 1; i < DC::X; i++) {
+                ss << " " << letters[i];
+            }
+            ss << ") " << index;
             return ss.str();
         }
 
-        std::array<char_type, 3> letters;
+        std::array<char_type, DC::X> letters;
         index_type index;
     };
 
@@ -87,15 +93,14 @@ class PDC3 {
         static bool cmp_by_index(const RankIndex& a, const RankIndex& b) {
             return a.index < b.index;
         }
-        static bool cmp_mod_div_3(const RankIndex& a, const RankIndex& b) {
-            const int a_mod3 = a.index % 3;
-            const int b_mod3 = b.index % 3;
-            if (a_mod3 != b_mod3) {
-                return a_mod3 < b_mod3;
+        static bool cmp_mod_div(const RankIndex& a, const RankIndex& b) {
+            const int a_mod = a.index % DC::X;
+            const int b_mod = b.index % DC::X;
+            if (a_mod != b_mod) {
+                return a_mod < b_mod;
             }
-            return a.index / 3 < b.index / 3;
+            return a.index / DC::X < b.index / DC::X;
         }
-
         std::string to_string() const {
             std::stringstream ss;
             ss << "(" << rank << " " << index << ")";
@@ -104,23 +109,35 @@ class PDC3 {
     };
 
     struct MergeSamples {
-        MergeSamples() : chars({0, 0}), ranks({0, 0}), index(0) {}
-        MergeSamples(
-            char_type char1, char_type char2, index_type rank1, index_type rank2, index_type idx)
-            : chars({char1, char2}),
-              ranks({rank1, rank2}),
-              index(idx) {}
+        MergeSamples() {
+            index = 0;
+            chars.fill(0);
+            ranks.fill(0);
+        }
+        MergeSamples(std::array<char_type, DC::X - 1> _chars,
+                     std::array<index_type, DC::D> _ranks,
+                     index_type _index)
+            : chars(_chars),
+              ranks(_ranks),
+              index(_index) {}
 
-        std::string to_string() {
+        std::string to_string() const {
             std::stringstream ss;
-            ss << "((" << chars[0] << " " << chars[1] << ") (" << ranks[0] << " " << ranks[1]
-               << ") " << index << ")";
+            ss << "((" << chars[0];
+            for (uint i = 1; i < DC::X - 1; i++) {
+                ss << " " << chars[i];
+            }
+            ss << ") (" << ranks[0];
+            for (uint i = 1; i < DC::D; i++) {
+                ss << " " << ranks[i];
+            }
+            ss << ") " << index << ")";
             return ss.str();
         }
         bool operator<(const MergeSamples& b) const {
-            index_type i1 = index % 3;
-            index_type i2 = b.index % 3;
-            auto [d, r1, r2] = DC3Param::cmpDepthRanks[i1][i2];
+            index_type i1 = index % DC::X;
+            index_type i2 = b.index % DC::X;
+            auto [d, r1, r2] = DC::cmpDepthRanks[i1][i2];
 
             // compare first d chars
             for (int k = 0; k < d; k++) {
@@ -133,84 +150,108 @@ class PDC3 {
             return ranks[r1] < b.ranks[r2];
         }
 
-        std::array<char_type, 2> chars;
-        std::array<index_type, 2> ranks;
+        std::array<char_type, DC::X - 1> chars;
+        std::array<index_type, DC::D> ranks;
         index_type index;
     };
 
 public:
-    PDC3(Communicator<>& _comm)
+    PDCX(Communicator<>& _comm)
         : comm(_comm),
           timer(measurements::timer()),
           memory_monitor(monitor::get_monitor_instance()),
-          stats(get_stats_instance()) {}
+          stats(get_stats_instance()),
+          recursion_depth(0) {}
 
-    // maps the index i from a recursive dc3 call back to the global index
-    index_type map_back(index_type i, index_type n) {
-        index_type n0 = (n + 2) / 3;
-        return i < n0 ? 3 * i + 1 : 3 * (i - n0) + 2;
+    // maps the index i from a recursive dcx call back to the global index
+    index_type map_back(index_type idx,
+                        index_type total_chars,
+                        std::array<index_type, DC::D + 1>& samples_before) {
+        // find interval into which index belongs
+        for (uint i = 0; i < DC::D; i++) {
+            if (idx < samples_before[i + 1]) {
+                index_type d = DC::DC[i];
+                index_type k = idx - samples_before[i];
+                return DC::X * k + d;
+            }
+        }
+        KASSERT(false);
+        return 0;
     }
 
     void add_padding(std::vector<char_type>& local_data) {
         constexpr char_type padding = 0;
         if (comm.rank() == comm.size() - 1) {
-            local_data.push_back(padding);
-            local_data.push_back(padding);
-            local_data.push_back(padding);
+            std::fill_n(std::back_inserter(local_data), DC::X, padding);
         }
     }
     void remove_padding(std::vector<char_type>& local_data) {
         if (comm.rank() == comm.size() - 1) {
-            local_data.pop_back();
-            local_data.pop_back();
-            local_data.pop_back();
+            local_data.resize(local_data.size() - DC::X);
         }
     }
 
     void clean_up(std::vector<char_type>& local_string) {
         // revert changes made to local string by left shift
         if (comm.rank() < comm.size() - 1) {
-            local_string.pop_back();
-            local_string.pop_back();
+            local_string.resize(local_string.size() - DC::X + 1);
         }
         remove_padding(local_string);
     }
 
-    // compute samples strings of length 3 according to difference cover {1, 2}
+    bool is_in_dc(uint64_t idx) const {
+        // simple scan sufficient for small difference cover
+        for (auto d: DC::DC) {
+            if (idx == d) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::array<index_type, DC::X> compute_num_pos_mod(index_type total_chars) const {
+        constexpr index_type X = DC::X;
+        std::array<index_type, X> num_pos_mod;
+        num_pos_mod.fill(0);
+        for (index_type i = 0; i < X; i++) {
+            num_pos_mod[i] = (total_chars + X - 1 - i) / X;
+        }
+        return num_pos_mod;
+    }
+
+    // compute samples strings of length X according to difference cover DC::DC
     std::vector<SampleString> compute_sample_strings(std::vector<char_type>& local_string,
                                                      index_type chars_before,
                                                      index_type total_chars) {
-        // position of first mod 0 character
-        uint64_t offset = chars_before % 3;
-        offset = (3 - offset) % 3;
+        constexpr uint32_t X = DC::X;
+        constexpr uint32_t D = DC::D;
 
         // compute local sample strings
         std::vector<SampleString> local_samples;
-        uint64_t size_estimate = ((local_string.size() + 2) / 3) * 2;
+        uint64_t size_estimate = ((local_string.size() + X - 1) / X) * D;
         local_samples.reserve(size_estimate);
 
-        for (uint64_t i = 0; i + 2 < local_string.size(); i++) {
-            if (i % 3 != offset) {
+        uint64_t offset = chars_before % X;
+        for (uint64_t i = 0; i + X - 1 < local_string.size(); i++) {
+            uint64_t m = (i + offset) % X;
+            if (is_in_dc(m)) {
                 index_type index = chars_before + i;
-                std::array<char_type, 3> letters = {local_string[i],
-                                                    local_string[i + 1],
-                                                    local_string[i + 2]};
+                std::array<char_type, X> letters;
+                for (uint k = 0; k < X; k++) {
+                    letters[k] = local_string[i + k];
+                }
                 local_samples.push_back(SampleString(letters, index));
             }
         }
-        // keep a padding sample for last process of in case n mod 3 == 1
-        std::array<char_type, 3> padding = {0, 0, 0};
-        const bool is_last_rank = comm.rank() == comm.size() - 1;
-        if (is_last_rank && total_chars % 3 != 1 && local_samples.back().letters == padding) {
-            local_samples.pop_back();
-        }
+        // last process adds a dummy sample if remainder of some differrence cover element aligns
+        // with the string length
+
         memory_monitor.add_memory(local_samples, "samples");
         return local_samples;
     }
 
     // create lexicographic ranks using a prefix sum
-    std::vector<RankIndex> compute_lexicographic_ranks(std::vector<SampleString>& local_samples,
-                                                       uint64_t num_samples) {
+    std::vector<RankIndex> compute_lexicographic_ranks(std::vector<SampleString>& local_samples) {
         std::vector<RankIndex> local_ranks;
 
         // exclude sample from process i + 1
@@ -226,9 +267,6 @@ public:
             prev_rank += changed;
         }
 
-        // TODO: remove this code later
-        mpi_util::check_expected_size(num_samples, local_ranks.size(), comm);
-
         // shift ranks by 1 + prefix sum
         uint64_t ranks_before = mpi_util::ex_prefix_sum(prev_rank, comm);
         std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
@@ -238,31 +276,37 @@ public:
         return local_ranks;
     }
 
+
     std::vector<MergeSamples> construct_merge_samples(std::vector<char_type>& local_string,
                                                       std::vector<RankIndex>& local_ranks,
                                                       uint64_t chars_before,
                                                       uint64_t chars_at_proc) {
+        constexpr uint32_t X = DC::X;
+        constexpr uint32_t D = DC::D;
         uint64_t pos = 0;
         std::vector<MergeSamples> merge_samples;
         merge_samples.reserve(chars_at_proc);
 
         // for each index in local string
         for (uint64_t local_index = 0; local_index < chars_at_proc; local_index++) {
-            // find next position in difference cover
+            // find next index in difference cover
             while (local_index > local_ranks[pos].index - chars_before) {
                 pos++;
                 KASSERT(pos < local_ranks.size());
             }
             uint64_t global_index = local_index + chars_before;
 
-            KASSERT(local_index + 1 < local_string.size());
-            KASSERT(pos + 1 < local_ranks.size());
-
-            char_type char1 = local_string[local_index];
-            char_type char2 = local_string[local_index + 1];
-            index_type rank1 = local_ranks[pos].rank;
-            index_type rank2 = local_ranks[pos + 1].rank;
-            merge_samples.emplace_back(char1, char2, rank1, rank2, global_index);
+            KASSERT(local_index + X - 2 < local_string.size());
+            KASSERT(pos + D - 1 < local_ranks.size());
+            std::array<char_type, X - 1> chars;
+            std::array<index_type, D> ranks;
+            for (uint32_t i = 0; i < X - 1; i++) {
+                chars[i] = local_string[local_index + i];
+            }
+            for (uint32_t i = 0; i < D; i++) {
+                ranks[i] = local_ranks[pos + i].rank;
+            }
+            merge_samples.emplace_back(chars, ranks, global_index);
         }
         memory_monitor.add_memory(merge_samples, "merge_samples");
         return merge_samples;
@@ -271,34 +315,54 @@ public:
     void dispatch_recursive_call(std::vector<RankIndex>& local_ranks,
                                  uint64_t local_sample_size,
                                  uint64_t last_rank,
-                                 uint64_t total_chars) {
-        if (total_chars <= 4 * comm.size()) {
+                                 uint64_t total_chars,
+                                 std::array<index_type, DC::D + 1>& samples_before) {
+        if (total_chars <= 80) {
             // continue with sequential algorithm
             timer.start("sequential_SA");
-            sequential_sa_and_local_ranks(local_ranks, local_sample_size, total_chars);
+            sequential_sa_and_local_ranks(local_ranks,
+                                          local_sample_size,
+                                          total_chars,
+                                          samples_before);
             timer.stop();
         } else {
             if (last_rank <= std::numeric_limits<uint8_t>::max()) {
-                handle_recursive_call<uint8_t>(local_ranks, local_sample_size, total_chars);
+                handle_recursive_call<uint8_t>(local_ranks,
+                                               local_sample_size,
+                                               total_chars,
+                                               samples_before);
             } else if (last_rank <= std::numeric_limits<uint16_t>::max()) {
-                handle_recursive_call<uint16_t>(local_ranks, local_sample_size, total_chars);
+                handle_recursive_call<uint16_t>(local_ranks,
+                                                local_sample_size,
+                                                total_chars,
+                                                samples_before);
             } else if (last_rank <= std::numeric_limits<uint32_t>::max()) {
-                handle_recursive_call<uint32_t>(local_ranks, local_sample_size, total_chars);
+                handle_recursive_call<uint32_t>(local_ranks,
+                                                local_sample_size,
+                                                total_chars,
+                                                samples_before);
             } else {
-                handle_recursive_call<uint64_t>(local_ranks, local_sample_size, total_chars);
+                handle_recursive_call<uint64_t>(local_ranks,
+                                                local_sample_size,
+                                                total_chars,
+                                                samples_before);
             }
-            // handle_recursive_call<uint32_t>(local_ranks, local_sample_size, total_chars);
+            // handle_recursive_call<uint32_t>(local_ranks,
+            //                                 local_sample_size,
+            //                                 total_chars,
+            //                                 samples_before);
         }
     }
 
     // sequential SACA and sequential computation ranks computation on root process
     void sequential_sa_and_local_ranks(std::vector<RankIndex>& local_ranks,
                                        uint64_t local_sample_size,
-                                       uint64_t total_chars) {
+                                       uint64_t total_chars,
+                                       std::array<index_type, DC::D + 1>& samples_before) {
         std::vector<RankIndex> global_ranks = comm.gatherv(send_buf(local_ranks));
         std::vector<index_type> SA;
         if (comm.rank() == 0) {
-            std::sort(global_ranks.begin(), global_ranks.end(), RankIndex::cmp_mod_div_3);
+            std::sort(global_ranks.begin(), global_ranks.end(), RankIndex::cmp_mod_div);
             auto get_rank = [](RankIndex& r) -> index_type { return r.rank; };
             std::vector<index_type> ranks =
                 extract_attribute<RankIndex, index_type>(global_ranks, get_rank);
@@ -306,8 +370,9 @@ public:
             // TODO: better sequential SACA
             SA = slow_suffixarray<index_type, index_type>(ranks);
             global_ranks.clear();
+
             for (uint64_t i = 0; i < SA.size(); i++) {
-                index_type global_index = map_back(SA[i], total_chars);
+                index_type global_index = map_back(SA[i], total_chars, samples_before);
                 global_ranks.emplace_back(i + 1, global_index);
             }
             std::sort(global_ranks.begin(), global_ranks.end(), RankIndex::cmp_by_index);
@@ -324,33 +389,39 @@ public:
     template <typename new_char_type>
     void handle_recursive_call(std::vector<RankIndex>& local_ranks,
                                uint64_t local_sample_size,
-                               uint64_t total_chars) {
-        // sort by (mod 3, div 3)
-        memory_monitor.remove_memory(local_ranks, "ranks_mod_div_3");
-        timer.start("sort_mod_div_3");
-        mpi::sort(local_ranks, RankIndex::cmp_mod_div_3, comm);
+                               uint64_t total_chars,
+                               std::array<index_type, DC::D + 1>& samples_before) {
+        // sort by (mod X, div X)
+        memory_monitor.remove_memory(local_ranks, "ranks_mod_div");
+        timer.start("sort_mod_div");
+        mpi::sort(local_ranks, RankIndex::cmp_mod_div, comm);
         timer.stop();
-        memory_monitor.add_memory(local_ranks, "ranks_mod_div_3");
+        memory_monitor.add_memory(local_ranks, "ranks_mod_div");
         KASSERT(local_ranks.size() >= 2u); // can happen for small inputs
-
 
         auto get_rank = [](RankIndex& r) -> new_char_type { return r.rank; };
         std::vector<new_char_type> recursive_string =
             extract_attribute<RankIndex, new_char_type>(local_ranks, get_rank);
         memory_monitor.add_memory(recursive_string, "recursive_string");
 
+        memory_monitor.remove_memory(recursive_string, "recursive_string_dist");
+        recursive_string =
+            mpi_util::distribute_data_custom(recursive_string, local_sample_size, comm);
+        memory_monitor.add_memory(recursive_string, "recursive_string_dist");
+
         // free memory of ranks
         memory_monitor.remove_memory(local_ranks, "ranks");
         local_ranks.clear();
         local_ranks.shrink_to_fit();
 
+        // TODO: flexible selection of DC
         // create new instance of PDC3 with templates of new char type size
-        PDC3<new_char_type, index_type> rec_pdc3(comm);
+        PDCX<new_char_type, index_type, DC> rec_pdcx(comm);
 
         // memory of SA is counted in recursive call
         recursion_depth++;
-        rec_pdc3.recursion_depth = recursion_depth;
-        std::vector<index_type> SA = rec_pdc3.compute_sa(recursive_string);
+        rec_pdcx.recursion_depth = recursion_depth;
+        std::vector<index_type> SA = rec_pdcx.compute_sa(recursive_string);
         recursion_depth--;
 
         memory_monitor.remove_memory(recursive_string, "recursive_string");
@@ -362,7 +433,7 @@ public:
 
         local_ranks.reserve(SA.size());
         for (uint64_t i = 0; i < SA.size(); i++) {
-            index_type global_index = map_back(SA[i], total_chars);
+            index_type global_index = map_back(SA[i], total_chars, samples_before);
             index_type rank = 1 + i + elements_before;
             local_ranks.emplace_back(rank, global_index);
         }
@@ -383,9 +454,10 @@ public:
     }
 
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
-        timer.start("pdc3");
-
+        timer.start("pdcx");
         const int process_rank = comm.rank();
+        constexpr uint32_t X = DC::X;
+        constexpr uint32_t D = DC::D;
 
         // figure out lengths of the other strings
         auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
@@ -395,8 +467,20 @@ public:
         std::vector<uint64_t> chars_before(comm.size());
         std::exclusive_scan(chars_at_proc.begin(), chars_at_proc.end(), chars_before.begin(), 0);
 
-        // n0 + n2 to account for possible dummy sample of n1
-        uint64_t num_samples = (total_chars + 2) / 3 + total_chars / 3;
+        // number of positions with mod X = d
+        std::array<index_type, X> num_at_mod = compute_num_pos_mod(total_chars);
+        const uint64_t rem = total_chars % X;
+        bool added_dummy = is_in_dc(rem);
+        num_at_mod[rem] += added_dummy;
+
+        // inclusive prefix sum to compute map back
+        std::array<index_type, DC::D + 1> samples_before;
+        samples_before[0] = 0;
+        for (uint i = 1; i < D + 1; i++) {
+            uint d = DC::DC[i - 1];
+            samples_before[i] = samples_before[i - 1] + num_at_mod[d];
+        }
+        uint64_t num_samples = samples_before.back();
 
         add_padding(local_string);
         memory_monitor.add_memory(local_string, "string");
@@ -408,40 +492,34 @@ public:
         stats.char_type_used.push_back(8 * sizeof(char_type));
 
         memory_monitor.remove_memory(local_string, "shift_string");
-        mpi_util::shift_entries_left(local_string, 2, comm);
+        mpi_util::shift_entries_left(local_string, X - 1, comm);
         local_string.shrink_to_fit();
         memory_monitor.add_memory(local_string, "shift_string");
 
         std::vector<SampleString> local_samples =
             compute_sample_strings(local_string, chars_before[process_rank], total_chars);
 
-
-        const uint64_t local_sample_size = local_samples.size();
-
-        // TODO: remove this code later
-        mpi_util::check_expected_size(num_samples, local_samples.size(), comm);
+        uint64_t local_sample_size = local_samples.size();
+        uint64_t total_sample_size = mpi_util::all_reduce_sum(local_sample_size, comm);
+        KASSERT(total_sample_size == num_samples);
 
         memory_monitor.remove_memory(local_samples, "samples_sort");
         timer.start("sort_local_samples");
         mpi::sort(local_samples, std::less<>{}, comm);
         timer.stop();
-
         local_samples.shrink_to_fit();
         memory_monitor.add_memory(local_samples, "samples_sort");
 
-        // can happen for small inputs
-        KASSERT(local_samples.size() > 0u);
-
-        // adds a dummy sample for last process
         KASSERT(local_string.size() >= 1u);
         memory_monitor.remove_memory(local_samples, "shift_samples");
+        // adds a dummy sample for last process
         SampleString recv_sample = mpi_util::shift_left(local_samples.front(), comm);
+
         local_samples.push_back(recv_sample);
         local_samples.shrink_to_fit();
         memory_monitor.add_memory(local_samples, "shift_samples");
 
-        std::vector<RankIndex> local_ranks =
-            compute_lexicographic_ranks(local_samples, num_samples);
+        std::vector<RankIndex> local_ranks = compute_lexicographic_ranks(local_samples);
 
         // free memory of samples
         memory_monitor.remove_memory(local_samples, "samples");
@@ -451,8 +529,7 @@ public:
         uint64_t last_rank = local_ranks.empty() ? 0 : local_ranks.back().rank;
         comm.bcast_single(send_recv_buf(last_rank), root(comm.size() - 1));
         stats.highest_ranks.push_back(last_rank);
-        bool chars_distinct = last_rank >= num_samples;
-
+        bool chars_distinct = last_rank >= total_sample_size;
 
         if (chars_distinct) {
             memory_monitor.remove_memory(local_ranks, "ranks_sort_base");
@@ -467,19 +544,22 @@ public:
             memory_monitor.add_memory(local_ranks, "ranks_dist_base");
 
         } else {
-            dispatch_recursive_call(local_ranks, local_sample_size, last_rank, total_chars);
+            dispatch_recursive_call(local_ranks,
+                                    local_sample_size,
+                                    last_rank,
+                                    total_chars,
+                                    samples_before);
         }
 
         memory_monitor.remove_memory(local_ranks, "shift_left_ranks");
-        mpi_util::shift_entries_left(local_ranks, 2, comm);
+        mpi_util::shift_entries_left(local_ranks, D, comm);
         local_ranks.shrink_to_fit();
         memory_monitor.add_memory(local_ranks, "shift_left_ranks");
 
-        // add two paddings with rank 0
         if (comm.rank() == comm.size() - 1) {
             memory_monitor.remove_memory(local_ranks, "padding");
-            local_ranks.push_back(RankIndex(0, total_chars));
-            local_ranks.push_back(RankIndex(0, total_chars));
+            RankIndex padding(0, total_chars);
+            std::fill_n(std::back_inserter(local_ranks), D, padding);
             local_ranks.shrink_to_fit();
             memory_monitor.add_memory(local_ranks, "padding");
         }
@@ -504,13 +584,12 @@ public:
         auto get_index = [](MergeSamples& m) { return m.index; };
         std::vector<index_type> local_SA =
             extract_attribute<MergeSamples, index_type>(merge_samples, get_index);
-        memory_monitor.add_memory(local_SA, "SA");
+        memory_monitor.add_memory(local_SA, "final_SA");
+        memory_monitor.remove_memory(merge_samples, "merge_samples");
 
         clean_up(local_string);
 
-        memory_monitor.remove_memory(merge_samples, "merge_samples");
-
-        timer.stop(); // pdc3
+        timer.stop(); // pdcx
 
         return local_SA;
     }
@@ -532,14 +611,13 @@ public:
 
         monitor::MemoryKey peak_memory = memory_monitor.get_peak_memory();
         std::string msg2 = "Memory peak: " + peak_memory.to_string_mb();
-        print_result(msg2, comm);
-
+        print_concatenated_string(msg2, comm);
 
         uint64_t local_string_bytes = stats.local_string_sizes.front() * sizeof(char_type);
         double blow_up_factor = (double)peak_memory.get_memory_bytes() / local_string_bytes;
         std::stringstream ss;
         ss << "Blow up factor: " << std::fixed << std::setprecision(2) << blow_up_factor << "\n";
-        print_result(ss.str(), comm);
+        print_concatenated_string(ss.str(), comm);
 
         comm.barrier();
     }
@@ -548,13 +626,15 @@ public:
         comm.barrier();
         if (comm.rank() == comm.size() - 1) {
             std::cout << "\nStatistics:\n";
-            std::cout << "max depth: " << stats.max_depth << std::endl;
-            std::cout << "string sizes: ";
-            print_vector(stats.string_sizes);
-            std::cout << "highest rank: ";
-            print_vector(stats.highest_ranks);
-            std::cout << "char type bits: ";
-            print_vector(stats.char_type_used);
+            std::cout << "algo=DC" << DC::X << std::endl;
+            std::cout << "num_proc=" << comm.size() << std::endl;
+            std::cout << "max_depth=" << stats.max_depth << std::endl;
+            std::cout << "string_sizes=";
+            print_vector(stats.string_sizes, ",");
+            std::cout << "highest_ranks=";
+            print_vector(stats.highest_ranks, ",");
+            std::cout << "char_type_bits=";
+            print_vector(stats.char_type_used, ",");
             std::cout << "\n";
         }
         comm.barrier();
@@ -577,4 +657,4 @@ public:
     int recursion_depth;
 };
 
-} // namespace dsss::dc3
+} // namespace dsss::dcx
