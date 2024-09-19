@@ -191,8 +191,8 @@ public:
         }
     }
 
+    // revert changes made to local string by left shift
     void clean_up(std::vector<char_type>& local_string) {
-        // revert changes made to local string by left shift
         if (comm.rank() < comm.size() - 1) {
             local_string.resize(local_string.size() - DC::X + 1);
         }
@@ -209,6 +209,7 @@ public:
         return false;
     }
 
+    // computes how many chars are at position with a remainder
     std::array<index_type, DC::X> compute_num_pos_mod(index_type total_chars) const {
         constexpr index_type X = DC::X;
         std::array<index_type, X> num_pos_mod;
@@ -298,6 +299,7 @@ public:
 
             KASSERT(local_index + X - 2 < local_string.size());
             KASSERT(pos + D - 1 < local_ranks.size());
+
             std::array<char_type, X - 1> chars;
             std::array<index_type, D> ranks;
             for (uint32_t i = 0; i < X - 1; i++) {
@@ -319,12 +321,10 @@ public:
                                  std::array<index_type, DC::D + 1>& samples_before) {
         if (total_chars <= 80) {
             // continue with sequential algorithm
-            timer.start("sequential_SA");
             sequential_sa_and_local_ranks(local_ranks,
                                           local_sample_size,
                                           total_chars,
                                           samples_before);
-            timer.stop();
         } else {
             if (last_rank <= std::numeric_limits<uint8_t>::max()) {
                 handle_recursive_call<uint8_t>(local_ranks,
@@ -393,7 +393,7 @@ public:
                                std::array<index_type, DC::D + 1>& samples_before) {
         // sort by (mod X, div X)
         memory_monitor.remove_memory(local_ranks, "ranks_mod_div");
-        timer.start("sort_mod_div");
+        timer.synchronize_and_start("phase_03_sort_mod_div");
         mpi::sort(local_ranks, RankIndex::cmp_mod_div, comm);
         timer.stop();
         memory_monitor.add_memory(local_ranks, "ranks_mod_div");
@@ -443,7 +443,7 @@ public:
         SA.shrink_to_fit();
 
         memory_monitor.remove_memory(local_ranks, "ranks_sort");
-        timer.start("sort_ranks_index");
+        timer.synchronize_and_start("phase_02_sort_ranks_index");
         mpi::sort(local_ranks, RankIndex::cmp_by_index, comm);
         timer.stop();
         memory_monitor.add_memory(local_ranks, "ranks_sort");
@@ -454,10 +454,14 @@ public:
     }
 
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
-        timer.start("pdcx");
+        timer.synchronize_and_start("pdcx");
+
         const int process_rank = comm.rank();
         constexpr uint32_t X = DC::X;
         constexpr uint32_t D = DC::D;
+
+        //******* Start Phase 0: Preparation  ********
+        timer.synchronize_and_start("phase_00_preparation");
 
         // figure out lengths of the other strings
         auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
@@ -491,6 +495,13 @@ public:
         stats.local_string_sizes.push_back(local_string.size());
         stats.char_type_used.push_back(8 * sizeof(char_type));
 
+        timer.stop();
+        //******* End Phase 0: Preparation  ********
+
+
+        //******* Start Phase 1: Construct Samples  ********
+        timer.synchronize_and_start("phase_01_samples");
+
         memory_monitor.remove_memory(local_string, "shift_string");
         mpi_util::shift_entries_left(local_string, X - 1, comm);
         local_string.shrink_to_fit();
@@ -504,17 +515,23 @@ public:
         KASSERT(total_sample_size == num_samples);
 
         memory_monitor.remove_memory(local_samples, "samples_sort");
-        timer.start("sort_local_samples");
+        timer.synchronize_and_start("phase_01_sort_local_samples");
         mpi::sort(local_samples, std::less<>{}, comm);
         timer.stop();
         local_samples.shrink_to_fit();
         memory_monitor.add_memory(local_samples, "samples_sort");
 
+        timer.stop();
+        //******* End Phase 1: Construct Samples  ********
+
+
+        //******* Start Phase 2: Construct Ranks  ********
+        timer.synchronize_and_start("phase_02_ranks");
+
+        // adds a dummy sample for last process
         KASSERT(local_string.size() >= 1u);
         memory_monitor.remove_memory(local_samples, "shift_samples");
-        // adds a dummy sample for last process
         SampleString recv_sample = mpi_util::shift_left(local_samples.front(), comm);
-
         local_samples.push_back(recv_sample);
         local_samples.shrink_to_fit();
         memory_monitor.add_memory(local_samples, "shift_samples");
@@ -531,9 +548,15 @@ public:
         stats.highest_ranks.push_back(last_rank);
         bool chars_distinct = last_rank >= total_sample_size;
 
+        timer.stop();
+        //******* End Phase 2: Construct Ranks  ********
+
+        //******* Start Phase 3: Recursive Call  ********
+        timer.synchronize_and_start("phase_03_recursion");
+
         if (chars_distinct) {
             memory_monitor.remove_memory(local_ranks, "ranks_sort_base");
-            timer.start("sort_local_ranks_index_base");
+            timer.synchronize_and_start("phase_03_sort_index_base");
             mpi::sort(local_ranks, RankIndex::cmp_by_index, comm);
             timer.stop();
             memory_monitor.add_memory(local_ranks, "ranks_sort_base");
@@ -550,6 +573,11 @@ public:
                                     total_chars,
                                     samples_before);
         }
+        timer.stop();
+        //******* End Phase 3: Recursive Call  ********
+
+        //******* Start Phase 4: Merge Suffixes  ********
+        timer.synchronize_and_start("phase_04_merge");
 
         memory_monitor.remove_memory(local_ranks, "shift_left_ranks");
         mpi_util::shift_entries_left(local_ranks, D, comm);
@@ -576,7 +604,7 @@ public:
         local_ranks.shrink_to_fit();
 
         memory_monitor.remove_memory(merge_samples, "merge_samples_sort");
-        timer.start("sort_merge_samples");
+        timer.synchronize_and_start("phase_04_sort_merge_samples");
         mpi::sort(merge_samples, std::less<>{}, comm);
         timer.stop();
         memory_monitor.add_memory(merge_samples, "merge_samples_sort");
@@ -586,6 +614,9 @@ public:
             extract_attribute<MergeSamples, index_type>(merge_samples, get_index);
         memory_monitor.add_memory(local_SA, "final_SA");
         memory_monitor.remove_memory(merge_samples, "merge_samples");
+
+        timer.stop();
+        //******* End Phase 4: Merge Suffixes  ********
 
         clean_up(local_string);
 

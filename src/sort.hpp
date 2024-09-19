@@ -88,62 +88,59 @@ inline void sort(std::vector<DataType>& local_data, Compare comp, kamping::Commu
         comm.alltoallv(kamping::send_buf(local_data), kamping::send_counts(interval_sizes));
 
     //   if (false && local_data.size() > 1024 * 1024) {
-    //     std::vector<decltype(local_data.cbegin())> string_it(comm.size(),
-    //                                                          local_data.cbegin());
-    //     std::vector<decltype(local_data.cbegin())> end_it(
-    //         comm.size(), local_data.cbegin() + receiving_sizes[0]);
+    constexpr bool use_loser_tree = true;
+    if (use_loser_tree) {
+        std::vector<decltype(local_data.cbegin())> string_it(comm.size(), local_data.cbegin());
+        std::vector<decltype(local_data.cbegin())> end_it(comm.size(),
+                                                          local_data.cbegin() + receiving_sizes[0]);
 
-    //     [[maybe_unused]] size_t received_elements = receiving_sizes[0];
-    //     for (size_t i = 1; i < comm.size(); ++i) {
-    //       string_it[i] = string_it[i - 1] + receiving_sizes[i - 1];
-    //       received_elements += receiving_sizes[i];
-    //       end_it[i] = end_it[i - 1] + receiving_sizes[i];
-    //     }
+        [[maybe_unused]] size_t received_elements = receiving_sizes[0];
+        for (size_t i = 1; i < comm.size(); ++i) {
+            string_it[i] = string_it[i - 1] + receiving_sizes[i - 1];
+            received_elements += receiving_sizes[i];
+            end_it[i] = end_it[i - 1] + receiving_sizes[i];
+        }
 
-    //     struct item_compare {
-    //       item_compare(Compare compare) : comp_(compare) {}
+        struct item_compare {
+            item_compare(Compare compare) : comp_(compare) {}
 
-    //       bool operator()(const DataType& a, const DataType& b) {
-    //         return comp_(a, b);
-    //       }
+            bool operator()(const DataType& a, const DataType& b) { return comp_(a, b); }
 
-    //      private:
-    //       Compare comp_;
-    //     };  // struct item_compare
+        private:
+            Compare comp_;
+        }; // struct item_compare
 
-    //     tlx::LoserTreeCopy<false, DataType, item_compare> lt(comm.size(),
-    //                                                          item_compare(comp));
+        tlx::LoserTreeCopy<false, DataType, item_compare> lt(comm.size(), item_compare(comp));
 
-    //     size_t filled_sources = 0;
-    //     for (size_t i = 0; i < comm.size(); ++i) {
-    //       if (string_it[i] >= end_it[i]) {
-    //         lt.insert_start(nullptr, i, true);
-    //       } else {
-    //         lt.insert_start(&*string_it[i], i, false);
-    //         ++filled_sources;
-    //       }
-    //     }
+        size_t filled_sources = 0;
+        for (size_t i = 0; i < comm.size(); ++i) {
+            if (string_it[i] >= end_it[i]) {
+                lt.insert_start(nullptr, i, true);
+            } else {
+                lt.insert_start(&*string_it[i], i, false);
+                ++filled_sources;
+            }
+        }
 
-    //     lt.init();
+        lt.init();
 
-    //     std::vector<DataType> result;
-    //     result.reserve(local_data.size());
-    //     while (filled_sources) {
-    //       int32_t source = lt.min_source();
-    //       result.push_back(*string_it[source]);
-    //       ++string_it[source];
-    //       if (string_it[source] < end_it[source]) {
-    //         lt.delete_min_insert(&*string_it[source], false);
-    //       } else {
-    //         lt.delete_min_insert(nullptr, true);
-    //         --filled_sources;
-    //       }
-    //     }
-    //     local_data = std::move(result);
-    //   } else if (local_data.size() > 0) {
-    //     ips4o::sort(local_data.begin(), local_data.end(), comp);
-    //   }
-    ips4o::sort(local_data.begin(), local_data.end(), comp);
+        std::vector<DataType> result;
+        result.reserve(local_data.size());
+        while (filled_sources) {
+            int32_t source = lt.min_source();
+            result.push_back(*string_it[source]);
+            ++string_it[source];
+            if (string_it[source] < end_it[source]) {
+                lt.delete_min_insert(&*string_it[source], false);
+            } else {
+                lt.delete_min_insert(nullptr, true);
+                --filled_sources;
+            }
+        }
+        local_data = std::move(result);
+    } else if (local_data.size() > 0) {
+        ips4o::sort(local_data.begin(), local_data.end(), comp);
+    }
 }
 
 } // namespace dsss::mpi

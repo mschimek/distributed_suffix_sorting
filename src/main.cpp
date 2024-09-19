@@ -146,7 +146,7 @@ void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
     pdcx.reset();
     bool sa_ok = check_suffixarray(SA, local_data, comm);
     if (comm.rank() == 0) {
-        std::cout << "SA ok: " << sa_ok << "\n";
+        std::cout << "SA_ok=" << sa_ok << "\n";
         std::cout << "\n";
     }
 }
@@ -160,11 +160,11 @@ int main() {
 
     using char_type = uint8_t;
     using index_type = uint32_t;
-    int n = 1e8 / comm.size();
+    int n = 1e6 / comm.size();
     int alpha = 3;
     run_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(n, alpha, comm);
-    run_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(n, alpha, comm);
-    run_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(n, alpha, comm);
+    // run_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(n, alpha, comm);
+    // run_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(n, alpha, comm);
 
     return 0;
 }
