@@ -25,6 +25,16 @@
 #include "sort.hpp"
 #include "util.hpp"
 
+
+#define PACK_ATTRIBUTES
+
+#if defined(PACK_ATTRIBUTES) && (defined(__GNUC__) || defined(__clang__))
+#define DCX_PACK_ATTRIBUTE __attribute__((packed))
+#else
+#define DCX_PACK_ATTRIBUTE
+#endif
+
+
 namespace dsss::dcx {
 
 using namespace kamping;
@@ -84,7 +94,7 @@ class PDCX {
 
         std::array<char_type, DC::X> letters;
         index_type index;
-    };
+    } DCX_PACK_ATTRIBUTE;
 
     struct RankIndex {
         index_type rank;
@@ -106,7 +116,7 @@ class PDCX {
             ss << "(" << rank << " " << index << ")";
             return ss.str();
         }
-    };
+    } DCX_PACK_ATTRIBUTE;
 
     struct MergeSamples {
         MergeSamples() {
@@ -153,7 +163,7 @@ class PDCX {
         std::array<char_type, DC::X - 1> chars;
         std::array<index_type, DC::D> ranks;
         index_type index;
-    };
+    } DCX_PACK_ATTRIBUTE;
 
 public:
     PDCX(Communicator<>& _comm)
