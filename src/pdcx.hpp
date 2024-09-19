@@ -210,11 +210,11 @@ public:
     }
 
     // computes how many chars are at position with a remainder
-    std::array<index_type, DC::X> compute_num_pos_mod(index_type total_chars) const {
-        constexpr index_type X = DC::X;
-        std::array<index_type, X> num_pos_mod;
+    std::array<uint64_t, DC::X> compute_num_pos_mod(uint64_t total_chars) const {
+        constexpr uint64_t X = DC::X;
+        std::array<uint64_t, X> num_pos_mod;
         num_pos_mod.fill(0);
-        for (index_type i = 0; i < X; i++) {
+        for (uint64_t i = 0; i < X; i++) {
             num_pos_mod[i] = (total_chars + X - 1 - i) / X;
         }
         return num_pos_mod;
@@ -472,7 +472,7 @@ public:
         std::exclusive_scan(chars_at_proc.begin(), chars_at_proc.end(), chars_before.begin(), 0);
 
         // number of positions with mod X = d
-        std::array<index_type, X> num_at_mod = compute_num_pos_mod(total_chars);
+        std::array<uint64_t, X> num_at_mod = compute_num_pos_mod(total_chars);
         const uint64_t rem = total_chars % X;
         bool added_dummy = is_in_dc(rem);
         num_at_mod[rem] += added_dummy;
@@ -484,7 +484,7 @@ public:
             uint d = DC::DC[i - 1];
             samples_before[i] = samples_before[i - 1] + num_at_mod[d];
         }
-        uint64_t num_samples = samples_before.back();
+        index_type num_samples = samples_before.back();
 
         add_padding(local_string);
         memory_monitor.add_memory(local_string, "string");
@@ -510,8 +510,8 @@ public:
         std::vector<SampleString> local_samples =
             compute_sample_strings(local_string, chars_before[process_rank], total_chars);
 
-        uint64_t local_sample_size = local_samples.size();
-        uint64_t total_sample_size = mpi_util::all_reduce_sum(local_sample_size, comm);
+        index_type local_sample_size = local_samples.size();
+        index_type total_sample_size = mpi_util::all_reduce_sum(local_sample_size, comm);
         KASSERT(total_sample_size == num_samples);
 
         memory_monitor.remove_memory(local_samples, "samples_sort");
@@ -543,7 +543,7 @@ public:
         local_samples.clear();
         local_samples.shrink_to_fit();
 
-        uint64_t last_rank = local_ranks.empty() ? 0 : local_ranks.back().rank;
+        index_type last_rank = local_ranks.empty() ? index_type(0) : local_ranks.back().rank;
         comm.bcast_single(send_recv_buf(last_rank), root(comm.size() - 1));
         stats.highest_ranks.push_back(last_rank);
         bool chars_distinct = last_rank >= total_sample_size;

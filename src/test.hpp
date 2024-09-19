@@ -2,10 +2,8 @@
 
 
 #include <algorithm>
-#include <iostream>
 #include <numeric>
 #include <random>
-#include <ratio>
 #include <vector>
 
 #include "kamping/collectives/gather.hpp"
@@ -13,19 +11,10 @@
 #include "kamping/named_parameters.hpp"
 #include "mpi_util.hpp"
 #include "printing.hpp"
+#include "random.hpp"
 
 namespace dsss::test {
 
-template<typename T>
-std::vector<T> generate_random_data(int n, int max_value, int seed) {
-    std::mt19937 rng(seed);
-    std::uniform_int_distribution<T> dist(1, max_value);
-    std::vector<T> v(n);
-    for (int i = 0; i < n; i++) {
-        v[i] = dist(rng);
-    }
-    return v;
-}
 
 void test_sorting(int repeats,
                   int local_size,
@@ -38,7 +27,7 @@ void test_sorting(int repeats,
     int max_value = 1e6;
     for (int i = 0; i < repeats; i++) {
         int seed = i * size + rank;
-        std::vector<int> local_data = generate_random_data<int>(local_size, max_value, seed);
+        std::vector<int> local_data = dsss::random::generate_random_data<int>(local_size, max_value, seed);
         comm.barrier();
         distributed_sorter(local_data, comm);
         auto sorted_sequence = comm.gatherv(send_buf(local_data));

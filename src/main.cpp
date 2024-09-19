@@ -12,6 +12,7 @@
 // #include "pdc3.hpp"
 #include "pdcx.hpp"
 #include "printing.hpp"
+#include "random.hpp"
 #include "sa_check.hpp"
 #include "sort.hpp"
 #include "test.hpp"
@@ -36,7 +37,7 @@ void test_pdcx(int repeats, int n, int alphabet_size, Communicator<>& comm) {
     for (int i = 0; i < repeats; i++) {
         int seed = i * comm.size() + comm.rank();
         std::vector<char_type> local_data =
-            test::generate_random_data<char_type>(n, alphabet_size, seed);
+            dsss::random::generate_random_data<char_type>(n, alphabet_size, seed);
         PDCX pdcx(comm);
         std::vector<index_type> SA = pdcx.compute_sa(local_data);
         bool sa_ok = check_suffixarray(SA, local_data, comm);
@@ -122,22 +123,23 @@ void start_tests(Communicator<>& comm) {
     // run_tests_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm,
     //                                                                                    "pdcx-13");
 
-    // run_alignment_tests_pdcx<dc3::PDC3<char_type, index_type>, char_type, index_type>(comm, "pdc3");
-    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(
+    // run_alignment_tests_pdcx<dc3::PDC3<char_type, index_type>, char_type, index_type>(comm,
+    // "pdc3"); run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type,
+    // index_type>(
     //     comm,
     //     "pdcx-3");
     // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(
     //     comm,
     //     "pdcx-7");
     // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(
-        // comm,
-        // "pdcx-13");
+    // comm,
+    // "pdcx-13");
 }
 
 template <typename PDCX, typename char_type, typename index_type>
 void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
     std::vector<char_type> local_data =
-        test::generate_random_data<char_type>(n, alphabet_size, comm.rank());
+        dsss::random::generate_random_data<char_type>(n, alphabet_size, comm.rank());
     PDCX pdcx(comm);
     std::vector<index_type> SA = pdcx.compute_sa(local_data);
 
