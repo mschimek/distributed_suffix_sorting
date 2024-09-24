@@ -23,12 +23,24 @@
 #include "kamping/communicator.hpp"
 #include "kamping/data_buffer.hpp"
 #include "kamping/named_parameters.hpp"
+#include "mpi_util.hpp"
 #include "printing.hpp"
 
 namespace dsss::mpi {
 
 template <typename DataType, class Compare>
 inline void sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicator<>& comm) {
+    
+    // code breaks for very small inputs --> switch to sequential sorting
+    uint64_t local_size = local_data.size();
+    uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
+    if(total_size < 100)  {
+        auto global_data = comm.gatherv(kamping::send_buf(local_data));
+        ips4o::sort(global_data.begin(), global_data.end(), comp);
+        local_data = mpi_util::distribute_data_custom(global_data, local_size, comm);
+        return;
+    }
+
     // Sort locally
     ips4o::sort(local_data.begin(), local_data.end(), comp);
 

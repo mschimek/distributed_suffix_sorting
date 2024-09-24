@@ -114,28 +114,25 @@ void run_alignment_tests_pdcx(Communicator<>& comm, std::string test_name = "") 
 }
 
 void start_tests(Communicator<>& comm) {
-    // using char_type = uint8_t;
-    // using index_type = uint32_t;
+    using char_type = uint16_t;
+    using index_type = uint32_t;
 
-    // run_tests_pdcx<dc3::PDC3<char_type, index_type>, char_type, index_type>(comm, "pdc3");
-    // run_tests_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm,
-    //                                                                                   "pdcx-3");
-    // run_tests_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm,
-    //                                                                                   "pdcx-7");
+    run_tests_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm,
+                                                                                      "pdcx-3");
+    run_tests_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm,
+                                                                                      "pdcx-7");
     // run_tests_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm,
     //                                                                                    "pdcx-13");
 
-    // run_alignment_tests_pdcx<dc3::PDC3<char_type, index_type>, char_type, index_type>(comm,
-    // "pdc3"); run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type,
-    // index_type>(
+    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(
     //     comm,
     //     "pdcx-3");
     // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(
     //     comm,
     //     "pdcx-7");
     // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(
-    // comm,
-    // "pdcx-13");
+    //     comm,
+    //     "pdcx-13");
 }
 
 template <typename PDCX, typename char_type, typename index_type>
@@ -160,14 +157,14 @@ int main() {
     Environment e;
     Communicator comm;
 
-    // start_tests(comm);
+    start_tests(comm);
 
-    // using char_type = uint8_t;
-    using char_type = uint16_t;
-    using index_type = dsss::uint40;
-    int n = 1e5 / comm.size();
-    int alpha = 2;
-    run_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(n, alpha, comm);
+    // using char_type = uint16_t;
+    // using index_type = uint32_t;
+    // int n = 80 / comm.size();
+    // int n = 60 / comm.size();
+    // int alpha = 4;
+    // run_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(n, alpha, comm);
     // run_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(n, alpha, comm);
     // run_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(n, alpha, comm);
 
