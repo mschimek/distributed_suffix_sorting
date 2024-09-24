@@ -198,4 +198,18 @@ std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
     return result;
 }
 
+template<typename InputType, typename OutputType>
+std::vector<OutputType> zip_with_index(std::vector<InputType> &input, auto index_function, Communicator<> &comm) {
+    size_t local_size = input.size();
+    const size_t offset = mpi_util::ex_prefix_sum(local_size, comm);
+
+    std::vector<OutputType> zipped;
+    zipped.reserve(local_size);
+    for (size_t i = 0; i < local_size; ++i) {
+        size_t index = offset + i;
+        zipped.push_back(index_function(index, input[i]));
+    }
+    return zipped;
+}
+
 } // namespace dsss::mpi_util

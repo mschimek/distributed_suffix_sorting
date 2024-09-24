@@ -57,14 +57,8 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     };
 
     // index sa with 1, ..., n
-    size_t local_sa_size = sa.size();
-    const size_t sa_offset = mpi_util::ex_prefix_sum(local_sa_size, comm);
-
-    std::vector<sa_tuple> sa_tuples;
-    sa_tuples.reserve(local_sa_size);
-    for (size_t i = 0; i < local_sa_size; ++i) {
-        sa_tuples.emplace_back(1 + sa_offset + i, sa[i]);
-    }
+    auto index_function = [](IndexType idx, IndexType sa_idx) { return sa_tuple{1 + idx, sa_idx}; };
+    std::vector<sa_tuple> sa_tuples = mpi_util::zip_with_index<IndexType, sa_tuple>(sa, index_function, comm);
 
     mpi::sort(
         sa_tuples,

@@ -199,8 +199,8 @@ public:
     UIntPair operator-(const uint64_t& b) const { return UIntPair(ull() - b); }
 
     //! equality checking operator
-    bool operator==(const UIntPair& b) const { return (low_ == b.low_) && (high_ == b.high_); }
 
+    bool operator==(const UIntPair& b) const { return (low_ == b.low_) && (high_ == b.high_); }
     //! inequality checking operator
     bool operator!=(const UIntPair& b) const { return (low_ != b.low_) || (high_ != b.high_); }
 
