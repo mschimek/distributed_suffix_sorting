@@ -16,6 +16,8 @@
 #include "sa_check.hpp"
 #include "sort.hpp"
 #include "test.hpp"
+#include "uint_types.hpp"
+
 
 using namespace dsss;
 using namespace kamping;
@@ -160,10 +162,11 @@ int main() {
 
     // start_tests(comm);
 
-    using char_type = uint8_t;
-    using index_type = uint32_t;
-    int n = 1e6 / comm.size();
-    int alpha = 3;
+    // using char_type = uint8_t;
+    using char_type = uint16_t;
+    using index_type = dsss::uint40;
+    int n = 1e5 / comm.size();
+    int alpha = 2;
     run_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(n, alpha, comm);
     // run_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(n, alpha, comm);
     // run_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(n, alpha, comm);

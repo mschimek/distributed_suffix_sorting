@@ -71,6 +71,7 @@ void report_arguments(kamping::Communicator<>& comm) {
         std::cout << V(output_path) << "\n";
         std::cout << V(dcx_variant) << "\n";
         std::cout << V(check) << "\n";
+        std::cout << "\n";
     }
 }
 
@@ -93,18 +94,21 @@ template <typename PDCX, typename char_type, typename index_type>
 void run_pdcx(kamping::Communicator<>& comm) {
     auto algo = PDCX(comm);
     local_sa = algo.compute_sa(local_string);
-    algo.report_time();
-    comm.barrier();
     algo.report_stats();
+    comm.barrier();
+    algo.report_time();
 }
 
 void compute_sa(kamping::Communicator<>& comm) {
     if (dcx_variant == "dc3") {
         run_pdcx<dsss::dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc7") {
-        run_pdcx<dsss::dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    }
+    else if (dcx_variant == "dc7") {
+        run_pdcx<dsss::dcx::PDCX<char_type, index_type, DC7Param>, char_type,
+        index_type>(comm);
     } else {
-        run_pdcx<dsss::dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+        run_pdcx<dsss::dcx::PDCX<char_type, index_type, DC13Param>, char_type,
+        index_type>(comm);
     }
 }
 

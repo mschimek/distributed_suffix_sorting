@@ -19,21 +19,10 @@
 #include "kamping/measurements/timer.hpp"
 #include "kamping/named_parameters.hpp"
 #include "kassert/kassert.hpp"
-#include "memory_monitor.hpp"
 #include "mpi_util.hpp"
 #include "printing.hpp"
 #include "sort.hpp"
 #include "util.hpp"
-
-
-#define PACK_ATTRIBUTES
-
-#if defined(PACK_ATTRIBUTES) && (defined(__GNUC__) || defined(__clang__))
-#define DCX_PACK_ATTRIBUTE __attribute__((packed))
-#else
-#define DCX_PACK_ATTRIBUTE
-#endif
-
 
 namespace dsss::dcx {
 
@@ -94,7 +83,7 @@ class PDCX {
 
         std::array<char_type, DC::X> letters;
         index_type index;
-    } DCX_PACK_ATTRIBUTE;
+    };
 
     struct RankIndex {
         index_type rank;
@@ -116,7 +105,7 @@ class PDCX {
             ss << "(" << rank << " " << index << ")";
             return ss.str();
         }
-    } DCX_PACK_ATTRIBUTE;
+    };
 
     struct MergeSamples {
         MergeSamples() {
@@ -163,13 +152,12 @@ class PDCX {
         std::array<char_type, DC::X - 1> chars;
         std::array<index_type, DC::D> ranks;
         index_type index;
-    } DCX_PACK_ATTRIBUTE;
+    };
 
 public:
     PDCX(Communicator<>& _comm)
         : comm(_comm),
           timer(measurements::timer()),
-          memory_monitor(monitor::get_monitor_instance()),
           stats(get_stats_instance()),
           recursion_depth(0) {}
 
@@ -257,7 +245,6 @@ public:
         // last process adds a dummy sample if remainder of some differrence cover element aligns
         // with the string length
 
-        memory_monitor.add_memory(local_samples, "samples");
         return local_samples;
     }
 
@@ -283,7 +270,6 @@ public:
         std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
             x.rank += 1 + ranks_before;
         });
-        memory_monitor.add_memory(local_ranks, "ranks");
         return local_ranks;
     }
 
@@ -320,7 +306,6 @@ public:
             }
             merge_samples.emplace_back(chars, ranks, global_index);
         }
-        memory_monitor.add_memory(merge_samples, "merge_samples");
         return merge_samples;
     }
 
@@ -389,9 +374,7 @@ public:
         }
 
         local_ranks.clear();
-        memory_monitor.remove_memory(local_ranks, "seq_dist_ranks");
         local_ranks = mpi_util::distribute_data_custom(global_ranks, local_sample_size, comm);
-        memory_monitor.add_memory(local_ranks, "seq_dist_ranks");
     }
 
     std::vector<index_type> pdc3(std::vector<char_type>& local_string);
@@ -402,25 +385,19 @@ public:
                                uint64_t total_chars,
                                std::array<index_type, DC::D + 1>& samples_before) {
         // sort by (mod X, div X)
-        memory_monitor.remove_memory(local_ranks, "ranks_mod_div");
         timer.synchronize_and_start("phase_03_sort_mod_div");
         mpi::sort(local_ranks, RankIndex::cmp_mod_div, comm);
         timer.stop();
-        memory_monitor.add_memory(local_ranks, "ranks_mod_div");
         KASSERT(local_ranks.size() >= 2u); // can happen for small inputs
 
         auto get_rank = [](RankIndex& r) -> new_char_type { return r.rank; };
         std::vector<new_char_type> recursive_string =
             extract_attribute<RankIndex, new_char_type>(local_ranks, get_rank);
-        memory_monitor.add_memory(recursive_string, "recursive_string");
 
-        memory_monitor.remove_memory(recursive_string, "recursive_string_dist");
         recursive_string =
             mpi_util::distribute_data_custom(recursive_string, local_sample_size, comm);
-        memory_monitor.add_memory(recursive_string, "recursive_string_dist");
 
         // free memory of ranks
-        memory_monitor.remove_memory(local_ranks, "ranks");
         local_ranks.clear();
         local_ranks.shrink_to_fit();
 
@@ -434,7 +411,6 @@ public:
         std::vector<index_type> SA = rec_pdcx.compute_sa(recursive_string);
         recursion_depth--;
 
-        memory_monitor.remove_memory(recursive_string, "recursive_string");
         recursive_string.clear();
         recursive_string.shrink_to_fit();
 
@@ -447,20 +423,14 @@ public:
             index_type rank = 1 + i + elements_before;
             local_ranks.emplace_back(rank, global_index);
         }
-        memory_monitor.add_memory(local_ranks, "ranks");
-        memory_monitor.remove_memory(SA, "SA delete");
         SA.clear();
         SA.shrink_to_fit();
 
-        memory_monitor.remove_memory(local_ranks, "ranks_sort");
         timer.synchronize_and_start("phase_02_sort_ranks_index");
         mpi::sort(local_ranks, RankIndex::cmp_by_index, comm);
         timer.stop();
-        memory_monitor.add_memory(local_ranks, "ranks_sort");
 
-        memory_monitor.remove_memory(local_ranks, "ranks_dist");
         local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
-        memory_monitor.add_memory(local_ranks, "ranks_dist");
     }
 
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
@@ -497,7 +467,6 @@ public:
         index_type num_samples = samples_before.back();
 
         add_padding(local_string);
-        memory_monitor.add_memory(local_string, "string");
 
         // logging
         stats.max_depth = std::max(stats.max_depth, recursion_depth);
@@ -512,10 +481,8 @@ public:
         //******* Start Phase 1: Construct Samples  ********
         timer.synchronize_and_start("phase_01_samples");
 
-        memory_monitor.remove_memory(local_string, "shift_string");
         mpi_util::shift_entries_left(local_string, X - 1, comm);
         local_string.shrink_to_fit();
-        memory_monitor.add_memory(local_string, "shift_string");
 
         std::vector<SampleString> local_samples =
             compute_sample_strings(local_string, chars_before[process_rank], total_chars);
@@ -524,12 +491,10 @@ public:
         index_type total_sample_size = mpi_util::all_reduce_sum(local_sample_size, comm);
         KASSERT(total_sample_size == num_samples);
 
-        memory_monitor.remove_memory(local_samples, "samples_sort");
         timer.synchronize_and_start("phase_01_sort_local_samples");
         mpi::sort(local_samples, std::less<>{}, comm);
         timer.stop();
         local_samples.shrink_to_fit();
-        memory_monitor.add_memory(local_samples, "samples_sort");
 
         timer.stop();
         //******* End Phase 1: Construct Samples  ********
@@ -540,16 +505,13 @@ public:
 
         // adds a dummy sample for last process
         KASSERT(local_string.size() >= 1u);
-        memory_monitor.remove_memory(local_samples, "shift_samples");
         SampleString recv_sample = mpi_util::shift_left(local_samples.front(), comm);
         local_samples.push_back(recv_sample);
         local_samples.shrink_to_fit();
-        memory_monitor.add_memory(local_samples, "shift_samples");
 
         std::vector<RankIndex> local_ranks = compute_lexicographic_ranks(local_samples);
 
         // free memory of samples
-        memory_monitor.remove_memory(local_samples, "samples");
         local_samples.clear();
         local_samples.shrink_to_fit();
 
@@ -565,16 +527,12 @@ public:
         timer.synchronize_and_start("phase_03_recursion");
 
         if (chars_distinct) {
-            memory_monitor.remove_memory(local_ranks, "ranks_sort_base");
             timer.synchronize_and_start("phase_03_sort_index_base");
             mpi::sort(local_ranks, RankIndex::cmp_by_index, comm);
             timer.stop();
-            memory_monitor.add_memory(local_ranks, "ranks_sort_base");
 
-            memory_monitor.remove_memory(local_ranks, "ranks_dist_base");
             local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
             local_ranks.shrink_to_fit();
-            memory_monitor.add_memory(local_ranks, "ranks_dist_base");
 
         } else {
             dispatch_recursive_call(local_ranks,
@@ -589,17 +547,13 @@ public:
         //******* Start Phase 4: Merge Suffixes  ********
         timer.synchronize_and_start("phase_04_merge");
 
-        memory_monitor.remove_memory(local_ranks, "shift_left_ranks");
         mpi_util::shift_entries_left(local_ranks, D, comm);
         local_ranks.shrink_to_fit();
-        memory_monitor.add_memory(local_ranks, "shift_left_ranks");
 
         if (comm.rank() == comm.size() - 1) {
-            memory_monitor.remove_memory(local_ranks, "padding");
             RankIndex padding(0, total_chars);
             std::fill_n(std::back_inserter(local_ranks), D, padding);
             local_ranks.shrink_to_fit();
-            memory_monitor.add_memory(local_ranks, "padding");
         }
 
         std::vector<MergeSamples> merge_samples =
@@ -609,21 +563,16 @@ public:
                                     chars_at_proc[process_rank]);
 
         // free memory of local_ranks
-        memory_monitor.remove_memory(local_ranks, "ranks");
         local_ranks.clear();
         local_ranks.shrink_to_fit();
 
-        memory_monitor.remove_memory(merge_samples, "merge_samples_sort");
         timer.synchronize_and_start("phase_04_sort_merge_samples");
         mpi::sort(merge_samples, std::less<>{}, comm);
         timer.stop();
-        memory_monitor.add_memory(merge_samples, "merge_samples_sort");
 
         auto get_index = [](MergeSamples& m) { return m.index; };
         std::vector<index_type> local_SA =
             extract_attribute<MergeSamples, index_type>(merge_samples, get_index);
-        memory_monitor.add_memory(local_SA, "final_SA");
-        memory_monitor.remove_memory(merge_samples, "merge_samples");
 
         timer.stop();
         //******* End Phase 4: Merge Suffixes  ********
@@ -640,26 +589,6 @@ public:
         // timer.aggregate_and_print(measurements::SimpleJsonPrinter<>{});
         timer.aggregate_and_print(measurements::FlatPrinter{});
         std::cout << "\n";
-        comm.barrier();
-    }
-
-    void report_memory(bool print_history = false) {
-        comm.barrier();
-        if (print_history) {
-            std::string msg = "History \n" + memory_monitor.history_mb_to_string() + "\n";
-            print_result_on_root(msg, comm);
-        }
-
-        monitor::MemoryKey peak_memory = memory_monitor.get_peak_memory();
-        std::string msg2 = "Memory peak: " + peak_memory.to_string_mb();
-        print_concatenated_string(msg2, comm);
-
-        uint64_t local_string_bytes = stats.local_string_sizes.front() * sizeof(char_type);
-        double blow_up_factor = (double)peak_memory.get_memory_bytes() / local_string_bytes;
-        std::stringstream ss;
-        ss << "Blow up factor: " << std::fixed << std::setprecision(2) << blow_up_factor << "\n";
-        print_concatenated_string(ss.str(), comm);
-
         comm.barrier();
     }
 
@@ -682,7 +611,6 @@ public:
     }
 
     void reset() {
-        memory_monitor.reset();
         stats.reset();
         recursion_depth = 0;
         timer.clear();
@@ -693,7 +621,6 @@ public:
 
     Communicator<>& comm;
     measurements::Timer<Communicator<>>& timer;
-    monitor::MemoryMonitor& memory_monitor;
     Statistics& stats;
     int recursion_depth;
 };
