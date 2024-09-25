@@ -3,10 +3,11 @@
 #include <vector>
 
 #include "kamping/communicator.hpp"
-#include "kamping/mpi_ops.hpp"
-#include "mpi_util.hpp"
-#include "printing.hpp"
+#include "mpi/reduce.hpp"
+#include "mpi/shift.hpp"
+#include "mpi/zip.hpp"
 #include "sort.hpp"
+#include "util/printing.hpp"
 
 namespace dsss {
 
@@ -57,8 +58,11 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     };
 
     // index sa with 1, ..., n
-    auto index_function = [](uint64_t idx, IndexType sa_idx) { return sa_tuple{1 + IndexType(idx), sa_idx}; };
-    std::vector<sa_tuple> sa_tuples = mpi_util::zip_with_index<IndexType, sa_tuple>(sa, index_function, comm);
+    auto index_function = [](uint64_t idx, IndexType sa_idx) {
+        return sa_tuple{1 + IndexType(idx), sa_idx};
+    };
+    std::vector<sa_tuple> sa_tuples =
+        mpi_util::zip_with_index<IndexType, sa_tuple>(sa, index_function, comm);
 
     mpi::sort(
         sa_tuples,

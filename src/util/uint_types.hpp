@@ -21,7 +21,7 @@
 #include <limits>
 #include <ostream>
 
-#include "macros.hpp"
+#include "util/macros.hpp"
 
 namespace dsss {
 

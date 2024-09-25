@@ -82,7 +82,8 @@ set(StringSorting "src/string_sorting")
 add_subdirectory(src)
 
 # main
-add_executable(main src/main.cpp)
+# add_executable(main src/main.cpp)
+add_executable(main src/executables/main.cpp)
 target_include_directories(main PRIVATE
   "${CMAKE_CURRENT_BINARY_DIR}/include")
 
@@ -91,7 +92,8 @@ target_link_libraries(main kamping)
 target_link_libraries(main dss_base)
 
 # cli
-add_executable(cli src/cli.cpp)
+# add_executable(cli src/cli.cpp)
+add_executable(cli src/executables/cli.cpp)
 target_include_directories(cli PRIVATE
   "${CMAKE_CURRENT_BINARY_DIR}/include")
 

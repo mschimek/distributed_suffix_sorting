@@ -9,9 +9,9 @@
 #include "kamping/collectives/gather.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
-#include "mpi_util.hpp"
-#include "printing.hpp"
-#include "random.hpp"
+#include "mpi/distribute.hpp"
+#include "util/printing.hpp"
+#include "util/random.hpp"
 
 namespace dsss::test {
 
@@ -27,7 +27,8 @@ void test_sorting(int repeats,
     int max_value = 1e6;
     for (int i = 0; i < repeats; i++) {
         int seed = i * size + rank;
-        std::vector<int> local_data = dsss::random::generate_random_data<int>(local_size, max_value, seed);
+        std::vector<int> local_data =
+            dsss::random::generate_random_data<int>(local_size, max_value, seed);
         comm.barrier();
         distributed_sorter(local_data, comm);
         auto sorted_sequence = comm.gatherv(send_buf(local_data));

@@ -6,17 +6,16 @@
 #include <mpi.h>
 #include <sys/types.h>
 
-#include "difference_cover.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
-// #include "pdc3.hpp"
-#include "pdcx.hpp"
-#include "printing.hpp"
-#include "random.hpp"
+#include "pdcx/difference_cover.hpp"
+#include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
 #include "sort.hpp"
 #include "test.hpp"
-#include "uint_types.hpp"
+#include "util/printing.hpp"
+#include "util/random.hpp"
+#include "util/uint_types.hpp"
 
 
 using namespace dsss;
@@ -161,8 +160,7 @@ int main() {
 
     // using char_type = uint16_t;
     // using index_type = uint32_t;
-    // int n = 80 / comm.size();
-    // int n = 60 / comm.size();
+    // int n = 100 / comm.size();
     // int alpha = 4;
     // run_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(n, alpha, comm);
     // run_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(n, alpha, comm);

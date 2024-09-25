@@ -1,4 +1,2 @@
-target_sources(dss_base
-    PUBLIC
-        pdc3.hpp
-)
+add_subdirectory(mpi)
+add_subdirectory(util)

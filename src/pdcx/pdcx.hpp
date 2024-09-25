@@ -19,11 +19,14 @@
 #include "kamping/measurements/timer.hpp"
 #include "kamping/named_parameters.hpp"
 #include "kassert/kassert.hpp"
-#include "mpi_util.hpp"
-#include "printing.hpp"
+#include "mpi/distribute.hpp"
+#include "mpi/reduce.hpp"
+#include "mpi/shift.hpp"
+#include "mpi/zip.hpp"
 #include "sort.hpp"
-#include "uint_types.hpp"
-#include "util.hpp"
+#include "util/printing.hpp"
+#include "util/string_util.hpp"
+#include "util/uint_types.hpp"
 
 namespace dsss::dcx {
 
@@ -356,33 +359,33 @@ public:
             sequential_sa_and_local_ranks(local_ranks, local_sample_size, map_back_func);
         } else {
             // pick smallest data type that will fit
-            if (last_rank <= std::numeric_limits<uint8_t>::max()) {
-                handle_recursive_call<uint8_t>(local_ranks,
-                                               local_sample_size,
-                                               total_chars,
-                                               map_back_func);
-            } else if (last_rank <= std::numeric_limits<uint16_t>::max()) {
-                handle_recursive_call<uint16_t>(local_ranks,
-                                                local_sample_size,
-                                                total_chars,
-                                                map_back_func);
-            } else if (last_rank <= std::numeric_limits<uint32_t>::max()) {
-                handle_recursive_call<uint32_t>(local_ranks,
-                                                local_sample_size,
-                                                total_chars,
-                                                map_back_func);
-            } else if (last_rank <= std::numeric_limits<uint32_t>::max()) {
-                handle_recursive_call<dsss::uint40>(local_ranks,
-                                                    local_sample_size,
-                                                    total_chars,
-                                                    map_back_func);
-            } else {
-                print_on_root("Max Rank input size that can be handled is 2^40", comm);
-            }
-            // handle_recursive_call<uint32_t>(local_ranks,
-            //                                 local_sample_size,
-            //                                 total_chars,
-            //                                 map_back_func);
+            // if (last_rank <= std::numeric_limits<uint8_t>::max()) {
+            //     handle_recursive_call<uint8_t>(local_ranks,
+            //                                    local_sample_size,
+            //                                    total_chars,
+            //                                    map_back_func);
+            // } else if (last_rank <= std::numeric_limits<uint16_t>::max()) {
+            //     handle_recursive_call<uint16_t>(local_ranks,
+            //                                     local_sample_size,
+            //                                     total_chars,
+            //                                     map_back_func);
+            // } else if (last_rank <= std::numeric_limits<uint32_t>::max()) {
+            //     handle_recursive_call<uint32_t>(local_ranks,
+            //                                     local_sample_size,
+            //                                     total_chars,
+            //                                     map_back_func);
+            // } else if (last_rank <= std::numeric_limits<uint32_t>::max()) {
+            //     handle_recursive_call<dsss::uint40>(local_ranks,
+            //                                         local_sample_size,
+            //                                         total_chars,
+            //                                         map_back_func);
+            // } else {
+            //     print_on_root("Max Rank input size that can be handled is 2^40", comm);
+            // }
+            handle_recursive_call<uint32_t>(local_ranks,
+                                            local_sample_size,
+                                            total_chars,
+                                            map_back_func);
         }
     }
 
@@ -453,7 +456,6 @@ public:
         recursive_string =
             mpi_util::distribute_data_custom(recursive_string, local_sample_size, comm);
 
-        // free memory of ranks
         free_memory(local_ranks);
 
         // TODO: flexible selection of DC

@@ -7,7 +7,7 @@
 
 namespace dsss {
 
-template<typename char_type>
+template <typename char_type>
 bool cmp_substrings(std::vector<char_type>& arr, int a, int b) {
     int m = arr.size();
     int j = 0;
@@ -21,7 +21,7 @@ bool cmp_substrings(std::vector<char_type>& arr, int a, int b) {
     return arr[a + j] < arr[b + j];
 }
 
-template<typename char_type, typename index_type>
+template <typename char_type, typename index_type>
 std::vector<index_type> slow_suffixarray(std::vector<char_type>& arr) {
     std::vector<index_type> sa(arr.size());
     std::iota(sa.begin(), sa.end(), 0);
@@ -29,7 +29,7 @@ std::vector<index_type> slow_suffixarray(std::vector<char_type>& arr) {
     return sa;
 }
 
-template<typename char_type>
+template <typename char_type>
 void print_substrings(std::vector<char_type>& arr) {
     for (uint i = 0; i < arr.size(); i++) {
         std::cout << i << ": ";

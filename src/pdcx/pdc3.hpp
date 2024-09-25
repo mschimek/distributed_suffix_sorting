@@ -20,11 +20,13 @@
 #include "kamping/measurements/timer.hpp"
 #include "kamping/named_parameters.hpp"
 #include "kassert/kassert.hpp"
-#include "memory_monitor.hpp"
-#include "mpi_util.hpp"
-#include "printing.hpp"
+#include "mpi/distribute.hpp"
+#include "mpi/reduce.hpp"
+#include "mpi/shift.hpp"
 #include "sort.hpp"
-#include "util.hpp"
+#include "util/memory_monitor.hpp"
+#include "util/printing.hpp"
+#include "util/string_util.hpp"
 
 namespace dsss::dc3 {
 
@@ -226,9 +228,6 @@ public:
             prev_rank += changed;
         }
 
-        // TODO: remove this code later
-        mpi_util::check_expected_size(num_samples, local_ranks.size(), comm);
-
         // shift ranks by 1 + prefix sum
         uint64_t ranks_before = mpi_util::ex_prefix_sum(prev_rank, comm);
         std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
@@ -417,9 +416,6 @@ public:
 
 
         const uint64_t local_sample_size = local_samples.size();
-
-        // TODO: remove this code later
-        mpi_util::check_expected_size(num_samples, local_samples.size(), comm);
 
         memory_monitor.remove_memory(local_samples, "samples_sort");
         timer.start("sort_local_samples");
