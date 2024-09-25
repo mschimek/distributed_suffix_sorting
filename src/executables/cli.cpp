@@ -100,16 +100,14 @@ void run_pdcx(kamping::Communicator<>& comm) {
 }
 
 void compute_sa(kamping::Communicator<>& comm) {
+    using namespace dsss::dcx;
     if (dcx_variant == "dc3") {
-        run_pdcx<dsss::dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
+        run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc7") {
+        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    } else {
+        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
     }
-    // else if (dcx_variant == "dc7") {
-    //     run_pdcx<dsss::dcx::PDCX<char_type, index_type, DC7Param>, char_type,
-    //     index_type>(comm);
-    // } else {
-    //     run_pdcx<dsss::dcx::PDCX<char_type, index_type, DC13Param>, char_type,
-    //     index_type>(comm);
-    // }
 }
 
 void write_sa(kamping::Communicator<>& comm) {

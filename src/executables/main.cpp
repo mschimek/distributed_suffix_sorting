@@ -116,20 +116,20 @@ void start_tests(Communicator<>& comm) {
     using char_type = uint16_t;
     using index_type = uint32_t;
 
-    run_tests_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm,
+    run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC3Param>, char_type, index_type>(comm,
                                                                                       "pdcx-3");
-    run_tests_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm,
-                                                                                      "pdcx-7");
-    // run_tests_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm,
+    // run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC7Param>, char_type, index_type>(comm,
+    //                                                                                   "pdcx-7");
+    // run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC13Param>, char_type, index_type>(comm,
     //                                                                                    "pdcx-13");
 
-    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(
+    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC3Param>, char_type, index_type>(
     //     comm,
     //     "pdcx-3");
-    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(
+    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC7Param>, char_type, index_type>(
     //     comm,
     //     "pdcx-7");
-    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(
+    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC13Param>, char_type, index_type>(
     //     comm,
     //     "pdcx-13");
 }

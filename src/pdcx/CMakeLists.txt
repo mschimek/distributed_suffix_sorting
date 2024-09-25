@@ -2,4 +2,9 @@ target_sources(dss_base
     PUBLIC
         pdcx.hpp
         difference_cover.hpp
+        sample_string.hpp
+        compute_ranks.hpp
+        merge_samples.hpp
+        statistics.hpp
+        sequential_sa.hpp
 )

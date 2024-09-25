@@ -1,5 +1,19 @@
 #pragma once
 
+#include <stdint.h>
+
+namespace dsss::dcx {
+template <typename DC>
+bool is_in_dc(uint64_t idx) {
+    // simple scan sufficient for small difference cover
+    for (auto d: DC::DC) {
+        if (idx == d) {
+            return true;
+        }
+    }
+    return false;
+}
+
 struct DC3Param {
     static constexpr unsigned int X = 3;
     static constexpr unsigned int D = 2;
@@ -202,3 +216,4 @@ struct DC13Param {
          {1, 0, 0}},
     };
 };
+} // namespace dsss::dcx
