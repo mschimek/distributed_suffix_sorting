@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.13)
+project(distributed_string_sorting)
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -7,13 +8,8 @@ endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 set(CMAKE_NINJA_PARALLEL_PROCESSING ON)
-
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-
-project(distributed_string_sorting)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_COLOR_DIAGNOSTICS ON)
 
@@ -39,6 +35,12 @@ endif()
 set(CMAKE_CXX_FLAGS_DEBUG "-ggdb")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -march=native")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -DDEBUG -march=native -ggdb")
+
+# compile options
+option(OPTIMIZE_DATA_TYPES "use smallest data type possible for ranks in pdcx" OFF)
+message(STATUS "---> OPTIMIZE_DATA_TYPES: ${OPTIMIZE_DATA_TYPES}")
+
+
 
 # Default to Release builds
 if(NOT CMAKE_BUILD_TYPE)
@@ -91,6 +93,14 @@ target_compile_options(main PRIVATE ${DSSS_WARNING_FLAGS})
 target_link_libraries(main kamping)
 target_link_libraries(main dss_base)
 
+# add compile flag
+if(OPTIMIZE_DATA_TYPES)
+  message(STATUS "setting OPTIMIZE_DATA_TYPES in main")
+  target_compile_definitions(main PRIVATE OPTIMIZE_DATA_TYPES)
+endif()
+
+
+
 # cli
 # add_executable(cli src/cli.cpp)
 add_executable(cli src/executables/cli.cpp)
@@ -100,3 +110,9 @@ target_include_directories(cli PRIVATE
 target_compile_options(cli PRIVATE ${DSSS_WARNING_FLAGS})
 target_link_libraries(cli kamping)
 target_link_libraries(cli dss_base)
+
+# add compile flag
+if(OPTIMIZE_DATA_TYPES)
+  message(STATUS "setting OPTIMIZE_DATA_TYPES in cli")
+  target_compile_definitions(cli PRIVATE OPTIMIZE_DATA_TYPES)
+endif()

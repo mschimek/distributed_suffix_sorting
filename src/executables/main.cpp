@@ -16,10 +16,11 @@
 #include "util/printing.hpp"
 #include "util/random.hpp"
 #include "util/uint_types.hpp"
-
+#include "options.hpp"
 
 using namespace dsss;
 using namespace kamping;
+
 
 void test_sorting(Communicator<>& comm) {
     int repeats = 10;
@@ -34,12 +35,14 @@ template <typename PDCX, typename char_type, typename index_type>
 void test_pdcx(int repeats, int n, int alphabet_size, Communicator<>& comm) {
     int cnt_correct = 0;
     int print_limit = 200;
+    dcx::PDCXConfig pdcx_config; 
+
 
     for (int i = 0; i < repeats; i++) {
         int seed = i * comm.size() + comm.rank();
         std::vector<char_type> local_data =
             dsss::random::generate_random_data<char_type>(n, alphabet_size, seed);
-        PDCX pdcx(comm);
+        PDCX pdcx(pdcx_config, comm);
         std::vector<index_type> SA = pdcx.compute_sa(local_data);
         bool sa_ok = check_suffixarray(SA, local_data, comm);
         cnt_correct += sa_ok;
@@ -116,20 +119,26 @@ void start_tests(Communicator<>& comm) {
     using char_type = uint16_t;
     using index_type = uint32_t;
 
-    run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC3Param>, char_type, index_type>(comm,
-                                                                                      "pdcx-3");
-    // run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC7Param>, char_type, index_type>(comm,
-    //                                                                                   "pdcx-7");
-    // run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC13Param>, char_type, index_type>(comm,
-    //                                                                                    "pdcx-13");
-
-    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC3Param>, char_type, index_type>(
-    //     comm,
-    //     "pdcx-3");
-    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC7Param>, char_type, index_type>(
+    run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC3Param>, char_type, index_type>(
+        comm,
+        "pdcx-3");
+    // run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC7Param>, char_type, index_type>(
     //     comm,
     //     "pdcx-7");
-    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC13Param>, char_type, index_type>(
+    // run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC13Param>, char_type, index_type>(
+    //     comm,
+        // "pdcx-13");
+
+    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC3Param>, char_type,
+    // index_type>(
+    //     comm,
+    //     "pdcx-3");
+    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC7Param>, char_type,
+    // index_type>(
+    //     comm,
+    //     "pdcx-7");
+    // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC13Param>, char_type,
+    // index_type>(
     //     comm,
     //     "pdcx-13");
 }
@@ -156,15 +165,18 @@ int main() {
     Environment e;
     Communicator comm;
 
+    using namespace dcx;
+    options::report_compile_flags(comm);
     start_tests(comm);
+
 
     // using char_type = uint16_t;
     // using index_type = uint32_t;
-    // int n = 100 / comm.size();
+    // int n = 60 / comm.size();
     // int alpha = 4;
-    // run_pdcx<dcx::PDCX<char_type, index_type, DC3Param>, char_type, index_type>(n, alpha, comm);
-    // run_pdcx<dcx::PDCX<char_type, index_type, DC7Param>, char_type, index_type>(n, alpha, comm);
-    // run_pdcx<dcx::PDCX<char_type, index_type, DC13Param>, char_type, index_type>(n, alpha, comm);
+    // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(n, alpha, comm);
+    // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(n, alpha, comm);
+    // run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(n, alpha, comm);
 
     return 0;
 }

@@ -3,6 +3,8 @@
 
 #include "kamping/communicator.hpp"
 #include "mpi/io.hpp"
+#include "options.hpp"
+#include "pdcx/config.hpp"
 #include "pdcx/difference_cover.hpp"
 #include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
@@ -22,9 +24,12 @@ std::string output_path = "";
 std::string dcx_variant = "dc3";
 bool check = false;
 
+dsss::dcx::PDCXConfig pdcx_config;
+
 tlx::CmdlineParser cp;
 std::vector<char_type> local_string;
 std::vector<index_type> local_sa;
+
 
 void configure_cli() {
     cp.set_description("Distributed Suffix Array Construction using pDCX");
@@ -59,6 +64,17 @@ void configure_cli() {
                   "<F>",
                   dcx_variant,
                   "pDCX variant to use. Available options: dc3, dc7, dc13.");
+
+    // pdcx configuration
+    cp.add_double('t',
+                  "discarding_threshold",
+                  pdcx_config.discarding_threshold,
+                  "Value between [0, 1], threshold when to use discarding optimization.");
+
+    cp.add_flag('d',
+                "old_discarding",
+                pdcx_config.use_old_discarding,
+                "Use old discarding function.");
 }
 
 void report_arguments(kamping::Communicator<>& comm) {
@@ -72,6 +88,7 @@ void report_arguments(kamping::Communicator<>& comm) {
         std::cout << V(dcx_variant) << "\n";
         std::cout << V(check) << "\n";
         std::cout << "\n";
+        pdcx_config.print_config();
     }
 }
 
@@ -92,8 +109,9 @@ void read_input(kamping::Communicator<>& comm) {
 
 template <typename PDCX, typename char_type, typename index_type>
 void run_pdcx(kamping::Communicator<>& comm) {
-    auto algo = PDCX(comm);
+    auto algo = PDCX(pdcx_config, comm);
     local_sa = algo.compute_sa(local_string);
+    comm.barrier();
     algo.report_stats();
     comm.barrier();
     algo.report_time();
@@ -105,8 +123,11 @@ void compute_sa(kamping::Communicator<>& comm) {
         run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     } else if (dcx_variant == "dc7") {
         run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    } else {
+    } else if (dcx_variant == "dc13") {
         run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    } else {
+        std::cerr << "dcx variant " << dcx_variant
+                  << " not supported. Must be in [dc3, dc7, dc13]. \n";
     }
 }
 
@@ -142,6 +163,9 @@ void check_sa(kamping::Communicator<>& comm) {
 int main(int32_t argc, char const* argv[]) {
     kamping::Environment e;
     kamping::Communicator comm;
+
+    options::report_compile_flags(comm);
+
 
     configure_cli();
     if (!cp.process(argc, argv)) {

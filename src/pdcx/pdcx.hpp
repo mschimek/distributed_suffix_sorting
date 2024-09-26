@@ -20,6 +20,7 @@
 #include "mpi/reduce.hpp"
 #include "mpi/zip.hpp"
 #include "pdcx/compute_ranks.hpp"
+#include "pdcx/config.hpp"
 #include "pdcx/merge_samples.hpp"
 #include "pdcx/sample_string.hpp"
 #include "pdcx/sequential_sa.hpp"
@@ -33,6 +34,7 @@ namespace dsss::dcx {
 
 using namespace kamping;
 
+
 template <typename char_type, typename index_type, typename DC>
 class PDCX {
     using SampleString = DCSampleString<char_type, index_type, DC>;
@@ -40,8 +42,9 @@ class PDCX {
     using MergeSamples = DCMergeSamples<char_type, index_type, DC>;
 
 public:
-    PDCX(Communicator<>& _comm)
-        : comm(_comm),
+    PDCX(PDCXConfig& _config, Communicator<>& _comm)
+        : config(_config),
+          comm(_comm),
           timer(measurements::timer()),
           stats(get_stats_instance()),
           recursion_depth(0) {}
@@ -106,23 +109,25 @@ public:
                                                                     map_back_func,
                                                                     comm);
         } else {
-            // pick smallest data type that will fit
-            // if (last_rank <= std::numeric_limits<uint8_t>::max()) {
-            //     handle_recursive_call<uint8_t>(local_ranks, map_back_func);
-            // } else if (last_rank <= std::numeric_limits<uint16_t>::max()) {
-            //     handle_recursive_call<uint16_t>(local_ranks, map_back_func);
-            // } else if (last_rank <= std::numeric_limits<uint32_t>::max()) {
-            //     handle_recursive_call<uint32_t>(local_ranks, map_back_func);
-            // } else if (last_rank <= std::numeric_limits<dsss::uint40>::max()) {
-            //     handle_recursive_call<uint40>(local_ranks, map_back_func);
-            // } else {
-            //     print_on_root("Max Rank input size that can be handled is 2^40", comm);
-            // }
-            handle_recursive_call<uint32_t>(local_ranks, map_back_func);
-            // handle_recursive_call<uint40>(local_ranks, map_back_func);
+// pick smallest data type that will fit
+#ifdef OPTIMIZE_DATA_TYPES
+            if (last_rank <= std::numeric_limits<uint8_t>::max()) {
+                handle_recursive_call<uint8_t>(local_ranks, map_back_func);
+            } else if (last_rank <= std::numeric_limits<uint16_t>::max()) {
+                handle_recursive_call<uint16_t>(local_ranks, map_back_func);
+            } else if (last_rank <= std::numeric_limits<uint32_t>::max()) {
+                handle_recursive_call<uint32_t>(local_ranks, map_back_func);
+            } else if (last_rank <= std::numeric_limits<dsss::uint40>::max()) {
+                handle_recursive_call<uint40>(local_ranks, map_back_func);
+            } else {
+                print_on_root("Max Rank input size that can be handled is 2^40", comm);
+            }
+#else
+            handle_recursive_call<uint40>(local_ranks, map_back_func);
+#endif
         }
     }
-
+    
     template <typename new_char_type>
     void handle_recursive_call(std::vector<RankIndex>& local_ranks, auto map_back_func) {
         // sort by (mod X, div X)
@@ -136,13 +141,13 @@ public:
         double reduction = ((double)total_after_discarding / total_sample_size);
         stats.discarding_reduction.push_back(reduction);
 
-        // TODO make this a config parameter
-        // double discarding_threshold = 1.0;
-        // bool use_discarding = reduction <= discarding_threshold;
-        bool use_discarding = false;
+        bool use_discarding = reduction <= config.discarding_threshold;
         if (use_discarding) {
-            // recursive_call_with_discarding_old<new_char_type>(local_ranks, after_discarding);
-            recursive_call_with_discarding_new<new_char_type>(local_ranks, after_discarding);
+            if (config.use_old_discarding) {
+                recursive_call_with_discarding_old<new_char_type>(local_ranks, after_discarding);
+            } else {
+                recursive_call_with_discarding_new<new_char_type>(local_ranks, after_discarding);
+            }
         } else {
             recursive_call_direct<new_char_type>(local_ranks, map_back_func);
         }
@@ -168,7 +173,7 @@ public:
 
         // TODO: flexible selection of DC
         // create new instance of PDC3 with templates of new char type size
-        PDCX<new_char_type, index_type, DC> rec_pdcx(comm);
+        PDCX<new_char_type, index_type, DC> rec_pdcx(config, comm);
 
         // memory of SA is counted in recursive call
         recursion_depth++;
@@ -205,7 +210,7 @@ public:
 
     template <typename new_char_type>
     void recursive_call_with_discarding_new(std::vector<RankIndex>& local_ranks,
-                                         uint64_t after_discarding) {
+                                            uint64_t after_discarding) {
         KASSERT(local_ranks.size() >= 2u);
 
         // build recursive string and discard ranks
@@ -228,7 +233,7 @@ public:
         }
 
         // recursive call
-        PDCX<new_char_type, index_type, DC> rec_pdcx(comm);
+        PDCX<new_char_type, index_type, DC> rec_pdcx(config, comm);
         recursion_depth++;
         rec_pdcx.recursion_depth = recursion_depth;
         std::vector<index_type> reduced_SA = rec_pdcx.compute_sa(recursive_string);
@@ -309,7 +314,7 @@ public:
 
     template <typename new_char_type>
     void recursive_call_with_discarding_old(std::vector<RankIndex>& local_ranks,
-                                        uint64_t after_discarding) {
+                                            uint64_t after_discarding) {
         KASSERT(local_ranks.size() >= 2u);
 
         // build recursive string and discard ranks
@@ -341,7 +346,7 @@ public:
         local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
 
         // recursive call
-        PDCX<new_char_type, index_type, DC> rec_pdcx(comm);
+        PDCX<new_char_type, index_type, DC> rec_pdcx(config, comm);
         recursion_depth++;
         rec_pdcx.recursion_depth = recursion_depth;
         std::vector<index_type> reduced_SA = rec_pdcx.compute_sa(recursive_string);
@@ -584,6 +589,8 @@ public:
     uint64_t local_chars;
     uint64_t total_chars;
     std::array<index_type, DC::D + 1> samples_before;
+
+    PDCXConfig& config;
 
     Communicator<>& comm;
     measurements::Timer<Communicator<>>& timer;

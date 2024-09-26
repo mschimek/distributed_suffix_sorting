@@ -17,6 +17,9 @@
 #include "kamping/collectives/allgather.hpp"
 #include "kamping/communicator.hpp"
 
+#define V(x) std::string(#x "=") << (x) << " "  //"x=...
+
+
 namespace kamping {
 /// @brief Print all elements in a container, prefixed with the rank of the current PE.
 /// @tparam ContainerType Type of the communicator's default container.
