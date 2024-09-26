@@ -47,9 +47,7 @@ public:
           recursion_depth(0) {}
 
     // maps the index i from a recursive dcx call back to the global index
-    index_type map_back(index_type idx,
-                        index_type total_chars,
-                        std::array<index_type, DC::D + 1>& samples_before) {
+    index_type map_back(index_type idx) {
         // find interval into which index belongs
         for (uint i = 0; i < DC::D; i++) {
             if (idx < samples_before[i + 1]) {
@@ -90,7 +88,7 @@ public:
     }
 
     // computes how many chars are at position with a remainder
-    std::array<uint64_t, DC::X> compute_num_pos_mod(uint64_t total_chars) const {
+    std::array<uint64_t, DC::X> compute_num_pos_mod() const {
         std::array<uint64_t, X> num_pos_mod;
         num_pos_mod.fill(0);
         for (uint64_t i = 0; i < X; i++) {
@@ -99,15 +97,9 @@ public:
         return num_pos_mod;
     }
 
-    void dispatch_recursive_call(std::vector<RankIndex>& local_ranks,
-                                 uint64_t local_sample_size,
-                                 uint64_t last_rank,
-                                 uint64_t total_chars,
-                                 std::array<index_type, DC::D + 1>& samples_before) {
-        auto map_back_func = [&](index_type sa_i) {
-            return map_back(sa_i, total_chars, samples_before);
-        };
-        if (total_chars <= 80) {
+    void dispatch_recursive_call(std::vector<RankIndex>& local_ranks, uint64_t last_rank) {
+        auto map_back_func = [&](index_type sa_i) { return map_back(sa_i); };
+        if (total_chars <= 80u) {
             // continue with sequential algorithm
             sequential_sa_on_local_ranks<char_type, index_type, DC>(local_ranks,
                                                                     local_sample_size,
@@ -116,40 +108,23 @@ public:
         } else {
             // pick smallest data type that will fit
             // if (last_rank <= std::numeric_limits<uint8_t>::max()) {
-            //     handle_recursive_call<uint8_t>(local_ranks,
-            //                                    local_sample_size,
-            //                                    total_chars,
-            //                                    map_back_func);
+            //     handle_recursive_call<uint8_t>(local_ranks, map_back_func);
             // } else if (last_rank <= std::numeric_limits<uint16_t>::max()) {
-            //     handle_recursive_call<uint16_t>(local_ranks,
-            //                                     local_sample_size,
-            //                                     total_chars,
-            //                                     map_back_func);
+            //     handle_recursive_call<uint16_t>(local_ranks, map_back_func);
             // } else if (last_rank <= std::numeric_limits<uint32_t>::max()) {
-            //     handle_recursive_call<uint32_t>(local_ranks,
-            //                                     local_sample_size,
-            //                                     total_chars,
-            //                                     map_back_func);
+            //     handle_recursive_call<uint32_t>(local_ranks, map_back_func);
             // } else if (last_rank <= std::numeric_limits<dsss::uint40>::max()) {
-            //     handle_recursive_call<uint40>(local_ranks,
-            //                                         local_sample_size,
-            //                                         total_chars,
-            //                                         map_back_func);
+            //     handle_recursive_call<uint40>(local_ranks, map_back_func);
             // } else {
             //     print_on_root("Max Rank input size that can be handled is 2^40", comm);
             // }
-            handle_recursive_call<uint40>(local_ranks,
-                                          local_sample_size,
-                                          total_chars,
-                                          map_back_func);
+            handle_recursive_call<uint32_t>(local_ranks, map_back_func);
+            // handle_recursive_call<uint40>(local_ranks, map_back_func);
         }
     }
 
     template <typename new_char_type>
-    void handle_recursive_call(std::vector<RankIndex>& local_ranks,
-                               uint64_t local_sample_size,
-                               uint64_t total_chars,
-                               auto map_back_func) {
+    void handle_recursive_call(std::vector<RankIndex>& local_ranks, auto map_back_func) {
         // sort by (mod X, div X)
         timer.synchronize_and_start("phase_03_sort_mod_div");
         mpi::sort(local_ranks, RankIndex::cmp_mod_div, comm);
@@ -157,18 +132,19 @@ public:
         KASSERT(local_ranks.size() >= 2u); // can happen for small inputs
 
         uint64_t after_discarding = num_ranks_after_discarding(local_ranks);
-        double reduction = ((double)after_discarding / total_chars);
+        uint64_t total_after_discarding = mpi_util::all_reduce_sum(after_discarding, comm);
+        double reduction = ((double)total_after_discarding / total_sample_size);
         stats.discarding_reduction.push_back(reduction);
 
         // TODO make this a config parameter
-        double discarding_threshold = 0.0;
-        bool use_discarding = reduction <= discarding_threshold;
+        // double discarding_threshold = 1.0;
+        // bool use_discarding = reduction <= discarding_threshold;
+        bool use_discarding = false;
         if (use_discarding) {
-            recursive_call_with_discarding<new_char_type>(local_ranks,
-                                                          local_sample_size,
-                                                          after_discarding);
+            // recursive_call_with_discarding_old<new_char_type>(local_ranks, after_discarding);
+            recursive_call_with_discarding_new<new_char_type>(local_ranks, after_discarding);
         } else {
-            recursive_call_direct<new_char_type>(local_ranks, local_sample_size, map_back_func);
+            recursive_call_direct<new_char_type>(local_ranks, map_back_func);
         }
 
         // sort samples by original index and distribute back to PEs
@@ -179,15 +155,14 @@ public:
     }
 
     template <typename new_char_type>
-    void recursive_call_direct(std::vector<RankIndex>& local_ranks,
-                               uint64_t local_sample_size,
-                               auto map_back_func) {
+    void recursive_call_direct(std::vector<RankIndex>& local_ranks, auto map_back_func) {
         auto get_rank = [](RankIndex& r) -> new_char_type { return r.rank; };
         std::vector<new_char_type> recursive_string =
             extract_attribute<RankIndex, new_char_type>(local_ranks, get_rank);
 
-        recursive_string =
-            mpi_util::distribute_data_custom(recursive_string, local_sample_size, comm);
+        // TODO: is distirbute worth it?
+        // recursive_string =
+        //     mpi_util::distribute_data_custom(recursive_string, local_sample_size, comm);
 
         free_memory(local_ranks);
 
@@ -212,6 +187,7 @@ public:
         free_memory(SA);
     }
 
+
     uint64_t num_ranks_after_discarding(std::vector<RankIndex>& local_ranks) {
         // all ranks can be dropped that are unique and are not needed to determine a not unique
         // rank
@@ -228,8 +204,111 @@ public:
     }
 
     template <typename new_char_type>
-    void recursive_call_with_discarding(std::vector<RankIndex>& local_ranks,
-                                        uint64_t local_sample_size,
+    void recursive_call_with_discarding_new(std::vector<RankIndex>& local_ranks,
+                                         uint64_t after_discarding) {
+        KASSERT(local_ranks.size() >= 2u);
+
+        // build recursive string and discard ranks
+        std::vector<new_char_type> recursive_string;
+        std::vector<bool> red_pos_unique;
+        recursive_string.reserve(after_discarding);
+        red_pos_unique.reserve(after_discarding);
+
+        // always keep first element
+        recursive_string.push_back(local_ranks[0].rank);
+        red_pos_unique.push_back(local_ranks[0].unique);
+        for (uint64_t i = 1; i < local_ranks.size(); i++) {
+            bool is_unique = local_ranks[i].unique;
+            bool prev_is_unique = local_ranks[i - 1].unique;
+            bool can_drop = is_unique && prev_is_unique;
+            if (!can_drop) {
+                recursive_string.push_back(local_ranks[i].rank);
+                red_pos_unique.push_back(is_unique);
+            }
+        }
+
+        // recursive call
+        PDCX<new_char_type, index_type, DC> rec_pdcx(comm);
+        recursion_depth++;
+        rec_pdcx.recursion_depth = recursion_depth;
+        std::vector<index_type> reduced_SA = rec_pdcx.compute_sa(recursive_string);
+        recursion_depth--;
+        free_memory(recursive_string);
+
+        // zip SA with 1, ..., n
+        struct IndexRank {
+            index_type index, rank;
+            std::string to_string() const {
+                return "(" + std::to_string(index) + ", " + std::to_string(rank) + ")";
+            }
+        };
+        auto index_function = [&](uint64_t idx, index_type sa_index) {
+            return IndexRank{sa_index, index_type(1 + idx)};
+        };
+        std::vector<IndexRank> ranks_sa =
+            mpi_util::zip_with_index<index_type, IndexRank>(reduced_SA, index_function, comm);
+
+        free_memory(reduced_SA);
+
+        // invert reduced SA to get ranks
+        auto cmp_index_sa = [](const IndexRank& l, const IndexRank& r) {
+            return l.index < r.index;
+        };
+        timer.synchronize_and_start("phase_03_sort_index_sa");
+        mpi::sort(ranks_sa, cmp_index_sa, comm);
+        timer.stop();
+
+        // get ranks of recursive string that was generated locally on this PE
+        ranks_sa = mpi_util::distribute_data_custom(ranks_sa, after_discarding, comm);
+
+        // sort ranks and use second rank as a tie breaker
+        struct RankRankIndex {
+            index_type rank1, rank2, index;
+
+            std::string to_string() const {
+                return "(" + std::to_string(rank1) + ", " + std::to_string(rank2) + ", "
+                       + std::to_string(index) + ")";
+            }
+        };
+        auto cmp_rri = [](const RankRankIndex& l, const RankRankIndex& r) {
+            if (l.rank1 != r.rank1) {
+                return l.rank1 < r.rank1;
+            }
+            return l.rank2 < r.rank2;
+        };
+
+        uint64_t index_reduced = 0;
+        auto get_next_rank = [&]() {
+            while (red_pos_unique[index_reduced]) {
+                KASSERT(index_reduced + 1 < red_pos_unique.size());
+                index_reduced++;
+            }
+            return ranks_sa[index_reduced++].rank;
+        };
+
+        std::vector<RankRankIndex> rri;
+        rri.reserve(local_ranks.size());
+        for (uint64_t i = 0; i < local_ranks.size(); i++) {
+            index_type rank1 = local_ranks[i].rank;
+            index_type rank2 = local_ranks[i].unique ? index_type(0) : get_next_rank();
+            index_type index = local_ranks[i].index;
+            rri.emplace_back(rank1, rank2, index);
+        }
+
+        timer.synchronize_and_start("phase_03_sort_rri");
+        mpi::sort(rri, cmp_rri, comm);
+        timer.stop();
+
+        // extract local ranks
+        auto index_local_ranks = [&](uint64_t idx, RankRankIndex& rr) {
+            return RankIndex{index_type(1 + idx), rr.index, true};
+        };
+        local_ranks =
+            mpi_util::zip_with_index<RankRankIndex, RankIndex>(rri, index_local_ranks, comm);
+    }
+
+    template <typename new_char_type>
+    void recursive_call_with_discarding_old(std::vector<RankIndex>& local_ranks,
                                         uint64_t after_discarding) {
         KASSERT(local_ranks.size() >= 2u);
 
@@ -307,6 +386,7 @@ public:
                 new_ranks.emplace_back(org_idx, new_rank);
             }
         }
+
         free_memory(orginal_index);
         free_memory(pos_unique);
         free_memory(ranks_sa);
@@ -346,26 +426,26 @@ public:
 
         // figure out lengths of the other strings
         auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
-        uint64_t total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), 0);
+        total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), 0);
+        local_chars = chars_at_proc[process_rank];
 
         // number of chars before processor i
         std::vector<uint64_t> chars_before(comm.size());
         std::exclusive_scan(chars_at_proc.begin(), chars_at_proc.end(), chars_before.begin(), 0);
 
         // number of positions with mod X = d
-        std::array<uint64_t, X> num_at_mod = compute_num_pos_mod(total_chars);
+        std::array<uint64_t, X> num_at_mod = compute_num_pos_mod();
         const uint64_t rem = total_chars % X;
         bool added_dummy = is_in_dc<DC>(rem);
         num_at_mod[rem] += added_dummy;
 
         // inclusive prefix sum to compute map back
-        std::array<index_type, DC::D + 1> samples_before;
         samples_before[0] = 0;
         for (uint i = 1; i < D + 1; i++) {
             uint d = DC::DC[i - 1];
             samples_before[i] = samples_before[i - 1] + num_at_mod[d];
         }
-        index_type total_sample_size = samples_before.back();
+        total_sample_size = samples_before.back();
         add_padding(local_string);
 
         // logging
@@ -377,6 +457,7 @@ public:
 
         // solve sequentially on root to avoid corner cases with empty PEs
         if (total_chars <= comm.size() * 10) {
+            // if (total_chars <= comm.size() * 4) {
             remove_padding(local_string);
             std::vector<index_type> local_SA =
                 compute_sa_on_root<char_type, index_type>(local_string, comm);
@@ -392,9 +473,8 @@ public:
         phase1.shift_chars_left(local_string);
         std::vector<SampleString> local_samples =
             phase1.compute_sample_strings(local_string, chars_before[process_rank]);
-        index_type local_sample_size = local_samples.size();
+        local_sample_size = local_samples.size();
         phase1.sort_samples(local_samples);
-
         timer.stop();
         //******* End Phase 1: Construct Samples  ********
 
@@ -416,7 +496,7 @@ public:
         index_type last_rank = local_ranks.empty() ? index_type(0) : local_ranks.back().rank;
         comm.bcast_single(send_recv_buf(last_rank), root(comm.size() - 1));
         stats.highest_ranks.push_back(last_rank);
-        bool chars_distinct = last_rank >= total_sample_size;
+        bool chars_distinct = last_rank >= index_type(total_sample_size);
 
         if (chars_distinct) {
             timer.synchronize_and_start("phase_03_sort_index_base");
@@ -427,11 +507,7 @@ public:
             local_ranks.shrink_to_fit();
 
         } else {
-            dispatch_recursive_call(local_ranks,
-                                    local_sample_size,
-                                    last_rank,
-                                    total_chars,
-                                    samples_before);
+            dispatch_recursive_call(local_ranks, last_rank);
         }
         timer.stop();
         //******* End Phase 3: Recursive Call  ********
@@ -485,7 +561,7 @@ public:
             print_vector(stats.highest_ranks, ",");
             std::cout << "char_type_bits=";
             print_vector(stats.char_type_used, ",");
-            std::cout << "char_type_bits=";
+            std::cout << "discarding_reduction=";
             print_vector(stats.discarding_reduction, ",");
             std::cout << "\n";
         }
@@ -502,6 +578,12 @@ public:
     constexpr static uint32_t D = DC::D;
     constexpr static bool DBG = false;
     constexpr static bool use_recursion = true;
+
+    uint64_t local_sample_size;
+    uint64_t total_sample_size;
+    uint64_t local_chars;
+    uint64_t total_chars;
+    std::array<index_type, DC::D + 1> samples_before;
 
     Communicator<>& comm;
     measurements::Timer<Communicator<>>& timer;
