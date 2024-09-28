@@ -1,4 +1,4 @@
-#include <cstdint>
+// #include <cstdint>
 #include <functional>
 #include <iostream>
 #include <vector>
@@ -8,15 +8,15 @@
 
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
+#include "options.hpp"
 #include "pdcx/difference_cover.hpp"
 #include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
-#include "sort.hpp"
+#include "sorters/sorting_wrapper.hpp"
 #include "test.hpp"
 #include "util/printing.hpp"
 #include "util/random.hpp"
 #include "util/uint_types.hpp"
-#include "options.hpp"
 
 using namespace dsss;
 using namespace kamping;
@@ -25,8 +25,9 @@ using namespace kamping;
 void test_sorting(Communicator<>& comm) {
     int repeats = 10;
     int n = 1e4;
+    mpi::SortingWrapper sorting_wrapper(comm);
     auto call_sorter = [&](std::vector<int>& local_data, Communicator<>& comm) {
-        dsss::mpi::sort(local_data, std::less<>{}, comm);
+        sorting_wrapper.sort(local_data, std::less<>{});
     };
     test::test_sorting(repeats, n, call_sorter, comm);
 }
@@ -35,8 +36,8 @@ template <typename PDCX, typename char_type, typename index_type>
 void test_pdcx(int repeats, int n, int alphabet_size, Communicator<>& comm) {
     int cnt_correct = 0;
     int print_limit = 200;
-    dcx::PDCXConfig pdcx_config; 
-
+    dcx::PDCXConfig pdcx_config;
+    pdcx_config.atomic_sorter = mpi::AtomicSorters::SampleSort;
 
     for (int i = 0; i < repeats; i++) {
         int seed = i * comm.size() + comm.rank();
@@ -127,7 +128,7 @@ void start_tests(Communicator<>& comm) {
     //     "pdcx-7");
     // run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC13Param>, char_type, index_type>(
     //     comm,
-        // "pdcx-13");
+    //     "pdcx-13");
 
     // run_alignment_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC3Param>, char_type,
     // index_type>(
@@ -159,7 +160,6 @@ void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
         std::cout << "\n";
     }
 }
-
 
 int main() {
     Environment e;

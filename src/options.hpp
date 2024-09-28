@@ -17,6 +17,13 @@ void report_compile_flags(kamping::Communicator<>& comm) {
         std::cout << "OPTIMIZE_DATA_TYPES is disabled\n";
         std::cout << "OPTIMIZE_DATA_TYPES=0\n";
 #endif
+#ifdef INCLUDE_ALL_SORTERS
+        std::cout << "INCLUDE_ALL_SORTERS is enabled\n";
+        std::cout << "INCLUDE_ALL_SORTERS=1\n";
+#else
+        std::cout << "INCLUDE_ALL_SORTERS is disabled. Using sample sort as fallback.\n";
+        std::cout << "INCLUDE_ALL_SORTERS=0\n";
+#endif
         std::cout << "\n";
     }
 }

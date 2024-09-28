@@ -23,7 +23,7 @@
 #include "mpi/distribute.hpp"
 #include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
-#include "sort.hpp"
+#include "sorters/sorting_wrapper.hpp"
 #include "util/memory_monitor.hpp"
 #include "util/printing.hpp"
 #include "util/string_util.hpp"
@@ -122,7 +122,7 @@ class PDC3 {
         bool operator<(const MergeSamples& b) const {
             index_type i1 = index % 3;
             index_type i2 = b.index % 3;
-            auto [d, r1, r2] = DC3Param::cmpDepthRanks[i1][i2];
+            auto [d, r1, r2] = dcx::DC3Param::cmpDepthRanks[i1][i2];
 
             // compare first d chars
             for (int k = 0; k < d; k++) {
@@ -142,10 +142,13 @@ class PDC3 {
 
 public:
     PDC3(Communicator<>& _comm)
-        : comm(_comm),
+        : atomic_sorter(_comm),
+          comm(_comm),
           timer(measurements::timer()),
           memory_monitor(monitor::get_monitor_instance()),
-          stats(get_stats_instance()) {}
+          stats(get_stats_instance()) {
+        atomic_sorter.set_sorter(mpi::AtomicSorters::SampleSort);
+    }
 
     // maps the index i from a recursive dc3 call back to the global index
     index_type map_back(index_type i, index_type n) {
@@ -327,7 +330,7 @@ public:
         // sort by (mod 3, div 3)
         memory_monitor.remove_memory(local_ranks, "ranks_mod_div_3");
         timer.start("sort_mod_div_3");
-        mpi::sort(local_ranks, RankIndex::cmp_mod_div_3, comm);
+        atomic_sorter.sort(local_ranks, RankIndex::cmp_mod_div_3);
         timer.stop();
         memory_monitor.add_memory(local_ranks, "ranks_mod_div_3");
         KASSERT(local_ranks.size() >= 2u); // can happen for small inputs
@@ -372,7 +375,7 @@ public:
 
         memory_monitor.remove_memory(local_ranks, "ranks_sort");
         timer.start("sort_ranks_index");
-        mpi::sort(local_ranks, RankIndex::cmp_by_index, comm);
+        atomic_sorter.sort(local_ranks, RankIndex::cmp_by_index);
         timer.stop();
         memory_monitor.add_memory(local_ranks, "ranks_sort");
 
@@ -419,7 +422,7 @@ public:
 
         memory_monitor.remove_memory(local_samples, "samples_sort");
         timer.start("sort_local_samples");
-        mpi::sort(local_samples, std::less<>{}, comm);
+        atomic_sorter.sort(local_samples, std::less<>{});
         timer.stop();
 
         local_samples.shrink_to_fit();
@@ -453,7 +456,7 @@ public:
         if (chars_distinct) {
             memory_monitor.remove_memory(local_ranks, "ranks_sort_base");
             timer.start("sort_local_ranks_index_base");
-            mpi::sort(local_ranks, RankIndex::cmp_by_index, comm);
+            atomic_sorter.sort(local_ranks, RankIndex::cmp_by_index);
             timer.stop();
             memory_monitor.add_memory(local_ranks, "ranks_sort_base");
 
@@ -493,7 +496,7 @@ public:
 
         memory_monitor.remove_memory(merge_samples, "merge_samples_sort");
         timer.start("sort_merge_samples");
-        mpi::sort(merge_samples, std::less<>{}, comm);
+        atomic_sorter.sort(merge_samples, std::less<>{});
         timer.stop();
         memory_monitor.add_memory(merge_samples, "merge_samples_sort");
 
@@ -565,6 +568,8 @@ public:
 
     constexpr static bool DBG = false;
     constexpr static bool use_recursion = true;
+
+    mpi::SortingWrapper atomic_sorter;
 
     Communicator<>& comm;
     measurements::Timer<Communicator<>>& timer;

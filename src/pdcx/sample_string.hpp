@@ -9,7 +9,7 @@
 #include "kamping/measurements/timer.hpp"
 #include "mpi/shift.hpp"
 #include "pdcx/difference_cover.hpp"
-#include "sort.hpp"
+#include "sorters/sorting_wrapper.hpp"
 
 namespace dsss::dcx {
 
@@ -95,10 +95,11 @@ struct SampleStringPhase {
     }
 
     // note: adds X - 1 chars to local_string
-    void sort_samples(std::vector<SampleString>& local_samples) const {
+    void sort_samples(std::vector<SampleString>& local_samples,
+                      mpi::SortingWrapper& atomic_sorter) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_01_sort_local_samples");
-        mpi::sort(local_samples, std::less<>{}, comm);
+        atomic_sorter.sort(local_samples, std::less<>{});
         timer.stop();
         local_samples.shrink_to_fit();
     }

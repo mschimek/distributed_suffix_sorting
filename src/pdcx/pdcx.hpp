@@ -25,7 +25,7 @@
 #include "pdcx/sample_string.hpp"
 #include "pdcx/sequential_sa.hpp"
 #include "pdcx/statistics.hpp"
-#include "sort.hpp"
+#include "sorters/sorting_wrapper.hpp"
 #include "util/printing.hpp"
 #include "util/string_util.hpp"
 #include "util/uint_types.hpp"
@@ -44,10 +44,13 @@ class PDCX {
 public:
     PDCX(PDCXConfig& _config, Communicator<>& _comm)
         : config(_config),
+          atomic_sorter(_comm),
           comm(_comm),
           timer(measurements::timer()),
           stats(get_stats_instance()),
-          recursion_depth(0) {}
+          recursion_depth(0) {
+        atomic_sorter.set_sorter(config.atomic_sorter);
+    }
 
     // maps the index i from a recursive dcx call back to the global index
     index_type map_back(index_type idx) {
@@ -127,12 +130,12 @@ public:
 #endif
         }
     }
-    
+
     template <typename new_char_type>
     void handle_recursive_call(std::vector<RankIndex>& local_ranks, auto map_back_func) {
         // sort by (mod X, div X)
         timer.synchronize_and_start("phase_03_sort_mod_div");
-        mpi::sort(local_ranks, RankIndex::cmp_mod_div, comm);
+        atomic_sorter.sort(local_ranks, RankIndex::cmp_mod_div);
         timer.stop();
         KASSERT(local_ranks.size() >= 2u); // can happen for small inputs
 
@@ -154,7 +157,7 @@ public:
 
         // sort samples by original index and distribute back to PEs
         timer.synchronize_and_start("phase_03_sort_ranks_index");
-        mpi::sort(local_ranks, RankIndex::cmp_by_index, comm);
+        atomic_sorter.sort(local_ranks, RankIndex::cmp_by_index);
         timer.stop();
         local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
     }
@@ -260,7 +263,7 @@ public:
             return l.index < r.index;
         };
         timer.synchronize_and_start("phase_03_sort_index_sa");
-        mpi::sort(ranks_sa, cmp_index_sa, comm);
+        atomic_sorter.sort(ranks_sa, cmp_index_sa);
         timer.stop();
 
         // get ranks of recursive string that was generated locally on this PE
@@ -301,7 +304,7 @@ public:
         }
 
         timer.synchronize_and_start("phase_03_sort_rri");
-        mpi::sort(rri, cmp_rri, comm);
+        atomic_sorter.sort(rri, cmp_rri);
         timer.stop();
 
         // extract local ranks
@@ -341,7 +344,7 @@ public:
         }
 
         timer.synchronize_and_start("phase_03_sort_ranks_by_ranks");
-        mpi::sort(local_ranks, RankIndex::cmp_by_rank, comm);
+        atomic_sorter.sort(local_ranks, RankIndex::cmp_by_rank);
         timer.stop();
         local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
 
@@ -373,7 +376,7 @@ public:
         free_memory(reduced_SA);
 
         timer.synchronize_and_start("phase_03_sort_index_sa");
-        mpi::sort(ranks_sa, cmp_index_sa, comm);
+        atomic_sorter.sort(ranks_sa, cmp_index_sa);
         timer.stop();
 
         // get ranks of recursive string that was generated locally on this PE
@@ -399,7 +402,7 @@ public:
         auto cmp_new_ranks = [&](auto a, auto b) { return a.rank < b.rank; };
 
         timer.synchronize_and_start("phase_03_sort_new_ranks");
-        mpi::sort(new_ranks, cmp_new_ranks, comm);
+        atomic_sorter.sort(new_ranks, cmp_new_ranks);
         timer.stop();
 
         auto cnt_not_unique = [](uint64_t sum, RankIndex& r) { return sum + !r.unique; };
@@ -462,7 +465,6 @@ public:
 
         // solve sequentially on root to avoid corner cases with empty PEs
         if (total_chars <= comm.size() * 10) {
-            // if (total_chars <= comm.size() * 4) {
             remove_padding(local_string);
             std::vector<index_type> local_SA =
                 compute_sa_on_root<char_type, index_type>(local_string, comm);
@@ -479,7 +481,7 @@ public:
         std::vector<SampleString> local_samples =
             phase1.compute_sample_strings(local_string, chars_before[process_rank]);
         local_sample_size = local_samples.size();
-        phase1.sort_samples(local_samples);
+        phase1.sort_samples(local_samples, atomic_sorter);
         timer.stop();
         //******* End Phase 1: Construct Samples  ********
 
@@ -505,7 +507,7 @@ public:
 
         if (chars_distinct) {
             timer.synchronize_and_start("phase_03_sort_index_base");
-            mpi::sort(local_ranks, RankIndex::cmp_by_index, comm);
+            atomic_sorter.sort(local_ranks, RankIndex::cmp_by_index);
             timer.stop();
 
             local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
@@ -532,7 +534,7 @@ public:
                                            chars_at_proc[process_rank]);
 
         free_memory(local_ranks);
-        phase4.sort_merge_samples(merge_samples);
+        phase4.sort_merge_samples(merge_samples, atomic_sorter);
         std::vector<index_type> local_SA = phase4.extract_SA(merge_samples);
 
         timer.stop();
@@ -591,6 +593,7 @@ public:
     std::array<index_type, DC::D + 1> samples_before;
 
     PDCXConfig& config;
+    mpi::SortingWrapper atomic_sorter;
 
     Communicator<>& comm;
     measurements::Timer<Communicator<>>& timer;

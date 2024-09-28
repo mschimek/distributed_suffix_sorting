@@ -6,7 +6,7 @@
 #include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
 #include "mpi/zip.hpp"
-#include "sort.hpp"
+#include "sorters/sorting_wrapper.hpp"
 #include "util/printing.hpp"
 
 namespace dsss {
@@ -19,6 +19,9 @@ bool check_suffixarray(std::vector<IndexType>& sa,
                        std::vector<CharType>& text,
                        kamping::Communicator<>& comm) {
     using namespace kamping;
+
+    mpi::SortingWrapper sorting_wrapper(comm);
+    sorting_wrapper.set_sorter(mpi::AtomicSorters::SampleSort);
 
     bool is_correct = true;
 
@@ -64,10 +67,8 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     std::vector<sa_tuple> sa_tuples =
         mpi_util::zip_with_index<IndexType, sa_tuple>(sa, index_function, comm);
 
-    mpi::sort(
-        sa_tuples,
-        [](const sa_tuple& a, const sa_tuple& b) { return a.sa < b.sa; },
-        comm);
+    sorting_wrapper.sort(sa_tuples,
+                         [](const sa_tuple& a, const sa_tuple& b) { return a.sa < b.sa; });
     sa_tuples = mpi_util::distribute_data(sa_tuples, comm);
     text = mpi_util::distribute_data(text, comm);
     comm.barrier();
@@ -98,10 +99,9 @@ bool check_suffixarray(std::vector<IndexType>& sa,
         rts.emplace_back(rank_triple{sa_tuples[i].rank, sa_tuples[i + 1].rank, text[i]});
     }
 
-    mpi::sort(
-        rts,
-        [](const rank_triple& a, const rank_triple& b) { return a.rank1 < b.rank1; },
-        comm);
+    sorting_wrapper.sort(rts, [](const rank_triple& a, const rank_triple& b) {
+        return a.rank1 < b.rank1;
+    });
 
     local_size = rts.size();
 

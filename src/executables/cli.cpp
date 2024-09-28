@@ -1,4 +1,7 @@
 
+#include <string>
+#include <unordered_map>
+
 #include <tlx/cmdline_parser.hpp>
 
 #include "kamping/communicator.hpp"
@@ -8,13 +11,16 @@
 #include "pdcx/difference_cover.hpp"
 #include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
+#include "sorters/sorting_wrapper.hpp"
 #include "util/random.hpp"
 #include "util/uint_types.hpp"
 
 #define V(x) std::string(#x "=") << (x) << " " //"x=...
 
+using namespace dsss;
+
 using char_type = uint8_t;
-using index_type = dsss::uint40;
+using index_type = uint40;
 
 size_t string_size = {0};
 size_t alphabet_size = {2};
@@ -24,7 +30,8 @@ std::string output_path = "";
 std::string dcx_variant = "dc3";
 bool check = false;
 
-dsss::dcx::PDCXConfig pdcx_config;
+dcx::PDCXConfig pdcx_config;
+std::string atomic_sorter = "sample_sort";
 
 tlx::CmdlineParser cp;
 std::vector<char_type> local_string;
@@ -75,6 +82,40 @@ void configure_cli() {
                 "old_discarding",
                 pdcx_config.use_old_discarding,
                 "Use old discarding function.");
+
+    cp.add_string('r',
+                  "atomic_sorter",
+                  "<F>",
+                  atomic_sorter,
+                  "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
+}
+
+template <typename EnumType>
+EnumType get_enum(std::string s, std::vector<std::string> names, kamping::Communicator<>& comm) {
+    for (uint i = 0; i < names.size(); i++) {
+        if (s == names[i]) {
+            return static_cast<EnumType>(i);
+        }
+    }
+    if (comm.rank() == 0) {
+        std::cout << "Invalid enum: " << s << "\n";
+        std::cout << "Available options: ";
+        bool is_first = true;
+        for (std::string& s: names) {
+            if (!is_first) {
+                std::cout << ", ";
+            }
+            std::cout << s;
+            is_first = false;
+        }
+        std::cout << "\n";
+    }
+    exit(1);
+}
+
+void map_strings_to_enum(kamping::Communicator<>& comm) {
+    pdcx_config.atomic_sorter =
+        get_enum<mpi::AtomicSorters>(atomic_sorter, mpi::atomic_sorter_names, comm);
 }
 
 void report_arguments(kamping::Communicator<>& comm) {
@@ -97,12 +138,12 @@ void read_input(kamping::Communicator<>& comm) {
         string_size /= comm.size();
         uint64_t local_seed = seed + comm.rank();
         local_string =
-            dsss::random::generate_random_data<char_type>(string_size, alphabet_size, local_seed);
+            random::generate_random_data<char_type>(string_size, alphabet_size, local_seed);
     } else {
         if (string_size > 0) {
-            local_string = dsss::mpi::read_and_distribute_string(input_path, comm, string_size);
+            local_string = mpi::read_and_distribute_string(input_path, comm, string_size);
         } else {
-            local_string = dsss::mpi::read_and_distribute_string(input_path, comm);
+            local_string = mpi::read_and_distribute_string(input_path, comm);
         }
     }
 }
@@ -118,17 +159,18 @@ void run_pdcx(kamping::Communicator<>& comm) {
 }
 
 void compute_sa(kamping::Communicator<>& comm) {
-    using namespace dsss::dcx;
+    using namespace dcx;
     if (dcx_variant == "dc3") {
         run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc7") {
-        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc13") {
-        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    } else {
-        std::cerr << "dcx variant " << dcx_variant
-                  << " not supported. Must be in [dc3, dc7, dc13]. \n";
     }
+    // else if (dcx_variant == "dc7") {
+    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc13") {
+    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    // } else {
+    //     std::cerr << "dcx variant " << dcx_variant
+    //               << " not supported. Must be in [dc3, dc7, dc13]. \n";
+    // }
 }
 
 void write_sa(kamping::Communicator<>& comm) {
@@ -136,7 +178,7 @@ void write_sa(kamping::Communicator<>& comm) {
         if (comm.rank() == 0) {
             std::cout << "Writing the SA to " << output_path << std::endl;
         }
-        dsss::mpi::write_data(local_sa, output_path, comm);
+        mpi::write_data(local_sa, output_path, comm);
         comm.barrier();
         if (comm.rank() == 0) {
             std::cout << "Finished writing the SA" << std::endl;
@@ -150,7 +192,7 @@ void check_sa(kamping::Communicator<>& comm) {
             std::cout << "Checking SA ... ";
         }
         // assuming algorithm did not change local string
-        bool correct = dsss::check_suffixarray(local_sa, local_string, comm);
+        bool correct = check_suffixarray(local_sa, local_string, comm);
 
         if (comm.rank() == 0) {
             std::string msg = correct ? "Correct SA!" : "ERROR: Not a correct SA!";
@@ -171,6 +213,7 @@ int main(int32_t argc, char const* argv[]) {
     if (!cp.process(argc, argv)) {
         return -1;
     }
+    map_strings_to_enum(comm);
     report_arguments(comm);
     read_input(comm);
     compute_sa(comm);

@@ -13,9 +13,10 @@ set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_COLOR_DIAGNOSTICS ON)
 
+# -Werror stops compiliation because of some files in KaDiS
 list(APPEND
   DSSS_WARNING_FLAGS
-  "-Werror"
+  # "-Werror"
   "-Wall"
   "-Wextra"
   "-Wundef"
@@ -38,7 +39,9 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -DDEBUG -march=native -ggdb")
 
 # compile options
 option(OPTIMIZE_DATA_TYPES "use smallest data type possible for ranks in pdcx" OFF)
+option(INCLUDE_ALL_SORTERS "include all axtmann sorters" OFF)
 message(STATUS "---> OPTIMIZE_DATA_TYPES: ${OPTIMIZE_DATA_TYPES}")
+message(STATUS "---> INCLUDE_ALL_SORTERS: ${INCLUDE_ALL_SORTERS}")
 
 
 
@@ -63,6 +66,8 @@ set(IPS4O_DISABLE_PARALLEL OFF)
 add_subdirectory(external/ips4o)
 
 add_subdirectory(external/kamping)
+add_subdirectory(external/KaDiS)
+
 
 # Create a library containing all implementation, to be linked against by executables
 add_library(dss_base)
@@ -79,6 +84,7 @@ target_link_libraries(dss_base PRIVATE kamping)
 target_link_libraries(dss_base PRIVATE MPI::MPI_CXX)
 target_link_libraries(dss_base PUBLIC tlx)
 target_link_libraries(dss_base PUBLIC ips4o)
+target_link_libraries(dss_base PRIVATE kadis)
 
 set(StringSorting "src/string_sorting")
 add_subdirectory(src)
@@ -92,17 +98,9 @@ target_include_directories(main PRIVATE
 target_compile_options(main PRIVATE ${DSSS_WARNING_FLAGS})
 target_link_libraries(main kamping)
 target_link_libraries(main dss_base)
-
-# add compile flag
-if(OPTIMIZE_DATA_TYPES)
-  message(STATUS "setting OPTIMIZE_DATA_TYPES in main")
-  target_compile_definitions(main PRIVATE OPTIMIZE_DATA_TYPES)
-endif()
-
-
+target_link_libraries(main kadis)
 
 # cli
-# add_executable(cli src/cli.cpp)
 add_executable(cli src/executables/cli.cpp)
 target_include_directories(cli PRIVATE
   "${CMAKE_CURRENT_BINARY_DIR}/include")
@@ -110,9 +108,20 @@ target_include_directories(cli PRIVATE
 target_compile_options(cli PRIVATE ${DSSS_WARNING_FLAGS})
 target_link_libraries(cli kamping)
 target_link_libraries(cli dss_base)
+target_link_libraries(cli kadis)
 
-# add compile flag
+
+# add compile flags
 if(OPTIMIZE_DATA_TYPES)
+  message(STATUS "setting OPTIMIZE_DATA_TYPES in main")
   message(STATUS "setting OPTIMIZE_DATA_TYPES in cli")
+  target_compile_definitions(main PRIVATE OPTIMIZE_DATA_TYPES)
   target_compile_definitions(cli PRIVATE OPTIMIZE_DATA_TYPES)
+endif()
+  
+if(INCLUDE_ALL_SORTERS)
+  message(STATUS "setting INCLUDE_ALL_SORTERS in main")
+  message(STATUS "setting INCLUDE_ALL_SORTERS in cli")
+  target_compile_definitions(main PRIVATE INCLUDE_ALL_SORTERS)
+  target_compile_definitions(cli PRIVATE INCLUDE_ALL_SORTERS)
 endif()

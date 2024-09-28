@@ -9,7 +9,7 @@
 #include "kamping/measurements/timer.hpp"
 #include "mpi/shift.hpp"
 #include "pdcx/compute_ranks.hpp"
-#include "sort.hpp"
+#include "sorters/sorting_wrapper.hpp"
 
 namespace dsss::dcx {
 
@@ -128,10 +128,11 @@ struct MergeSamplePhase {
     }
 
     // sort merge samples using substrings and rank information
-    void sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
+    void sort_merge_samples(std::vector<MergeSamples>& merge_samples,
+                            mpi::SortingWrapper& atomic_sorter) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_04_sort_merge_samples");
-        mpi::sort(merge_samples, std::less<>{}, comm);
+        atomic_sorter.sort(merge_samples, std::less<>{});
         timer.stop();
     }
 

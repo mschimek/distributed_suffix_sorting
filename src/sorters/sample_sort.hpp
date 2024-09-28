@@ -26,7 +26,7 @@
 namespace dsss::mpi {
 
 template <typename DataType, class Compare>
-inline void sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicator<>& comm) {
+inline void sample_sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicator<>& comm) {
     // code breaks for very small inputs --> switch to sequential sorting
     uint64_t local_size = local_data.size();
     uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
