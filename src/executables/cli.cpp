@@ -88,6 +88,16 @@ void configure_cli() {
                   "<F>",
                   atomic_sorter,
                   "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
+
+    cp.add_bytes('b',
+                 "blocks_space_efficient_sort",
+                 pdcx_config.blocks_space_efficient_sort,
+                 "Number of blocks to be used for space efficient sort.");
+
+    cp.add_bytes('i',
+                 "threshold_space_efficient_sort",
+                 pdcx_config.threshold_space_efficient_sort,
+                 "Use space efficient sort, if there are more chars than the threshold.");
 }
 
 template <typename EnumType>
@@ -162,15 +172,14 @@ void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
     if (dcx_variant == "dc3") {
         run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc7") {
+        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc13") {
+        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    } else {
+        std::cerr << "dcx variant " << dcx_variant
+                  << " not supported. Must be in [dc3, dc7, dc13]. \n";
     }
-    // else if (dcx_variant == "dc7") {
-    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc13") {
-    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    // } else {
-    //     std::cerr << "dcx variant " << dcx_variant
-    //               << " not supported. Must be in [dc3, dc7, dc13]. \n";
-    // }
 }
 
 void write_sa(kamping::Communicator<>& comm) {

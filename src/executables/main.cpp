@@ -9,6 +9,7 @@
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
 #include "options.hpp"
+#include "pdcx/config.hpp"
 #include "pdcx/difference_cover.hpp"
 #include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
@@ -38,6 +39,8 @@ void test_pdcx(int repeats, int n, int alphabet_size, Communicator<>& comm) {
     int print_limit = 200;
     dcx::PDCXConfig pdcx_config;
     pdcx_config.atomic_sorter = mpi::AtomicSorters::SampleSort;
+    pdcx_config.blocks_space_efficient_sort = 3;
+    pdcx_config.threshold_space_efficient_sort = n / 2;
 
     for (int i = 0; i < repeats; i++) {
         int seed = i * comm.size() + comm.rank();
@@ -148,7 +151,9 @@ template <typename PDCX, typename char_type, typename index_type>
 void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
     std::vector<char_type> local_data =
         dsss::random::generate_random_data<char_type>(n, alphabet_size, comm.rank());
-    PDCX pdcx(comm);
+    
+    dcx::PDCXConfig config;
+    PDCX pdcx(config, comm);
     std::vector<index_type> SA = pdcx.compute_sa(local_data);
 
     pdcx.report_time();
@@ -161,6 +166,7 @@ void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
     }
 }
 
+
 int main() {
     Environment e;
     Communicator comm;
@@ -169,10 +175,9 @@ int main() {
     options::report_compile_flags(comm);
     start_tests(comm);
 
-
     // using char_type = uint16_t;
     // using index_type = uint32_t;
-    // int n = 60 / comm.size();
+    // int n = 1e3 / comm.size();
     // int alpha = 4;
     // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(n, alpha, comm);
     // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(n, alpha, comm);

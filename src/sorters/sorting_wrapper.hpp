@@ -3,13 +3,17 @@
 #include <random>
 #include <vector>
 
+#ifdef INCLUDE_ALL_SORTERS
 #include "AmsSort/AmsSort.hpp"
 #include "Bitonic/Bitonic.hpp"
 // #include "HSS/Hss.hpp"
 #include "RFis/RFis.hpp"
 #include "RQuick/RQuick.hpp"
-#include "kamping/communicator.hpp"
 #include "kamping/mpi_datatype.hpp"
+#endif
+
+#include "RBC.hpp"
+#include "kamping/communicator.hpp"
 #include "sorters/sample_sort.hpp"
 
 namespace dsss::mpi {

@@ -57,14 +57,14 @@ std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
 
     std::vector<int> target_sizes = comm.allgather(send_buf(local_target_size));
     std::vector<int> preceding_target_size(num_processes);
-    std::exclusive_scan(target_sizes.begin(), target_sizes.end(), target_sizes.begin(), 0);
+    std::exclusive_scan(target_sizes.begin(), target_sizes.end(), preceding_target_size.begin(), 0);
 
     int local_data_size = local_data.size();
     int preceding_size = comm.exscan(send_buf(local_size), op(ops::plus<>{}))[0];
 
     std::vector<int> send_cnts(num_processes, 0);
     for (int cur_rank = 0; cur_rank < num_processes - 1 && local_data_size > 0; cur_rank++) {
-        int to_send = std::max(0, target_sizes[cur_rank + 1] - preceding_size);
+        int to_send = std::max(0, preceding_target_size[cur_rank + 1] - preceding_size);
         to_send = std::min(to_send, local_data_size);
         send_cnts[cur_rank] = to_send;
         local_data_size -= to_send;

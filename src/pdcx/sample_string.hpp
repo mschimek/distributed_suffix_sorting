@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -24,7 +25,7 @@ struct DCSampleString {
         letters.fill(0);
         index = 0;
     }
-    DCSampleString(std::array<char_type, DC::X> _letters, index_type _index)
+    DCSampleString(std::array<char_type, DC::X> &&_letters, index_type _index)
         : letters(_letters),
           index(_index) {}
 
@@ -39,9 +40,9 @@ struct DCSampleString {
 
     std::string to_string() const {
         std::stringstream ss;
-        ss << "(" << letters[0];
+        ss << "(" << (uint64_t)letters[0];
         for (uint i = 1; i < DC::X; i++) {
-            ss << " " << letters[i];
+            ss << " " << (uint64_t)letters[i];
         }
         ss << ") " << index;
         return ss.str();
@@ -85,7 +86,7 @@ struct SampleStringPhase {
                 for (uint k = 0; k < X; k++) {
                     letters[k] = local_string[i + k];
                 }
-                local_samples.push_back(SampleString(letters, index));
+                local_samples.push_back(SampleString(std::move(letters), index));
             }
         }
         // last process adds a dummy sample if remainder of some differrence cover element aligns

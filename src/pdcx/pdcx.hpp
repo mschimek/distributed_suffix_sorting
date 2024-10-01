@@ -14,6 +14,7 @@
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/printer.hpp"
 #include "kamping/measurements/timer.hpp"
+#include "kamping/mpi_ops.hpp"
 #include "kamping/named_parameters.hpp"
 #include "kassert/kassert.hpp"
 #include "mpi/distribute.hpp"
@@ -25,6 +26,7 @@
 #include "pdcx/sample_string.hpp"
 #include "pdcx/sequential_sa.hpp"
 #include "pdcx/statistics.hpp"
+#include "sa_check.hpp"
 #include "sorters/sorting_wrapper.hpp"
 #include "util/printing.hpp"
 #include "util/string_util.hpp"
@@ -424,6 +426,24 @@ public:
         }
     }
 
+    // compute even distributed splitters from sorted local samples
+    std::vector<std::array<char_type, DC::X>>
+    get_sample_splitters(std::vector<SampleString>& local_samples, uint64_t blocks) {
+        using Substring = std::array<char_type, DC::X>;
+        int64_t num_samples = local_samples.size();
+        int64_t samples_before = mpi_util::ex_prefix_sum(num_samples, comm);
+        std::vector<Substring> local_splitters;
+        for (uint64_t i = 0; i < blocks - 1; i++) {
+            int64_t global_index = (i + 1) * total_sample_size / blocks;
+            int64_t x = global_index - samples_before;
+            if (x >= 0 && x < num_samples) {
+                local_splitters.push_back(local_samples[x].letters);
+            }
+        }
+        std::vector<Substring> global_splitters = comm.allgatherv(send_buf(local_splitters));
+        return global_splitters;
+    }
+
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
         timer.synchronize_and_start("pdcx");
 
@@ -457,6 +477,8 @@ public:
         add_padding(local_string);
 
         // logging
+        stats.algo = "DC" + std::to_string(X);
+        stats.num_processors = comm.size();
         stats.max_depth = std::max(stats.max_depth, recursion_depth);
         stats.string_sizes.push_back(total_chars);
         stats.local_string_sizes.push_back(local_string.size());
@@ -483,6 +505,16 @@ public:
         local_sample_size = local_samples.size();
         phase1.sort_samples(local_samples, atomic_sorter);
         timer.stop();
+
+        // get splitters from sorted sample sequence
+        bool use_space_efficient_sort = total_chars >= config.threshold_space_efficient_sort;
+        uint64_t blocks = config.blocks_space_efficient_sort;
+        stats.space_efficient_sort.push_back(use_space_efficient_sort);
+        std::vector<std::array<char_type, DC::X>> global_samples_splitters;
+        if (use_space_efficient_sort) {
+            global_samples_splitters = get_sample_splitters(local_samples, blocks);
+        }
+
         //******* End Phase 1: Construct Samples  ********
 
         //******* Start Phase 2: Construct Ranks  ********
@@ -526,24 +558,55 @@ public:
         phase4.shift_ranks_left(local_ranks);
         phase4.push_padding(local_ranks, total_chars);
 
-        // TODO: more space effient implementation using blockwise materilization
-        std::vector<MergeSamples> merge_samples =
-            phase4.construct_merge_samples(local_string,
-                                           local_ranks,
-                                           chars_before[process_rank],
-                                           chars_at_proc[process_rank]);
+        std::vector<index_type> local_SA;
+        if (use_space_efficient_sort) {
+            std::vector<uint64_t> bucket_sizes =
+                phase4.compute_bucket_sizes(local_string, local_chars, global_samples_splitters);
 
-        free_memory(local_ranks);
-        phase4.sort_merge_samples(merge_samples, atomic_sorter);
-        std::vector<index_type> local_SA = phase4.extract_SA(merge_samples);
+            local_SA = phase4.space_effient_sort_SA(local_string,
+                                                    local_ranks,
+                                                    bucket_sizes,
+                                                    chars_before[comm.rank()],
+                                                    local_chars,
+                                                    global_samples_splitters,
+                                                    atomic_sorter);
+            uint64_t largest_bucket = *std::max_element(bucket_sizes.begin(), bucket_sizes.end());
+            double avg_buckets = (double)total_chars / (blocks * comm.size());
+            double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
+            double max_bucket_imbalance =
+                mpi_util::all_reduce(bucket_imbalance, ops::max<>{}, comm);
+            stats.bucket_imbalance.push_back(max_bucket_imbalance);
+            // print_concatenated(bucket_sizes, comm, "bucket_sizes");
+            // print_concatenated_string(std::to_string(local_SA.size()), comm, "local_SA.size()");
+        } else {
+            std::vector<MergeSamples> merge_samples =
+                phase4.construct_merge_samples(local_string,
+                                               local_ranks,
+                                               chars_before[process_rank],
+                                               chars_at_proc[process_rank]);
+
+            free_memory(local_ranks);
+            phase4.sort_merge_samples(merge_samples, atomic_sorter);
+            local_SA = phase4.extract_SA(merge_samples);
+        }
 
         timer.stop();
         //******* End Phase 4: Merge Suffixes  ********
 
+        // logging
+        stats.string_imbalance.push_back(compute_imbalance(local_chars, comm));
+        stats.sample_imbalance.push_back(compute_imbalance(local_sample_size, comm));
+        stats.sa_imbalance.push_back(compute_imbalance(local_SA.size(), comm));
+        if (recursion_depth == 0) {
+            std::reverse(stats.string_imbalance.begin(), stats.string_imbalance.end());
+            std::reverse(stats.sample_imbalance.begin(), stats.sample_imbalance.end());
+            std::reverse(stats.sa_imbalance.begin(), stats.sa_imbalance.end());
+            std::reverse(stats.bucket_imbalance.begin(), stats.bucket_imbalance.end());
+        }
+
         clean_up(local_string);
 
         timer.stop(); // pdcx
-
         return local_SA;
     }
 
@@ -558,19 +621,7 @@ public:
     void report_stats() {
         comm.barrier();
         if (comm.rank() == comm.size() - 1) {
-            std::cout << "\nStatistics:\n";
-            std::cout << "algo=DC" << DC::X << std::endl;
-            std::cout << "num_proc=" << comm.size() << std::endl;
-            std::cout << "max_depth=" << stats.max_depth << std::endl;
-            std::cout << "string_sizes=";
-            print_vector(stats.string_sizes, ",");
-            std::cout << "highest_ranks=";
-            print_vector(stats.highest_ranks, ",");
-            std::cout << "char_type_bits=";
-            print_vector(stats.char_type_used, ",");
-            std::cout << "discarding_reduction=";
-            print_vector(stats.discarding_reduction, ",");
-            std::cout << "\n";
+            stats.print();
         }
         comm.barrier();
     }

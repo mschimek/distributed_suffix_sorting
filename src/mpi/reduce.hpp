@@ -21,6 +21,7 @@ T all_reduce(T& local_data, Operation operation, Communicator<>& comm) {
     return combined_local;
 }
 
+
 template <typename T>
 T all_reduce_sum(T& local_data, Communicator<>& comm) {
     return all_reduce(local_data, ops::plus<>(), comm);

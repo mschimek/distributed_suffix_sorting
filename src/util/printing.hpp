@@ -127,12 +127,12 @@ void print_concatenated_string(std::vector<T> const& local_data,
 // template <typename Container, typename T>
 void print_vector(auto& vec, std::string sep = " ") {
     bool is_first = true;
-    for (auto& x: vec) {
+    for (auto x: vec) {
         if (!is_first) {
             std::cout << sep;
         }
         is_first = false;
-        std::cout << x;
+        std::cout << std::fixed << std::setprecision(3) << x;
     }
     std::cout << "\n";
 }
