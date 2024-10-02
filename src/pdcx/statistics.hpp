@@ -52,8 +52,7 @@ struct Statistics {
         print_vector(sa_imbalance, ",");
         std::cout << "bucket_imbalance=";
         print_vector(bucket_imbalance, ",");
-        std::cout << "\n";
-        // TODO round doubles
+        std::cout << std::endl;
     }
 
     std::string algo;

@@ -108,7 +108,7 @@ EnumType get_enum(std::string s, std::vector<std::string> names, kamping::Commun
         }
     }
     if (comm.rank() == 0) {
-        std::cout << "Invalid enum: " << s << "\n";
+        std::cout << "Invalid enum: " << s << std::endl;
         std::cout << "Available options: ";
         bool is_first = true;
         for (std::string& s: names) {
@@ -118,7 +118,7 @@ EnumType get_enum(std::string s, std::vector<std::string> names, kamping::Commun
             std::cout << s;
             is_first = false;
         }
-        std::cout << "\n";
+        std::cout << std::endl;
     }
     exit(1);
 }
@@ -129,6 +129,7 @@ void map_strings_to_enum(kamping::Communicator<>& comm) {
 }
 
 void report_arguments(kamping::Communicator<>& comm) {
+    comm.barrier();
     if (comm.rank() == 0) {
         std::cout << "Arguments:\n";
         std::cout << V(string_size) << "\n";
@@ -138,9 +139,10 @@ void report_arguments(kamping::Communicator<>& comm) {
         std::cout << V(output_path) << "\n";
         std::cout << V(dcx_variant) << "\n";
         std::cout << V(check) << "\n";
-        std::cout << "\n";
+        std::cout << std::endl;
         pdcx_config.print_config();
     }
+    comm.barrier();
 }
 
 void read_input(kamping::Communicator<>& comm) {
@@ -162,11 +164,10 @@ template <typename PDCX, typename char_type, typename index_type>
 void run_pdcx(kamping::Communicator<>& comm) {
     auto algo = PDCX(pdcx_config, comm);
     local_sa = algo.compute_sa(local_string);
-    comm.barrier();
-    algo.report_stats();
-    comm.barrier();
     algo.report_time();
+    algo.report_stats();
 }
+
 
 void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
@@ -205,8 +206,8 @@ void check_sa(kamping::Communicator<>& comm) {
 
         if (comm.rank() == 0) {
             std::string msg = correct ? "Correct SA!" : "ERROR: Not a correct SA!";
-            std::cout << msg << "\n";
-            std::cout << "SA_ok=" << correct << "\n";
+            std::cout << msg << std::endl;
+            std::cout << "SA_ok=" << correct << std::endl;
         }
     }
 }

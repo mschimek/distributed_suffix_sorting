@@ -17,7 +17,7 @@
 #include "kamping/collectives/allgather.hpp"
 #include "kamping/communicator.hpp"
 
-#define V(x) std::string(#x "=") << (x) << " "  //"x=...
+#define V(x) std::string(#x "=") << (x) << " " //"x=...
 
 
 namespace kamping {
@@ -94,7 +94,7 @@ void print_concatenated(T const& local_data,
             std::cout << "\n";
             rank++;
         }
-        std::cout << "\n";
+        std::cout << std::endl;
     }
 }
 
@@ -134,6 +134,14 @@ void print_vector(auto& vec, std::string sep = " ") {
         is_first = false;
         std::cout << std::fixed << std::setprecision(3) << x;
     }
-    std::cout << "\n";
+    std::cout << std::endl;
+}
+
+template <typename Communicator>
+void report_on_root(std::string const& str, Communicator const& comm, uint64_t level = 0) {
+    if (comm.is_root()) {
+        std::string pad(level * 2, ' ');
+        std::cout << pad << str << std::endl;
+    }
 }
 } // namespace kamping

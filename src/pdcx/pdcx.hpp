@@ -456,6 +456,9 @@ public:
         auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
         total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), 0);
         local_chars = chars_at_proc[process_rank];
+        
+        report_on_root("Recursion Level: " + std::to_string(recursion_depth) + ", Total Chars: " + std::to_string(total_chars), comm, recursion_depth);
+        report_on_root("Phase 0: Preparation", comm, recursion_depth);
 
         // number of chars before processor i
         std::vector<uint64_t> chars_before(comm.size());
@@ -496,6 +499,7 @@ public:
         //******* End Phase 0: Preparation  ********
 
         //******* Start Phase 1: Construct Samples  ********
+        report_on_root("Phase 1: Sort Samples", comm, recursion_depth);
         timer.synchronize_and_start("phase_01_samples");
 
         SampleStringPhase<char_type, index_type, DC> phase1(comm);
@@ -518,6 +522,7 @@ public:
         //******* End Phase 1: Construct Samples  ********
 
         //******* Start Phase 2: Construct Ranks  ********
+        report_on_root("Phase 2: Construct Ranks", comm, recursion_depth);
         timer.synchronize_and_start("phase_02_ranks");
 
         LexicographicRankPhase<char_type, index_type, DC> phase2(comm);
@@ -530,6 +535,8 @@ public:
         //******* End Phase 2: Construct Ranks  ********
 
         //******* Start Phase 3: Recursive Call  ********
+        report_on_root("Phase 3: Recursion", comm, recursion_depth);
+
         timer.synchronize_and_start("phase_03_recursion");
 
         index_type last_rank = local_ranks.empty() ? index_type(0) : local_ranks.back().rank;
@@ -552,6 +559,7 @@ public:
         //******* End Phase 3: Recursive Call  ********
 
         //******* Start Phase 4: Merge Suffixes  ********
+        report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth);
         timer.synchronize_and_start("phase_04_merge");
 
         MergeSamplePhase<char_type, index_type, DC> phase4(comm);
@@ -614,7 +622,7 @@ public:
         comm.barrier();
         // timer.aggregate_and_print(measurements::SimpleJsonPrinter<>{});
         timer.aggregate_and_print(measurements::FlatPrinter{});
-        std::cout << "\n";
+        std::cout << std::endl;
         comm.barrier();
     }
 
