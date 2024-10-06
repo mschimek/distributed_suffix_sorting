@@ -83,6 +83,7 @@ public:
 
     void remove_padding(std::vector<char_type>& local_data) {
         if (comm.rank() == comm.size() - 1) {
+            KASSERT(local_data.size() >= DC::X);
             local_data.resize(local_data.size() - DC::X);
         }
     }
@@ -109,6 +110,10 @@ public:
         auto map_back_func = [&](index_type sa_i) { return map_back(sa_i); };
         if (total_chars <= 80u) {
             // continue with sequential algorithm
+            report_on_root("Sequential SA on local ranks",
+                           comm,
+                           recursion_depth,
+                           config.print_phases);
             sequential_sa_on_local_ranks<char_type, index_type, DC>(local_ranks,
                                                                     local_sample_size,
                                                                     map_back_func,
@@ -139,7 +144,8 @@ public:
         timer.synchronize_and_start("phase_03_sort_mod_div");
         atomic_sorter.sort(local_ranks, RankIndex::cmp_mod_div);
         timer.stop();
-        KASSERT(local_ranks.size() >= 2u); // can happen for small inputs
+
+        redistribute_if_imbalanced(local_ranks, 0.25);
 
         uint64_t after_discarding = num_ranks_after_discarding(local_ranks);
         uint64_t total_after_discarding = mpi_util::all_reduce_sum(after_discarding, comm);
@@ -147,7 +153,12 @@ public:
         stats.discarding_reduction.push_back(reduction);
 
         bool use_discarding = reduction <= config.discarding_threshold;
+        stats.use_discarding.push_back(use_discarding);
         if (use_discarding) {
+            report_on_root("using discarding, reduction: " + std::to_string(reduction),
+                           comm,
+                           recursion_depth,
+                           config.print_phases);
             if (config.use_old_discarding) {
                 recursive_call_with_discarding_old<new_char_type>(local_ranks, after_discarding);
             } else {
@@ -193,6 +204,7 @@ public:
             bool unique = true; // does not matter here
             return RankIndex(rank, global_index, unique);
         };
+
         local_ranks = mpi_util::zip_with_index<index_type, RankIndex>(SA, index_function, comm);
         free_memory(SA);
     }
@@ -216,7 +228,7 @@ public:
     template <typename new_char_type>
     void recursive_call_with_discarding_new(std::vector<RankIndex>& local_ranks,
                                             uint64_t after_discarding) {
-        KASSERT(local_ranks.size() >= 2u);
+        KASSERT(local_ranks.size() >= 0u);
 
         // build recursive string and discard ranks
         std::vector<new_char_type> recursive_string;
@@ -255,6 +267,7 @@ public:
         auto index_function = [&](uint64_t idx, index_type sa_index) {
             return IndexRank{sa_index, index_type(1 + idx)};
         };
+
         std::vector<IndexRank> ranks_sa =
             mpi_util::zip_with_index<index_type, IndexRank>(reduced_SA, index_function, comm);
 
@@ -264,6 +277,7 @@ public:
         auto cmp_index_sa = [](const IndexRank& l, const IndexRank& r) {
             return l.index < r.index;
         };
+
         timer.synchronize_and_start("phase_03_sort_index_sa");
         atomic_sorter.sort(ranks_sa, cmp_index_sa);
         timer.stop();
@@ -313,6 +327,7 @@ public:
         auto index_local_ranks = [&](uint64_t idx, RankRankIndex& rr) {
             return RankIndex{index_type(1 + idx), rr.index, true};
         };
+
         local_ranks =
             mpi_util::zip_with_index<RankRankIndex, RankIndex>(rri, index_local_ranks, comm);
     }
@@ -320,8 +335,6 @@ public:
     template <typename new_char_type>
     void recursive_call_with_discarding_old(std::vector<RankIndex>& local_ranks,
                                             uint64_t after_discarding) {
-        KASSERT(local_ranks.size() >= 2u);
-
         // build recursive string and discard ranks
         std::vector<new_char_type> recursive_string;
         std::vector<index_type> orginal_index;
@@ -376,6 +389,7 @@ public:
             mpi_util::zip_with_index<index_type, IndexRank>(reduced_SA, index_function, comm);
 
         free_memory(reduced_SA);
+
 
         timer.synchronize_and_start("phase_03_sort_index_sa");
         atomic_sorter.sort(ranks_sa, cmp_index_sa);
@@ -444,21 +458,37 @@ public:
         return global_splitters;
     }
 
+    template <typename T>
+    bool redistribute_if_imbalanced(std::vector<T>& data, double min_imbalance) {
+        double imbalance = compute_min_imbalance(data.size(), comm);
+        if (imbalance <= min_imbalance) {
+            data = mpi_util::distribute_data(data, comm);
+            return true;
+        }
+        return false;
+    }
+
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
         timer.synchronize_and_start("pdcx");
 
         const int process_rank = comm.rank();
+        double min_imbalance = 0.25;
 
         //******* Start Phase 0: Preparation  ********
         timer.synchronize_and_start("phase_00_preparation");
+
+        bool redist_chars = redistribute_if_imbalanced(local_string, min_imbalance);
+        stats.redistribute_chars.push_back(redist_chars);
 
         // figure out lengths of the other strings
         auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
         total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), 0);
         local_chars = chars_at_proc[process_rank];
-        
-        report_on_root("Recursion Level: " + std::to_string(recursion_depth) + ", Total Chars: " + std::to_string(total_chars), comm, recursion_depth);
-        report_on_root("Phase 0: Preparation", comm, recursion_depth);
+
+        std::string msg_level = "Recursion Level: " + std::to_string(recursion_depth)
+                                + ", Total Chars: " + std::to_string(total_chars);
+        report_on_root(msg_level, comm, recursion_depth, config.print_phases);
+        report_on_root("Phase 0: Preparation", comm, recursion_depth, config.print_phases);
 
         // number of chars before processor i
         std::vector<uint64_t> chars_before(comm.size());
@@ -489,7 +519,11 @@ public:
         timer.stop();
 
         // solve sequentially on root to avoid corner cases with empty PEs
-        if (total_chars <= comm.size() * 10) {
+        if (total_chars <= comm.size() * 2 * X) {
+            report_on_root("Solve SA sequentially on root",
+                           comm,
+                           recursion_depth,
+                           config.print_phases);
             remove_padding(local_string);
             std::vector<index_type> local_SA =
                 compute_sa_on_root<char_type, index_type>(local_string, comm);
@@ -499,7 +533,7 @@ public:
         //******* End Phase 0: Preparation  ********
 
         //******* Start Phase 1: Construct Samples  ********
-        report_on_root("Phase 1: Sort Samples", comm, recursion_depth);
+        report_on_root("Phase 1: Sort Samples", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_01_samples");
 
         SampleStringPhase<char_type, index_type, DC> phase1(comm);
@@ -508,6 +542,8 @@ public:
             phase1.compute_sample_strings(local_string, chars_before[process_rank]);
         local_sample_size = local_samples.size();
         phase1.sort_samples(local_samples, atomic_sorter);
+        bool redist_samples = redistribute_if_imbalanced(local_samples, min_imbalance);
+        stats.redistribute_samples.push_back(redist_samples);
         timer.stop();
 
         // get splitters from sorted sample sequence
@@ -522,7 +558,7 @@ public:
         //******* End Phase 1: Construct Samples  ********
 
         //******* Start Phase 2: Construct Ranks  ********
-        report_on_root("Phase 2: Construct Ranks", comm, recursion_depth);
+        report_on_root("Phase 2: Construct Ranks", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_02_ranks");
 
         LexicographicRankPhase<char_type, index_type, DC> phase2(comm);
@@ -535,7 +571,7 @@ public:
         //******* End Phase 2: Construct Ranks  ********
 
         //******* Start Phase 3: Recursive Call  ********
-        report_on_root("Phase 3: Recursion", comm, recursion_depth);
+        report_on_root("Phase 3: Recursion", comm, recursion_depth, config.print_phases);
 
         timer.synchronize_and_start("phase_03_recursion");
 
@@ -559,7 +595,7 @@ public:
         //******* End Phase 3: Recursive Call  ********
 
         //******* Start Phase 4: Merge Suffixes  ********
-        report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth);
+        report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_04_merge");
 
         MergeSamplePhase<char_type, index_type, DC> phase4(comm);
@@ -602,9 +638,9 @@ public:
         //******* End Phase 4: Merge Suffixes  ********
 
         // logging
-        stats.string_imbalance.push_back(compute_imbalance(local_chars, comm));
-        stats.sample_imbalance.push_back(compute_imbalance(local_sample_size, comm));
-        stats.sa_imbalance.push_back(compute_imbalance(local_SA.size(), comm));
+        stats.string_imbalance.push_back(compute_max_imbalance(local_chars, comm));
+        stats.sample_imbalance.push_back(compute_max_imbalance(local_sample_size, comm));
+        stats.sa_imbalance.push_back(compute_max_imbalance(local_SA.size(), comm));
         if (recursion_depth == 0) {
             std::reverse(stats.string_imbalance.begin(), stats.string_imbalance.end());
             std::reverse(stats.sample_imbalance.begin(), stats.sample_imbalance.end());
@@ -622,7 +658,6 @@ public:
         comm.barrier();
         // timer.aggregate_and_print(measurements::SimpleJsonPrinter<>{});
         timer.aggregate_and_print(measurements::FlatPrinter{});
-        std::cout << std::endl;
         comm.barrier();
     }
 

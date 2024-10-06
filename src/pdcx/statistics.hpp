@@ -21,11 +21,14 @@ struct Statistics {
         highest_ranks.clear();
         char_type_used.clear();
         discarding_reduction.clear();
+        use_discarding.clear();
         space_efficient_sort.clear();
         string_imbalance.clear();
         sample_imbalance.clear();
         sa_imbalance.clear();
         bucket_imbalance.clear();
+        redistribute_chars.clear();
+        redistribute_samples.clear();
     }
 
     void print() const {
@@ -42,6 +45,8 @@ struct Statistics {
         print_vector(char_type_used, ",");
         std::cout << "discarding_reduction=";
         print_vector(discarding_reduction, ",");
+        std::cout << "use_discarding=";
+        print_vector(use_discarding, ",");
         std::cout << "space_efficient_sort=";
         print_vector(space_efficient_sort, ",");
         std::cout << "string_imbalance=";
@@ -52,6 +57,10 @@ struct Statistics {
         print_vector(sa_imbalance, ",");
         std::cout << "bucket_imbalance=";
         print_vector(bucket_imbalance, ",");
+        std::cout << "redistribute_chars=";
+        print_vector(redistribute_chars, ",");
+        std::cout << "redistribute_samples=";
+        print_vector(redistribute_samples, ",");
         std::cout << std::endl;
     }
 
@@ -63,14 +72,17 @@ struct Statistics {
     std::vector<uint64_t> highest_ranks;
     std::vector<uint64_t> char_type_used;
     std::vector<double> discarding_reduction;
+    std::vector<bool> use_discarding;
     std::vector<bool> space_efficient_sort;
     std::vector<double> string_imbalance;
     std::vector<double> sample_imbalance;
     std::vector<double> sa_imbalance;
     std::vector<double> bucket_imbalance;
+    std::vector<bool> redistribute_chars;
+    std::vector<bool> redistribute_samples;
 };
 
-double compute_imbalance(uint64_t local_size, kamping::Communicator<> &comm) {
+double compute_max_imbalance(uint64_t local_size, kamping::Communicator<>& comm) {
     using namespace kamping;
     uint64_t total_size = mpi_util::all_reduce(local_size, ops::plus<>(), comm);
     uint64_t largest_size = mpi_util::all_reduce(local_size, ops::max<>(), comm);
@@ -78,6 +90,16 @@ double compute_imbalance(uint64_t local_size, kamping::Communicator<> &comm) {
     double imbalance = ((double)largest_size / avg_size) - 1.0;
     return imbalance;
 }
+
+double compute_min_imbalance(uint64_t local_size, kamping::Communicator<>& comm) {
+    using namespace kamping;
+    uint64_t total_size = mpi_util::all_reduce(local_size, ops::plus<>(), comm);
+    uint64_t smallest_size = mpi_util::all_reduce(local_size, ops::min<>(), comm);
+    double avg_size = (double)total_size / comm.size();
+    double imbalance = ((double)smallest_size / avg_size);
+    return imbalance;
+}
+
 
 // singleton instance
 inline Statistics& get_stats_instance() {

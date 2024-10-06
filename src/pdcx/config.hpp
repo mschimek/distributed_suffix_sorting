@@ -14,6 +14,7 @@ struct PDCXConfig {
     mpi::AtomicSorters atomic_sorter = mpi::AtomicSorters::SampleSort;
     uint64_t blocks_space_efficient_sort = 2;
     uint64_t threshold_space_efficient_sort = std::numeric_limits<uint64_t>::max();
+    bool print_phases = true;
 
     void print_config() const {
         std::cout << "PDCXConfig:\n";

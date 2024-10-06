@@ -25,10 +25,6 @@ bool check_suffixarray(std::vector<IndexType>& sa,
 
     bool is_correct = true;
 
-    if (sa.size() == 0) {
-        print_on_root("SA is empty", comm);
-        return false;
-    }
     size_t local_size_sa = sa.size();
     size_t local_size_text = text.size();
     size_t global_size_sa = mpi_util::all_reduce_sum(local_size_sa, comm);
@@ -69,6 +65,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
 
     sorting_wrapper.sort(sa_tuples,
                          [](const sa_tuple& a, const sa_tuple& b) { return a.sa < b.sa; });
+
     sa_tuples = mpi_util::distribute_data(sa_tuples, comm);
     text = mpi_util::distribute_data(text, comm);
     comm.barrier();
@@ -80,6 +77,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     for (size_t i = 0; i < local_size; ++i) {
         is_permutation &= (sa_tuples[i].sa == IndexType(i + offset));
     }
+
     is_correct = mpi_util::all_reduce_and(is_permutation, comm);
     if (!is_correct) {
         print_on_root("no permutation", comm);
@@ -104,7 +102,6 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     });
 
     local_size = rts.size();
-
     bool is_sorted = true;
     for (size_t i = 0; i < local_size - 1; ++i) {
         is_sorted &= (rts[i] <= rts[i + 1]);

@@ -41,6 +41,7 @@ void test_pdcx(int repeats, int n, int alphabet_size, Communicator<>& comm) {
     pdcx_config.atomic_sorter = mpi::AtomicSorters::SampleSort;
     pdcx_config.blocks_space_efficient_sort = 3;
     pdcx_config.threshold_space_efficient_sort = n / 2;
+    pdcx_config.print_phases = false;
 
     for (int i = 0; i < repeats; i++) {
         int seed = i * comm.size() + comm.rank();
@@ -120,12 +121,12 @@ void run_alignment_tests_pdcx(Communicator<>& comm, std::string test_name = "") 
 }
 
 void start_tests(Communicator<>& comm) {
-    using char_type = uint16_t;
-    using index_type = uint32_t;
+    // using char_type = uint16_t;
+    // using index_type = uint32_t;
 
-    run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC3Param>, char_type, index_type>(
-        comm,
-        "pdcx-3");
+    // run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC3Param>, char_type, index_type>(
+    //     comm,
+    //     "pdcx-3");
     // run_tests_pdcx<dcx::PDCX<char_type, index_type, dcx::DC7Param>, char_type, index_type>(
     //     comm,
     //     "pdcx-7");

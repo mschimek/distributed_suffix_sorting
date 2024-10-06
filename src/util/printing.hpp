@@ -138,7 +138,12 @@ void print_vector(auto& vec, std::string sep = " ") {
 }
 
 template <typename Communicator>
-void report_on_root(std::string const& str, Communicator const& comm, uint64_t level = 0) {
+void report_on_root(std::string const& str,
+                    Communicator const& comm,
+                    uint64_t level = 0,
+                    bool print = true) {
+    if (!print)
+        return;
     if (comm.is_root()) {
         std::string pad(level * 2, ' ');
         std::cout << pad << str << std::endl;

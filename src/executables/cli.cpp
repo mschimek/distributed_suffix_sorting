@@ -5,6 +5,7 @@
 #include <tlx/cmdline_parser.hpp>
 
 #include "kamping/communicator.hpp"
+#include "kamping/measurements/printer.hpp"
 #include "mpi/io.hpp"
 #include "options.hpp"
 #include "pdcx/config.hpp"
@@ -12,6 +13,7 @@
 #include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "util/printing.hpp"
 #include "util/random.hpp"
 #include "util/uint_types.hpp"
 
@@ -146,6 +148,9 @@ void report_arguments(kamping::Communicator<>& comm) {
 }
 
 void read_input(kamping::Communicator<>& comm) {
+    auto& timer = kamping::measurements::timer();
+    timer.clear();
+    timer.synchronize_and_start("io");
     if (!input_path.compare("random")) {
         string_size /= comm.size();
         uint64_t local_seed = seed + comm.rank();
@@ -158,6 +163,9 @@ void read_input(kamping::Communicator<>& comm) {
             local_string = mpi::read_and_distribute_string(input_path, comm);
         }
     }
+    timer.stop();
+    timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
+    timer.clear();
 }
 
 template <typename PDCX, typename char_type, typename index_type>
@@ -198,6 +206,10 @@ void write_sa(kamping::Communicator<>& comm) {
 
 void check_sa(kamping::Communicator<>& comm) {
     if (check) {
+        auto& timer = kamping::measurements::timer();
+        timer.clear();
+        timer.synchronize_and_start("check_SA");
+
         if (comm.rank() == 0) {
             std::cout << "Checking SA ... ";
         }
@@ -209,6 +221,9 @@ void check_sa(kamping::Communicator<>& comm) {
             std::cout << msg << std::endl;
             std::cout << "SA_ok=" << correct << std::endl;
         }
+        timer.stop();
+        timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
+        timer.clear();
     }
 }
 

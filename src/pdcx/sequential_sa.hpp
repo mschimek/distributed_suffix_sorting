@@ -5,6 +5,7 @@
 #include "kamping/collectives/gather.hpp"
 #include "kamping/communicator.hpp"
 #include "pdcx/compute_ranks.hpp"
+#include "util/printing.hpp"
 #include "util/string_util.hpp"
 
 namespace dsss::dcx {
