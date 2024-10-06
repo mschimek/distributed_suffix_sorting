@@ -159,11 +159,7 @@ public:
                            comm,
                            recursion_depth,
                            config.print_phases);
-            if (config.use_old_discarding) {
-                recursive_call_with_discarding_old<new_char_type>(local_ranks, after_discarding);
-            } else {
-                recursive_call_with_discarding_new<new_char_type>(local_ranks, after_discarding);
-            }
+            recursive_call_with_discarding<new_char_type>(local_ranks, after_discarding);
         } else {
             recursive_call_direct<new_char_type>(local_ranks, map_back_func);
         }
@@ -226,8 +222,8 @@ public:
     }
 
     template <typename new_char_type>
-    void recursive_call_with_discarding_new(std::vector<RankIndex>& local_ranks,
-                                            uint64_t after_discarding) {
+    void recursive_call_with_discarding(std::vector<RankIndex>& local_ranks,
+                                        uint64_t after_discarding) {
         KASSERT(local_ranks.size() >= 0u);
 
         // build recursive string and discard ranks
@@ -330,114 +326,6 @@ public:
 
         local_ranks =
             mpi_util::zip_with_index<RankRankIndex, RankIndex>(rri, index_local_ranks, comm);
-    }
-
-    template <typename new_char_type>
-    void recursive_call_with_discarding_old(std::vector<RankIndex>& local_ranks,
-                                            uint64_t after_discarding) {
-        // build recursive string and discard ranks
-        std::vector<new_char_type> recursive_string;
-        std::vector<index_type> orginal_index;
-        std::vector<bool> pos_unique;
-        recursive_string.reserve(after_discarding);
-        orginal_index.reserve(after_discarding);
-        pos_unique.reserve(after_discarding);
-
-        // always keep first element
-        recursive_string.push_back(local_ranks[0].rank);
-        orginal_index.push_back(local_ranks[0].index);
-        pos_unique.push_back(local_ranks[0].unique);
-        for (uint64_t i = 1; i < local_ranks.size(); i++) {
-            bool is_unique = local_ranks[i].unique;
-            bool prev_is_unique = local_ranks[i - 1].unique;
-            bool can_drop = is_unique && prev_is_unique;
-            if (!can_drop) {
-                recursive_string.push_back(local_ranks[i].rank);
-                orginal_index.push_back(local_ranks[i].index);
-                pos_unique.push_back(is_unique);
-            }
-        }
-
-        timer.synchronize_and_start("phase_03_sort_ranks_by_ranks");
-        atomic_sorter.sort(local_ranks, RankIndex::cmp_by_rank);
-        timer.stop();
-        local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
-
-        // recursive call
-        PDCX<new_char_type, index_type, DC> rec_pdcx(config, comm);
-        recursion_depth++;
-        rec_pdcx.recursion_depth = recursion_depth;
-        std::vector<index_type> reduced_SA = rec_pdcx.compute_sa(recursive_string);
-        recursion_depth--;
-        free_memory(recursive_string);
-
-        // invert reduced SA to get ranks
-        struct IndexRank {
-            index_type index, rank;
-
-            std::string to_string() const {
-                return "(" + std::to_string(index) + ", " + std::to_string(rank) + ")";
-            }
-        };
-        auto index_function = [&](uint64_t idx, index_type sa_index) {
-            return IndexRank{sa_index, index_type(1 + idx)};
-        };
-        auto cmp_index_sa = [](const IndexRank& l, const IndexRank& r) {
-            return l.index < r.index;
-        };
-        std::vector<IndexRank> ranks_sa =
-            mpi_util::zip_with_index<index_type, IndexRank>(reduced_SA, index_function, comm);
-
-        free_memory(reduced_SA);
-
-
-        timer.synchronize_and_start("phase_03_sort_index_sa");
-        atomic_sorter.sort(ranks_sa, cmp_index_sa);
-        timer.stop();
-
-        // get ranks of recursive string that was generated locally on this PE
-        ranks_sa = mpi_util::distribute_data_custom(ranks_sa, after_discarding, comm);
-
-        uint64_t local_not_unique_red = std::count(pos_unique.begin(), pos_unique.end(), false);
-        std::vector<IndexRank> new_ranks;
-        new_ranks.reserve(local_not_unique_red);
-        for (uint64_t i = 0; i < after_discarding; i++) {
-            if (!pos_unique[i]) {
-                KASSERT(i < orginal_index.size());
-                KASSERT(i < ranks_sa.size());
-                uint64_t org_idx = orginal_index[i];
-                uint64_t new_rank = ranks_sa[i].rank;
-                new_ranks.emplace_back(org_idx, new_rank);
-            }
-        }
-
-        free_memory(orginal_index);
-        free_memory(pos_unique);
-        free_memory(ranks_sa);
-
-        auto cmp_new_ranks = [&](auto a, auto b) { return a.rank < b.rank; };
-
-        timer.synchronize_and_start("phase_03_sort_new_ranks");
-        atomic_sorter.sort(new_ranks, cmp_new_ranks);
-        timer.stop();
-
-        auto cnt_not_unique = [](uint64_t sum, RankIndex& r) { return sum + !r.unique; };
-        uint64_t local_new_ranks =
-            std::accumulate(local_ranks.begin(), local_ranks.end(), 0, cnt_not_unique);
-        new_ranks = mpi_util::distribute_data_custom(new_ranks, local_new_ranks, comm);
-
-        // update order of indices
-        uint64_t local_rank_size = local_ranks.size();
-        uint64_t ranks_before = mpi_util::ex_prefix_sum(local_rank_size, comm);
-        uint64_t index_new_ranks = 0;
-        for (uint64_t i = 0; i < local_ranks.size(); i++) {
-            bool unique = local_ranks[i].unique;
-            if (!unique) {
-                KASSERT(index_new_ranks < new_ranks.size());
-                local_ranks[i].index = new_ranks[index_new_ranks++].index;
-            }
-            local_ranks[i].rank = ranks_before + i + 1;
-        }
     }
 
     // compute even distributed splitters from sorted local samples
@@ -547,7 +435,8 @@ public:
         timer.stop();
 
         // get splitters from sorted sample sequence
-        bool use_space_efficient_sort = total_chars >= config.threshold_space_efficient_sort;
+        bool use_space_efficient_sort = config.blocks_space_efficient_sort > 1
+                                        && total_chars >= config.threshold_space_efficient_sort;
         uint64_t blocks = config.blocks_space_efficient_sort;
         stats.space_efficient_sort.push_back(use_space_efficient_sort);
         std::vector<std::array<char_type, DC::X>> global_samples_splitters;

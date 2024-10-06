@@ -80,11 +80,6 @@ void configure_cli() {
                   pdcx_config.discarding_threshold,
                   "Value between [0, 1], threshold when to use discarding optimization.");
 
-    cp.add_flag('d',
-                "old_discarding",
-                pdcx_config.use_old_discarding,
-                "Use old discarding function.");
-
     cp.add_string('r',
                   "atomic_sorter",
                   "<F>",
