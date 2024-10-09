@@ -552,7 +552,7 @@ public:
 
     void report_stats() {
         comm.barrier();
-        if (comm.rank() == comm.size() - 1) {
+        if (comm.rank() == 0) {
             stats.print();
         }
         comm.barrier();

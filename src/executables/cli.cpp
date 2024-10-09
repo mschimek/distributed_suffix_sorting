@@ -161,6 +161,7 @@ void read_input(kamping::Communicator<>& comm) {
     timer.stop();
     timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
     timer.clear();
+    kamping::report_on_root("\n", comm);
 }
 
 template <typename PDCX, typename char_type, typename index_type>
@@ -168,6 +169,7 @@ void run_pdcx(kamping::Communicator<>& comm) {
     auto algo = PDCX(pdcx_config, comm);
     local_sa = algo.compute_sa(local_string);
     algo.report_time();
+    kamping::report_on_root("\n", comm);
     algo.report_stats();
 }
 
@@ -176,26 +178,27 @@ void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
     if (dcx_variant == "dc3") {
         run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc7") {
-        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc13") {
-        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    } else {
-        std::cerr << "dcx variant " << dcx_variant
-                  << " not supported. Must be in [dc3, dc7, dc13]. \n";
     }
+    // else if (dcx_variant == "dc7") {
+    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc13") {
+    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc21") {
+    //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc31") {
+    //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    // } else {
+    //     std::cerr << "dcx variant " << dcx_variant
+    //               << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
+    // }
 }
 
 void write_sa(kamping::Communicator<>& comm) {
     if (!output_path.empty()) {
-        if (comm.rank() == 0) {
-            std::cout << "Writing the SA to " << output_path << std::endl;
-        }
+        kamping::report_on_root("Writing the SA to " + output_path + "\n", comm);
         mpi::write_data(local_sa, output_path, comm);
         comm.barrier();
-        if (comm.rank() == 0) {
-            std::cout << "Finished writing the SA" << std::endl;
-        }
+        kamping::report_on_root("Finished writing the SA \n", comm);
     }
 }
 
@@ -205,9 +208,7 @@ void check_sa(kamping::Communicator<>& comm) {
         timer.clear();
         timer.synchronize_and_start("check_SA");
 
-        if (comm.rank() == 0) {
-            std::cout << "Checking SA ... ";
-        }
+        kamping::report_on_root("Checking SA ... ", comm);
         // assuming algorithm did not change local string
         bool correct = check_suffixarray(local_sa, local_string, comm);
 
@@ -219,6 +220,7 @@ void check_sa(kamping::Communicator<>& comm) {
         timer.stop();
         timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
         timer.clear();
+        kamping::report_on_root("\n", comm);
     }
 }
 
