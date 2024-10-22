@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,11 @@ namespace dsss::mpi {
 
 using namespace kamping;
 using char_type = unsigned char;
+
+bool file_exists(const std::string& path) {
+    std::ifstream f(path.c_str());
+    return f.good();
+}
 
 static std::vector<char_type> read_and_distribute_string(const std::string& input_path,
                                                          Communicator<>& comm,

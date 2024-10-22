@@ -4,6 +4,7 @@
 
 #include "kamping/collectives/gather.hpp"
 #include "kamping/communicator.hpp"
+#include "mpi/distribute.hpp"
 #include "pdcx/compute_ranks.hpp"
 #include "util/printing.hpp"
 #include "util/string_util.hpp"
@@ -17,11 +18,12 @@ template <typename char_type, typename index_type>
 std::vector<index_type> compute_sa_on_root(std::vector<char_type>& local_string,
                                            Communicator<>& comm) {
     std::vector<char_type> global_string = comm.gatherv(send_buf(local_string));
+    std::vector<index_type> SA;
     if (comm.rank() == 0) {
-        return slow_suffixarray<char_type, index_type>(global_string);
-    } else {
-        return std::vector<index_type>();
+        SA = slow_suffixarray<char_type, index_type>(global_string);
     }
+    mpi_util::distribute_data_custom(SA, local_string.size(), comm);
+    return SA;
 }
 
 // skip recursion and compute SA with sequential algorithm on root process

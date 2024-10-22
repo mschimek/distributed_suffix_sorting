@@ -73,7 +73,7 @@ struct LexicographicRankPhase {
         uint64_t prev_rank = 0;
         for (uint64_t i = 0; i < num_ranks; i++) {
             KASSERT(i + 1 < local_samples.size());
-            local_ranks.emplace_back(prev_rank, local_samples[i].index, false);
+            local_ranks.emplace_back(index_type(prev_rank), local_samples[i].index, false);
             uint64_t changed = local_samples[i].letters != local_samples[i + 1].letters ? 1 : 0;
             prev_rank += changed;
         }
@@ -81,7 +81,7 @@ struct LexicographicRankPhase {
         // shift ranks by 1 + prefix sum
         uint64_t ranks_before = mpi_util::ex_prefix_sum(prev_rank, comm);
         std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
-            x.rank += 1 + ranks_before;
+            x.rank += index_type(1 + ranks_before);
         });
         return local_ranks;
     }

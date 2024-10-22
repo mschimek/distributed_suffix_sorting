@@ -16,6 +16,8 @@
 
 #include "kamping/collectives/allgather.hpp"
 #include "kamping/communicator.hpp"
+#include "mpi/reduce.hpp"
+
 
 #define V(x) std::string(#x "=") << (x) << " " //"x=...
 
@@ -137,9 +139,23 @@ void print_vector(auto& vec, std::string sep = " ") {
     std::cout << std::endl;
 }
 
-template <typename Communicator>
+void report_min_max_avg(uint64_t local_size,
+                        Communicator<>& comm,
+                        std::string str = "",
+                        uint64_t level = 0) {
+    uint64_t total_size = dsss::mpi_util::all_reduce(local_size, ops::plus<>(), comm);
+    uint64_t smallest_size = dsss::mpi_util::all_reduce(local_size, ops::min<>(), comm);
+    uint64_t largest_size = dsss::mpi_util::all_reduce(local_size, ops::max<>(), comm);
+    if (comm.is_root()) {
+        std::string pad(level * 2, ' ');
+        std::cout << pad << "--> " << str << ": "
+                  << "min=" << smallest_size << " max=" << largest_size
+                  << " avg=" << (double)total_size / comm.size() << std::endl;
+    }
+}
+
 void report_on_root(std::string const& str,
-                    Communicator const& comm,
+                    Communicator<> const& comm,
                     uint64_t level = 0,
                     bool print = true) {
     if (!print)

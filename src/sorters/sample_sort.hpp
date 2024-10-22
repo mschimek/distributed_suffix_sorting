@@ -18,6 +18,7 @@
 #include "ips4o.hpp"
 #include "kamping/collectives/allgather.hpp"
 #include "kamping/collectives/alltoall.hpp"
+#include "kamping/collectives/gather.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
 #include "mpi/distribute.hpp"
@@ -99,7 +100,8 @@ sample_sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicat
         comm.alltoallv(kamping::send_buf(local_data), kamping::send_counts(interval_sizes));
 
     //   if (false && local_data.size() > 1024 * 1024) {
-    constexpr bool use_loser_tree = true;
+    // constexpr bool use_loser_tree = true;
+    constexpr bool use_loser_tree = false;
     if (use_loser_tree) {
         std::vector<decltype(local_data.cbegin())> string_it(comm.size(), local_data.cbegin());
         std::vector<decltype(local_data.cbegin())> end_it(comm.size(),

@@ -260,7 +260,6 @@ struct MergeSamplePhase {
         }
         KASSERT(blocks <= (int64_t)comm.size());
 
-
         // sort block indices by decreasing size
         std::vector<int64_t> idx_blocks(blocks);
         std::iota(idx_blocks.begin(), idx_blocks.end(), 0);
@@ -287,6 +286,7 @@ struct MergeSamplePhase {
             }
             target_size[pe_range[k + 1] - 1] += sum_kth_block[k] % num_pe_per_block[k];
         }
+
         std::vector<int64_t> pred_target_size(comm.size(), 0);
         for (int64_t k = 0; k < blocks; k++) {
             std::exclusive_scan(target_size.begin() + pe_range[k],
@@ -303,7 +303,7 @@ struct MergeSamplePhase {
             for (int rank = pe_range[k]; rank < last_pe && local_data_size > 0; rank++) {
                 int64_t to_send = std::max(int64_t(0), pred_target_size[rank + 1] - preceding_size);
                 to_send = std::min(to_send, local_data_size);
-                KASSERT(to_send < std::numeric_limits<int>::max());
+                KASSERT(to_send < (int64_t)std::numeric_limits<int>::max());
                 send_cnts[rank] = to_send;
                 local_data_size -= to_send;
                 preceding_size += to_send;
@@ -311,8 +311,8 @@ struct MergeSamplePhase {
             send_cnts[last_pe] += local_data_size;
         }
 
-        int total_send = std::accumulate(send_cnts.begin(), send_cnts.end(), 0);
-        int total_sa = std::accumulate(sa_block_size.begin(), sa_block_size.end(), 0);
+        int64_t total_send = std::accumulate(send_cnts.begin(), send_cnts.end(), int64_t(0));
+        int64_t total_sa = std::accumulate(sa_block_size.begin(), sa_block_size.end(), int64_t(0));
         KASSERT(total_send == total_sa);
 
         SA local_SA = comm.alltoallv(send_buf(concat_sa_blocks), send_counts(send_cnts));

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include "kamping/collectives/allgather.hpp"
@@ -35,6 +36,9 @@ std::vector<DataType> distribute_data(std::vector<DataType>& local_data, Communi
          ++cur_rank) {
         const size_t to_send =
             std::min(((cur_rank + 1) * local_size) - preceding_size, local_data_size);
+        // can not send more than int max
+        KASSERT(to_send < (size_t)std::numeric_limits<int>::max(),
+                "distribute custom needs to send more elements int can capture");
         send_cnts[cur_rank] = to_send;
         local_data_size -= to_send;
         preceding_size += to_send;
@@ -47,25 +51,32 @@ std::vector<DataType> distribute_data(std::vector<DataType>& local_data, Communi
 
 template <typename DataType>
 std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
-                                             int local_target_size,
+                                             int64_t local_target_size,
                                              Communicator<>& comm) {
-    int num_processes = comm.size();
-    int local_size = local_data.size();
+    int64_t num_processes = comm.size();
+    int64_t local_size = local_data.size();
 
     KASSERT(all_reduce_sum(local_size, comm) == all_reduce_sum(local_target_size, comm),
             "total and target size don't match");
 
-    std::vector<int> target_sizes = comm.allgather(send_buf(local_target_size));
-    std::vector<int> preceding_target_size(num_processes);
-    std::exclusive_scan(target_sizes.begin(), target_sizes.end(), preceding_target_size.begin(), 0);
+    std::vector<int64_t> target_sizes = comm.allgather(send_buf(local_target_size));
+    std::vector<int64_t> preceding_target_size(num_processes);
+    std::exclusive_scan(target_sizes.begin(),
+                        target_sizes.end(),
+                        preceding_target_size.begin(),
+                        int64_t(0));
 
-    int local_data_size = local_data.size();
-    int preceding_size = comm.exscan(send_buf(local_size), op(ops::plus<>{}))[0];
+    int64_t local_data_size = local_data.size();
+    int64_t preceding_size = comm.exscan(send_buf(local_size), op(ops::plus<>{}))[0];
 
     std::vector<int> send_cnts(num_processes, 0);
-    for (int cur_rank = 0; cur_rank < num_processes - 1 && local_data_size > 0; cur_rank++) {
-        int to_send = std::max(0, preceding_target_size[cur_rank + 1] - preceding_size);
+    for (int64_t cur_rank = 0; cur_rank < num_processes - 1 && local_data_size > 0; cur_rank++) {
+        int64_t to_send =
+            std::max(int64_t(0), preceding_target_size[cur_rank + 1] - preceding_size);
         to_send = std::min(to_send, local_data_size);
+        // can not send more than int max
+        KASSERT(to_send < (int64_t)std::numeric_limits<int>::max(),
+                "distribute custom needs to send more elements int can capture");
         send_cnts[cur_rank] = to_send;
         local_data_size -= to_send;
         preceding_size += to_send;

@@ -11,6 +11,7 @@
 #include "mpi/shift.hpp"
 #include "pdcx/difference_cover.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "util/printing.hpp"
 
 namespace dsss::dcx {
 
@@ -25,7 +26,7 @@ struct DCSampleString {
         letters.fill(0);
         index = 0;
     }
-    DCSampleString(std::array<char_type, DC::X> &&_letters, index_type _index)
+    DCSampleString(std::array<char_type, DC::X>&& _letters, index_type _index)
         : letters(_letters),
           index(_index) {}
 
@@ -72,7 +73,7 @@ struct SampleStringPhase {
 
     // sample substrings of length X at difference cover samples
     std::vector<SampleString> compute_sample_strings(std::vector<char_type>& local_string,
-                                                     index_type chars_before) const {
+                                                     uint64_t chars_before) const {
         std::vector<SampleString> local_samples;
         uint64_t size_estimate = ((local_string.size() + X - 1) / X) * D;
         local_samples.reserve(size_estimate);
@@ -81,7 +82,7 @@ struct SampleStringPhase {
         for (uint64_t i = 0; i + X - 1 < local_string.size(); i++) {
             uint64_t m = (i + offset) % X;
             if (is_in_dc<DC>(m)) {
-                index_type index = chars_before + i;
+                index_type index = index_type(chars_before + i);
                 std::array<char_type, X> letters;
                 for (uint k = 0; k < X; k++) {
                     letters[k] = local_string[i + k];

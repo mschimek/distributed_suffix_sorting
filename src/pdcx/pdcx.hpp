@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iostream>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,7 @@
 #include "pdcx/statistics.hpp"
 #include "sa_check.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "util/memory.hpp"
 #include "util/printing.hpp"
 #include "util/string_util.hpp"
 #include "util/uint_types.hpp"
@@ -66,12 +68,6 @@ public:
         }
         KASSERT(false);
         return 0;
-    }
-
-    template <typename T>
-    void free_memory(std::vector<T>& vec) {
-        vec.clear();
-        vec.shrink_to_fit();
     }
 
     void add_padding(std::vector<char_type>& local_data) {
@@ -181,7 +177,7 @@ public:
         // recursive_string =
         //     mpi_util::distribute_data_custom(recursive_string, local_sample_size, comm);
 
-        free_memory(local_ranks);
+        free_memory(std::move(local_ranks));
 
         // TODO: flexible selection of DC
         // create new instance of PDC3 with templates of new char type size
@@ -192,7 +188,7 @@ public:
         rec_pdcx.recursion_depth = recursion_depth;
         std::vector<index_type> SA = rec_pdcx.compute_sa(recursive_string);
         recursion_depth--;
-        free_memory(recursive_string);
+        free_memory(std::move(recursive_string));
 
         auto index_function = [&](index_type index, index_type sa_at_i) {
             index_type global_index = map_back_func(sa_at_i);
@@ -202,7 +198,7 @@ public:
         };
 
         local_ranks = mpi_util::zip_with_index<index_type, RankIndex>(SA, index_function, comm);
-        free_memory(SA);
+        free_memory(std::move(SA));
     }
 
 
@@ -224,7 +220,7 @@ public:
     template <typename new_char_type>
     void recursive_call_with_discarding(std::vector<RankIndex>& local_ranks,
                                         uint64_t after_discarding) {
-        KASSERT(local_ranks.size() >= 0u);
+        KASSERT(local_ranks.size() > 0u);
 
         // build recursive string and discard ranks
         std::vector<new_char_type> recursive_string;
@@ -251,7 +247,7 @@ public:
         rec_pdcx.recursion_depth = recursion_depth;
         std::vector<index_type> reduced_SA = rec_pdcx.compute_sa(recursive_string);
         recursion_depth--;
-        free_memory(recursive_string);
+        free_memory(std::move(recursive_string));
 
         // zip SA with 1, ..., n
         struct IndexRank {
@@ -267,7 +263,7 @@ public:
         std::vector<IndexRank> ranks_sa =
             mpi_util::zip_with_index<index_type, IndexRank>(reduced_SA, index_function, comm);
 
-        free_memory(reduced_SA);
+        free_memory(std::move(reduced_SA));
 
         // invert reduced SA to get ranks
         auto cmp_index_sa = [](const IndexRank& l, const IndexRank& r) {
@@ -369,8 +365,9 @@ public:
         stats.redistribute_chars.push_back(redist_chars);
 
         // figure out lengths of the other strings
-        auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
-        total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), 0);
+        uint64_t local_string_size = local_string.size();
+        std::vector<uint64_t> chars_at_proc = comm.allgather(send_buf(local_string_size));
+        total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), uint64_t(0));
         local_chars = chars_at_proc[process_rank];
 
         std::string msg_level = "Recursion Level: " + std::to_string(recursion_depth)
@@ -380,7 +377,10 @@ public:
 
         // number of chars before processor i
         std::vector<uint64_t> chars_before(comm.size());
-        std::exclusive_scan(chars_at_proc.begin(), chars_at_proc.end(), chars_before.begin(), 0);
+        std::exclusive_scan(chars_at_proc.begin(),
+                            chars_at_proc.end(),
+                            chars_before.begin(),
+                            uint64_t(0));
 
         // number of positions with mod X = d
         std::array<uint64_t, X> num_at_mod = compute_num_pos_mod();
@@ -441,6 +441,13 @@ public:
         stats.space_efficient_sort.push_back(use_space_efficient_sort);
         std::vector<std::array<char_type, DC::X>> global_samples_splitters;
         if (use_space_efficient_sort) {
+            if (blocks > comm.size()) {
+                blocks = comm.size();
+                report_on_root("Warning: #blocks > #PEs, setting blocks to #PEs.",
+                               comm,
+                               recursion_depth,
+                               config.print_phases);
+            }
             global_samples_splitters = get_sample_splitters(local_samples, blocks);
         }
 
@@ -454,7 +461,7 @@ public:
         phase2.shift_samples_left(local_samples);
         std::vector<RankIndex> local_ranks = phase2.compute_lexicographic_ranks(local_samples);
         phase2.flag_unique_ranks(local_ranks);
-        free_memory(local_samples);
+        free_memory(std::move(local_samples));
 
         timer.stop();
         //******* End Phase 2: Construct Ranks  ********
@@ -493,9 +500,11 @@ public:
 
         std::vector<index_type> local_SA;
         if (use_space_efficient_sort) {
+            report_on_root("compute bucket sizes", comm, recursion_depth, config.print_phases);
             std::vector<uint64_t> bucket_sizes =
                 phase4.compute_bucket_sizes(local_string, local_chars, global_samples_splitters);
 
+            report_on_root("bucket sorting", comm, recursion_depth, config.print_phases);
             local_SA = phase4.space_effient_sort_SA(local_string,
                                                     local_ranks,
                                                     bucket_sizes,
@@ -512,13 +521,15 @@ public:
             // print_concatenated(bucket_sizes, comm, "bucket_sizes");
             // print_concatenated_string(std::to_string(local_SA.size()), comm, "local_SA.size()");
         } else {
+            report_on_root("construct merge samples", comm, recursion_depth, config.print_phases);
             std::vector<MergeSamples> merge_samples =
                 phase4.construct_merge_samples(local_string,
                                                local_ranks,
                                                chars_before[process_rank],
                                                chars_at_proc[process_rank]);
 
-            free_memory(local_ranks);
+            free_memory(std::move(local_ranks));
+            report_on_root("sort merge samples", comm, recursion_depth, config.print_phases);
             phase4.sort_merge_samples(merge_samples, atomic_sorter);
             local_SA = phase4.extract_SA(merge_samples);
         }
@@ -539,6 +550,15 @@ public:
 
         clean_up(local_string);
 
+        if (comm.rank() == 0) {
+            std::stringstream ss;
+            ss << std::fixed << std::setprecision(3) << stats.string_imbalance.back() << ", "
+               << stats.sample_imbalance.back() << ", " << stats.sa_imbalance.back();
+            std::string imbalance_msg = "Imbalance: string, samples, sa: " + ss.str();
+            std::string end_msg = "Finished recursion Level: " + std::to_string(recursion_depth);
+            report_on_root(end_msg, comm, recursion_depth, config.print_phases);
+            report_on_root(imbalance_msg, comm, recursion_depth, config.print_phases);
+        }
         timer.stop(); // pdcx
         return local_SA;
     }
