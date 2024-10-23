@@ -1,5 +1,7 @@
 target_sources(dss_base
     PUBLIC
+        alltoall.hpp
+        big_type.hpp
         io.hpp
         distribute.hpp
         reduce.hpp

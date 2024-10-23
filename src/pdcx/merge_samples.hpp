@@ -295,7 +295,7 @@ struct MergeSamplePhase {
                                 0);
         }
 
-        std::vector<int> send_cnts(comm.size(), 0);
+        std::vector<int64_t> send_cnts(comm.size(), 0);
         for (int64_t k = 0; k < blocks; k++) {
             int64_t local_data_size = sa_block_size[k];
             int64_t preceding_size = pref_sum_kth_block[k];
@@ -303,7 +303,6 @@ struct MergeSamplePhase {
             for (int rank = pe_range[k]; rank < last_pe && local_data_size > 0; rank++) {
                 int64_t to_send = std::max(int64_t(0), pred_target_size[rank + 1] - preceding_size);
                 to_send = std::min(to_send, local_data_size);
-                KASSERT(to_send < (int64_t)std::numeric_limits<int>::max());
                 send_cnts[rank] = to_send;
                 local_data_size -= to_send;
                 preceding_size += to_send;
@@ -315,8 +314,7 @@ struct MergeSamplePhase {
         int64_t total_sa = std::accumulate(sa_block_size.begin(), sa_block_size.end(), int64_t(0));
         KASSERT(total_send == total_sa);
 
-        SA local_SA = comm.alltoallv(send_buf(concat_sa_blocks), send_counts(send_cnts));
-
+        SA local_SA = mpi_util::alltoallv_combined(concat_sa_blocks, send_cnts, comm);
         return local_SA;
     }
 };

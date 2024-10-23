@@ -143,7 +143,7 @@ void report_arguments(kamping::Communicator<>& comm) {
 }
 
 void read_input(kamping::Communicator<>& comm) {
-    if (!mpi::file_exists(input_path)) {
+    if (input_path != "random" && !mpi::file_exists(input_path)) {
         if (comm.rank() == 0) {
             std::cerr << "File " << input_path << " does not exist!" << std::endl;
         }
@@ -181,20 +181,21 @@ void run_pdcx(kamping::Communicator<>& comm) {
 
 void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
-    if (dcx_variant == "dc3") {
-        run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc7") {
-        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc13") {
-        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc21") {
-        run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc31") {
-        run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
-    } else {
-        std::cerr << "dcx variant " << dcx_variant
-                  << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
-    }
+    run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    // if (dcx_variant == "dc3") {
+    //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc7") {
+    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc13") {
+    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc21") {
+    //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc31") {
+    //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    // } else {
+    //     std::cerr << "dcx variant " << dcx_variant
+    //               << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
+    // }
 }
 
 void write_sa(kamping::Communicator<>& comm) {

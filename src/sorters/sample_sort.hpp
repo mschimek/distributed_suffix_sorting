@@ -21,6 +21,7 @@
 #include "kamping/collectives/gather.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
+#include "mpi/alltoall.hpp"
 #include "mpi/distribute.hpp"
 #include "mpi/reduce.hpp"
 #include "util/printing.hpp"
@@ -70,7 +71,7 @@ sample_sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicat
     }
 
     // Use the final set of splitters to find the intervals
-    std::vector<int> interval_sizes;
+    std::vector<int64_t> interval_sizes;
 
     size_t element_pos = 0;
     splitter_dist = local_n / (nr_splitters + 1);
@@ -90,14 +91,13 @@ sample_sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicat
         interval_sizes[i] -= interval_sizes[i - 1];
     }
 
-    std::vector<int> receiving_sizes = comm.alltoall(kamping::send_buf(interval_sizes));
+    std::vector<int64_t> receiving_sizes = comm.alltoall(kamping::send_buf(interval_sizes));
 
     for (size_t i = interval_sizes.size(); i < comm.size(); ++i) {
         interval_sizes.emplace_back(0);
     }
 
-    local_data =
-        comm.alltoallv(kamping::send_buf(local_data), kamping::send_counts(interval_sizes));
+    local_data = mpi_util::alltoallv_combined(local_data, interval_sizes, comm);
 
     //   if (false && local_data.size() > 1024 * 1024) {
     // constexpr bool use_loser_tree = true;
