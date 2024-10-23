@@ -515,8 +515,7 @@ public:
             uint64_t largest_bucket = *std::max_element(bucket_sizes.begin(), bucket_sizes.end());
             double avg_buckets = (double)total_chars / (blocks * comm.size());
             double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
-            double max_bucket_imbalance =
-                mpi_util::all_reduce(bucket_imbalance, ops::max<>{}, comm);
+            double max_bucket_imbalance = mpi_util::all_reduce_max(bucket_imbalance, comm);
             stats.bucket_imbalance.push_back(max_bucket_imbalance);
             // print_concatenated(bucket_sizes, comm, "bucket_sizes");
             // print_concatenated_string(std::to_string(local_SA.size()), comm, "local_SA.size()");

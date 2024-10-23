@@ -143,9 +143,9 @@ void report_min_max_avg(uint64_t local_size,
                         Communicator<>& comm,
                         std::string str = "",
                         uint64_t level = 0) {
-    uint64_t total_size = dsss::mpi_util::all_reduce(local_size, ops::plus<>(), comm);
-    uint64_t smallest_size = dsss::mpi_util::all_reduce(local_size, ops::min<>(), comm);
-    uint64_t largest_size = dsss::mpi_util::all_reduce(local_size, ops::max<>(), comm);
+    uint64_t total_size = dsss::mpi_util::all_reduce_sum(local_size, comm);
+    uint64_t smallest_size = dsss::mpi_util::all_reduce_min(local_size, comm);
+    uint64_t largest_size = dsss::mpi_util::all_reduce_max(local_size, comm);
     if (comm.is_root()) {
         std::string pad(level * 2, ' ');
         std::cout << pad << "--> " << str << ": "

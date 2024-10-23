@@ -1,13 +1,10 @@
-
 #pragma once
-
 
 #include "kamping/collectives/bcast.hpp"
 #include "kamping/collectives/exscan.hpp"
 #include "kamping/collectives/reduce.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/mpi_ops.hpp"
-
 
 namespace dsss::mpi_util {
 
@@ -24,18 +21,17 @@ T all_reduce(T& local_data, Operation operation, Communicator<>& comm) {
     return combined_local;
 }
 
-
 template <typename T>
-T all_reduce_max(T& local_data, Communicator<>& comm) {
+T all_reduce_max(T local_data, Communicator<>& comm) {
     return all_reduce(local_data, ops::max<>(), comm);
 }
 template <typename T>
-T all_reduce_min(T& local_data, Communicator<>& comm) {
+T all_reduce_min(T local_data, Communicator<>& comm) {
     return all_reduce(local_data, ops::min<>(), comm);
 }
 
 template <typename T>
-T all_reduce_sum(T& local_data, Communicator<>& comm) {
+T all_reduce_sum(T local_data, Communicator<>& comm) {
     return all_reduce(local_data, ops::plus<>(), comm);
 }
 
