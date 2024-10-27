@@ -28,6 +28,7 @@
 #include "pdcx/sequential_sa.hpp"
 #include "pdcx/statistics.hpp"
 #include "sa_check.hpp"
+#include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
 #include "util/memory.hpp"
 #include "util/printing.hpp"
@@ -361,6 +362,12 @@ public:
         //******* Start Phase 0: Preparation  ********
         timer.synchronize_and_start("phase_00_preparation");
 
+        // set string sorting algorithm
+        // can use radix sort only on first level
+        dsss::SeqStringSorter string_algo =
+            recursion_depth == 0 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
+        string_sorter.set_sorter(string_algo);
+
         bool redist_chars = redistribute_if_imbalanced(local_string, min_imbalance);
         stats.redistribute_chars.push_back(redist_chars);
 
@@ -429,7 +436,11 @@ public:
         std::vector<SampleString> local_samples =
             phase1.compute_sample_strings(local_string, chars_before[process_rank]);
         local_sample_size = local_samples.size();
-        phase1.sort_samples(local_samples, atomic_sorter);
+        if (config.use_string_sort) {
+            phase1.string_sort_samples(local_samples, string_sorter, config.use_lcps);
+        } else {
+            phase1.atomic_sort_samples(local_samples, atomic_sorter);
+        }
         bool redist_samples = redistribute_if_imbalanced(local_samples, min_imbalance);
         stats.redistribute_samples.push_back(redist_samples);
         timer.stop();
@@ -596,6 +607,7 @@ public:
 
     PDCXConfig& config;
     mpi::SortingWrapper atomic_sorter;
+    dsss::SeqStringSorterWrapper string_sorter;
 
     Communicator<>& comm;
     measurements::Timer<Communicator<>>& timer;

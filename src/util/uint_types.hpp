@@ -204,6 +204,14 @@ public:
     //! inequality checking operator
     bool operator!=(const UIntPair& b) const { return (low_ != b.low_) || (high_ != b.high_); }
 
+    // added
+    bool operator!=(const int& _b) const {
+        UIntPair b((int32_t)_b);
+        return (low_ != b.low_) || (high_ != b.high_);
+    }
+    // added
+
+
     //! less-than comparison operator
     bool operator<(const UIntPair& b) const {
         return (high_ < b.high_) || (high_ == b.high_ && low_ < b.low_);

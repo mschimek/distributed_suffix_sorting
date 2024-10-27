@@ -2,15 +2,51 @@
 
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <numeric>
 #include <vector>
 
 namespace dsss {
 
+// compare strings by scanning
+template <typename String>
+static inline int64_t string_cmp(String& s1, String& s2) {
+    KASSERT(std::distance(s1.cbegin_chars(), s1.cend_chars())
+            == std::distance(s2.cbegin_chars(), s2.cend_chars()));
+    auto it1 = s1.cbegin_chars();
+    auto it2 = s2.cbegin_chars();
+    auto end = s1.cend_chars();
+    end--;
+
+    while (it1 != end && *it1 == *it2) {
+        it1++;
+        it2++;
+    }
+    return static_cast<int64_t>(*it1) - static_cast<int64_t>(*it2);
+}
+
+// compare strings by scanning. Start at given lcp, which also returns the final lcp.
+template <typename String>
+static inline int64_t string_cmp(String& s1, String& s2, size_t& lcp) {
+    KASSERT(std::distance(s1.cbegin_chars(), s1.cend_chars())
+            == std::distance(s2.cbegin_chars(), s2.cend_chars()));
+    auto it1 = s1.cbegin_chars() + lcp;
+    auto it2 = s2.cbegin_chars() + lcp;
+    auto end = s1.cend_chars();
+    end--;
+
+    while (it1 != end && *it1 == *it2) {
+        it1++;
+        it2++;
+        lcp++;
+    }
+    return static_cast<int64_t>(*it1) - static_cast<int64_t>(*it2);
+}
+
 template <typename char_type, uint64_t X>
 bool cmp_index_substring(std::vector<char_type>& str,
-                   uint64_t local_index,
-                   std::array<char_type, X>& sub_str) {
+                         uint64_t local_index,
+                         std::array<char_type, X>& sub_str) {
     for (uint64_t j = 0; j < X; j++) {
         KASSERT(local_index + j < str.size());
         char_type c = str[local_index + j];

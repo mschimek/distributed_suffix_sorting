@@ -1,4 +1,5 @@
 // #include <cstdint>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "util/printing.hpp"
 #include "util/random.hpp"
 #include "util/uint_types.hpp"
+
 
 using namespace dsss;
 using namespace kamping;
@@ -152,7 +154,7 @@ template <typename PDCX, typename char_type, typename index_type>
 void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
     std::vector<char_type> local_data =
         dsss::random::generate_random_data<char_type>(n, alphabet_size, comm.rank());
-    
+
     dcx::PDCXConfig config;
     PDCX pdcx(config, comm);
     std::vector<index_type> SA = pdcx.compute_sa(local_data);
@@ -167,14 +169,13 @@ void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
     }
 }
 
-
 int main() {
     Environment e;
     Communicator comm;
 
-    using namespace dcx;
+    // using namespace dcx;
     options::report_compile_flags(comm);
-    start_tests(comm);
+    // start_tests(comm);
 
     // using char_type = uint16_t;
     // using index_type = uint32_t;

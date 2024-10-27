@@ -9,9 +9,12 @@
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/timer.hpp"
 #include "mpi/shift.hpp"
+#include "pdcx/config.hpp"
 #include "pdcx/difference_cover.hpp"
+#include "sorters/sample_sort_strings.hpp"
+#include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
-#include "util/printing.hpp"
+
 
 namespace dsss::dcx {
 
@@ -22,6 +25,12 @@ using namespace kamping;
 // substring sampled by a difference cover sample
 template <typename char_type, typename index_type, typename DC>
 struct DCSampleString {
+    // for string sorter
+    using CharType = char_type;
+    const CharType* cbegin_chars() const { return letters.data(); }
+    const CharType* cend_chars() const { return letters.data() + DC::X; }
+    std::string get_string() { return to_string(); }
+
     DCSampleString() {
         letters.fill(0);
         index = 0;
@@ -96,12 +105,21 @@ struct SampleStringPhase {
         return local_samples;
     }
 
-    // note: adds X - 1 chars to local_string
-    void sort_samples(std::vector<SampleString>& local_samples,
-                      mpi::SortingWrapper& atomic_sorter) const {
+    void atomic_sort_samples(std::vector<SampleString>& local_samples,
+                             mpi::SortingWrapper& atomic_sorter) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_01_sort_local_samples");
         atomic_sorter.sort(local_samples, std::less<>{});
+        timer.stop();
+        local_samples.shrink_to_fit();
+    }
+
+    void string_sort_samples(std::vector<SampleString>& local_samples,
+                             dsss::SeqStringSorterWrapper& string_sorter,
+                             bool use_lcps) const {
+        auto& timer = measurements::timer();
+        timer.synchronize_and_start("phase_01_sort_local_samples");
+        mpi::sample_sort_strings(local_samples, comm, string_sorter, use_lcps);
         timer.stop();
         local_samples.shrink_to_fit();
     }

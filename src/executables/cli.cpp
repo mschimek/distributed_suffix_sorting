@@ -12,6 +12,7 @@
 #include "pdcx/difference_cover.hpp"
 #include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
+#include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
 #include "util/printing.hpp"
 #include "util/random.hpp"
@@ -34,6 +35,7 @@ bool check = false;
 
 dcx::PDCXConfig pdcx_config;
 std::string atomic_sorter = "sample_sort";
+std::string string_sorter = "multi_key_qsort";
 
 tlx::CmdlineParser cp;
 std::vector<char_type> local_string;
@@ -95,6 +97,18 @@ void configure_cli() {
                  "threshold_space_efficient_sort",
                  pdcx_config.threshold_space_efficient_sort,
                  "Use space efficient sort, if there are more chars than the threshold.");
+
+    cp.add_string('n',
+                  "string_sorter",
+                  string_sorter,
+                  "String sorter to be used. [multi_key_qsort, radix_sort_ci2, radix_sort_ci3]");
+
+    cp.add_flag('S',
+                "use_string_sort",
+                pdcx_config.use_string_sort,
+                "Use string sorting instead of atomic sorting.");
+
+    cp.add_flag('L', "use_lcps", pdcx_config.use_lcps, "Use LCPs in string sorting.");
 }
 
 template <typename EnumType>
@@ -123,6 +137,8 @@ EnumType get_enum(std::string s, std::vector<std::string> names, kamping::Commun
 void map_strings_to_enum(kamping::Communicator<>& comm) {
     pdcx_config.atomic_sorter =
         get_enum<mpi::AtomicSorters>(atomic_sorter, mpi::atomic_sorter_names, comm);
+    pdcx_config.string_sorter =
+        get_enum<dsss::SeqStringSorter>(string_sorter, dsss::string_sorter_names, comm);
 }
 
 void report_arguments(kamping::Communicator<>& comm) {
@@ -181,21 +197,21 @@ void run_pdcx(kamping::Communicator<>& comm) {
 
 void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
-    run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    // if (dcx_variant == "dc3") {
-    //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc7") {
-    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc13") {
-    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc21") {
-    //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc31") {
-    //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
-    // } else {
-    //     std::cerr << "dcx variant " << dcx_variant
-    //               << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
-    // }
+    // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    if (dcx_variant == "dc3") {
+        run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc7") {
+        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc13") {
+        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc21") {
+        run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc31") {
+        run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    } else {
+        std::cerr << "dcx variant " << dcx_variant
+                  << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
+    }
 }
 
 void write_sa(kamping::Communicator<>& comm) {

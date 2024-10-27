@@ -1,5 +1,8 @@
 target_sources(dss_base
     PUBLIC
        sample_sort.hpp
+       sample_sort_common.hpp
+       sample_sort_strings.hpp
+       seq_string_sorter_wrapper.hpp
        sorting_wrapper.hpp
 )

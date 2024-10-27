@@ -22,81 +22,45 @@
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
 #include "mpi/alltoall.hpp"
-#include "mpi/distribute.hpp"
-#include "mpi/reduce.hpp"
-#include "util/printing.hpp"
+#include "sorters/sample_sort_common.hpp"
 
 namespace dsss::mpi {
 
 template <typename DataType, class Compare>
 inline void
 sample_sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicator<>& comm) {
+    auto local_sorter = [&](std::vector<DataType>& local_data) {
+        ips4o::sort(local_data.begin(), local_data.end(), comp);
+    };
+
     // code breaks for very small inputs --> switch to sequential sorting
-    uint64_t local_size = local_data.size();
-    uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
-    size_t small_size = std::max(4 * comm.size(), (size_t)1000);
-    if (total_size <= small_size) {
-        auto global_data = comm.gatherv(kamping::send_buf(local_data));
-        ips4o::sort(global_data.begin(), global_data.end(), comp);
-        local_data = mpi_util::distribute_data_custom(global_data, local_size, comm);
+    if (sort_on_root(local_data, comm, local_sorter)) {
         return;
     }
 
-    // Sort locally
-    ips4o::sort(local_data.begin(), local_data.end(), comp);
+    // Sort data locally
+    local_sorter(local_data);
 
     // Compute the local splitters given the sorted data
-    const size_t local_n = local_data.size();
-    auto nr_splitters = std::min<size_t>(comm.size() - 1, local_n);
-    auto splitter_dist = local_n / (nr_splitters + 1);
+    std::vector<DataType> local_splitters = get_uniform_splitters(local_data, comm);
 
-    std::vector<DataType> local_splitters;
-    local_splitters.reserve(nr_splitters);
-    for (size_t i = 1; i <= nr_splitters; ++i) {
-        local_splitters.emplace_back(local_data[i * splitter_dist]);
-    }
+    // Collect and sort all splitters
+    std::vector<DataType> all_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
+    local_sorter(all_splitters);
 
-    // Distribute the local splitters, which results in the set of global
-    // splitters. Those are then sorted ...
-
-    auto global_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
-    ips4o::sort(global_splitters.begin(), global_splitters.end(), comp);
-
-    // ... to get the final set of splitters.
-    nr_splitters = std::min<size_t>(comm.size() - 1, global_splitters.size());
-    splitter_dist = global_splitters.size() / (nr_splitters + 1);
-    local_splitters.clear();
-    for (size_t i = 1; i <= nr_splitters; ++i) {
-        local_splitters.emplace_back(global_splitters[i * splitter_dist]);
-    }
+    // select subset of splitters as global splitters
+    std::vector<DataType> global_splitters = get_uniform_splitters(all_splitters, comm);
 
     // Use the final set of splitters to find the intervals
-    std::vector<int64_t> interval_sizes;
-
-    size_t element_pos = 0;
-    splitter_dist = local_n / (nr_splitters + 1);
-
-    for (size_t i = 0; i < local_splitters.size(); ++i) {
-        element_pos = ((i + 1) * splitter_dist);
-        while (element_pos > 0 && !comp(local_data[element_pos], local_splitters[i])) {
-            --element_pos;
-        }
-        while (element_pos < local_n && comp(local_data[element_pos], local_splitters[i])) {
-            ++element_pos;
-        }
-        interval_sizes.emplace_back(element_pos);
-    }
-    interval_sizes.emplace_back(local_n);
-    for (size_t i = interval_sizes.size() - 1; i > 0; --i) {
-        interval_sizes[i] -= interval_sizes[i - 1];
-    }
+    std::vector<int64_t> interval_sizes =
+        compute_interval_sizes(local_data, global_splitters, comm, comp);
 
     std::vector<int64_t> receiving_sizes = comm.alltoall(kamping::send_buf(interval_sizes));
-
     for (size_t i = interval_sizes.size(); i < comm.size(); ++i) {
         interval_sizes.emplace_back(0);
     }
 
+    // exchange data in intervals
     local_data = mpi_util::alltoallv_combined(local_data, interval_sizes, comm);
 
     //   if (false && local_data.size() > 1024 * 1024) {
@@ -152,7 +116,7 @@ sample_sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicat
         }
         local_data = std::move(result);
     } else if (local_data.size() > 0) {
-        ips4o::sort(local_data.begin(), local_data.end(), comp);
+        local_sorter(local_data);
     }
 }
 
