@@ -20,6 +20,8 @@
 #include "kassert/kassert.hpp"
 #include "mpi/distribute.hpp"
 #include "mpi/reduce.hpp"
+#include "mpi/shift.hpp"
+#include "mpi/stats.hpp"
 #include "mpi/zip.hpp"
 #include "pdcx/compute_ranks.hpp"
 #include "pdcx/config.hpp"
@@ -345,7 +347,7 @@ public:
 
     template <typename T>
     bool redistribute_if_imbalanced(std::vector<T>& data, double min_imbalance) {
-        double imbalance = compute_min_imbalance(data.size(), comm);
+        double imbalance = mpi_util::compute_min_imbalance(data.size(), comm);
         if (imbalance <= min_imbalance) {
             data = mpi_util::distribute_data(data, comm);
             return true;
@@ -530,8 +532,17 @@ public:
             stats.bucket_imbalance.push_back(max_bucket_imbalance);
             // print_concatenated(bucket_sizes, comm, "bucket_sizes");
             // print_concatenated_string(std::to_string(local_SA.size()), comm, "local_SA.size()");
+        } else if (config.use_string_sort) {
+            std::vector<MergeSamples> merge_samples =
+                phase4.construct_merge_samples(local_string,
+                                               local_ranks,
+                                               chars_before[process_rank],
+                                               chars_at_proc[process_rank]);
+            free_memory(std::move(local_ranks));
+            phase4.string_sort_merge_samples(merge_samples, string_sorter, config.use_lcps);
+            phase4.tie_break_ranks(merge_samples);
+            local_SA = phase4.extract_SA(merge_samples);
         } else {
-            report_on_root("construct merge samples", comm, recursion_depth, config.print_phases);
             std::vector<MergeSamples> merge_samples =
                 phase4.construct_merge_samples(local_string,
                                                local_ranks,
@@ -539,7 +550,6 @@ public:
                                                chars_at_proc[process_rank]);
 
             free_memory(std::move(local_ranks));
-            report_on_root("sort merge samples", comm, recursion_depth, config.print_phases);
             phase4.sort_merge_samples(merge_samples, atomic_sorter);
             local_SA = phase4.extract_SA(merge_samples);
         }
@@ -548,14 +558,17 @@ public:
         //******* End Phase 4: Merge Suffixes  ********
 
         // logging
-        stats.string_imbalance.push_back(compute_max_imbalance(local_chars, comm));
-        stats.sample_imbalance.push_back(compute_max_imbalance(local_sample_size, comm));
-        stats.sa_imbalance.push_back(compute_max_imbalance(local_SA.size(), comm));
+        stats.string_imbalance.push_back(mpi_util::compute_max_imbalance(local_chars, comm));
+        stats.sample_imbalance.push_back(mpi_util::compute_max_imbalance(local_sample_size, comm));
+        stats.sa_imbalance.push_back(mpi_util::compute_max_imbalance(local_SA.size(), comm));
         if (recursion_depth == 0) {
             std::reverse(stats.string_imbalance.begin(), stats.string_imbalance.end());
             std::reverse(stats.sample_imbalance.begin(), stats.sample_imbalance.end());
             std::reverse(stats.sa_imbalance.begin(), stats.sa_imbalance.end());
             std::reverse(stats.bucket_imbalance.begin(), stats.bucket_imbalance.end());
+            std::reverse(stats.avg_lcp_len_merging.begin(), stats.avg_lcp_len_merging.end());
+            std::reverse(stats.avg_segment.begin(), stats.avg_segment.end());
+            std::reverse(stats.max_segment.begin(), stats.max_segment.end());
         }
 
         clean_up(local_string);

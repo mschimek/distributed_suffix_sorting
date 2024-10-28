@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <numeric>
 #include <vector>
 
 #include "kamping/collectives/allgather.hpp"
@@ -9,6 +10,7 @@
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
 #include "mpi/alltoall.hpp"
+#include "mpi/stats.hpp"
 #include "sorters/sample_sort_common.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "util/printing.hpp"
@@ -20,6 +22,7 @@ template <typename DataType>
 inline void sample_sort_strings(std::vector<DataType>& local_data,
                                 kamping::Communicator<>& comm,
                                 SeqStringSorterWrapper sorting_wrapper,
+                                double& avg_lcps_length,
                                 bool use_lcps = true) {
     // set memory in string sorter?
     std::vector<SeqStringSorterWrapper::LcpType> lcps;
@@ -76,6 +79,10 @@ inline void sample_sort_strings(std::vector<DataType>& local_data,
     // TODO use loser tree, for now locally sort
     // merge buckets
     local_sorter_with_lcp(local_data);
+
+    avg_lcps_length = mpi_util::avg_value(lcps, comm);
+    // uint64_t local_max_lcps = *std::max_element(lcps.begin(), lcps.end());
+    // print_concatenated(local_max_lcps, comm, "max_lcps");
 }
 
 } // namespace dsss::mpi

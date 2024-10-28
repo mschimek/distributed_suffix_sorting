@@ -2,19 +2,23 @@
 
 #include <array>
 #include <cstdint>
-#include <limits>
 #include <numeric>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "ips4o.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/timer.hpp"
 #include "mpi/shift.hpp"
+#include "mpi/stats.hpp"
 #include "pdcx/compute_ranks.hpp"
+#include "pdcx/statistics.hpp"
+#include "sorters/sample_sort_strings.hpp"
+#include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
-#include "util/printing.hpp"
 #include "util/string_util.hpp"
+
 
 namespace dsss::dcx {
 
@@ -24,6 +28,12 @@ using namespace kamping;
 
 template <typename char_type, typename index_type, typename DC>
 struct DCMergeSamples {
+    // for string sorter
+    using CharType = char_type;
+    const CharType* cbegin_chars() const { return chars.data(); }
+    const CharType* cend_chars() const { return chars.data() + DC::X - 1; }
+    std::string get_string() { return to_string(); }
+
     DCMergeSamples() {
         index = 0;
         chars.fill(0);
@@ -173,6 +183,49 @@ struct MergeSamplePhase {
         timer.synchronize_and_start("phase_04_sort_merge_samples");
         atomic_sorter.sort(merge_samples, std::less<>{});
         timer.stop();
+    }
+
+    void string_sort_merge_samples(std::vector<MergeSamples>& merge_samples,
+                                   dsss::SeqStringSorterWrapper& string_sorter,
+                                   bool use_lcps) const {
+        double avg_lcp_len = 0;
+        auto& timer = measurements::timer();
+        timer.synchronize_and_start("phase_04_sort_merge_samples");
+        mpi::sample_sort_strings(merge_samples, comm, string_sorter, avg_lcp_len, use_lcps);
+        timer.stop();
+        get_stats_instance().avg_lcp_len_merging.push_back(avg_lcp_len);
+    }
+
+    void tie_break_ranks(std::vector<MergeSamples>& merge_samples) {
+        // assuming that chars are not split by sample sorter
+        auto cmp_rank = [](const MergeSamples& a, const MergeSamples& b) { 
+            index_type i1 = a.index % DC::X;
+            index_type i2 = b.index % DC::X;
+            auto [d, r1, r2] = DC::cmpDepthRanks[i1][i2];
+            return a.ranks[r1] < b.ranks[r2];
+        };
+
+        // TODO print average and max segment size
+        std::vector<uint64_t> segment_sizes;
+
+        // sort each segement with the same chars by rank
+        uint64_t start = 0;
+        uint64_t end = 0;
+        for (uint64_t i = 0; i < merge_samples.size() - 1; i++) {
+            if (merge_samples[i].chars != merge_samples[i + 1].chars) {
+                end = i + 1;
+                ips4o::sort(merge_samples.begin() + start, merge_samples.begin() + end, cmp_rank);
+                start = end;
+                segment_sizes.push_back(end - start);
+            }
+        }
+        segment_sizes.push_back(merge_samples.size() - start);
+        ips4o::sort(merge_samples.begin() + start, merge_samples.end(), cmp_rank);
+
+        uint64_t avg_len = mpi_util::avg_value(segment_sizes, comm);
+        uint64_t max_len = mpi_util::max_value(segment_sizes, comm);
+        get_stats_instance().avg_segment.push_back(avg_len);
+        get_stats_instance().max_segment.push_back(max_len);
     }
 
     // extract SA from merge samples

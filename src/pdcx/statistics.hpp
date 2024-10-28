@@ -29,6 +29,10 @@ struct Statistics {
         bucket_imbalance.clear();
         redistribute_chars.clear();
         redistribute_samples.clear();
+        avg_lcp_len_samples.clear();
+        avg_lcp_len_merging.clear();
+        avg_segment.clear();
+        max_segment.clear();
     }
 
     void print() const {
@@ -61,6 +65,14 @@ struct Statistics {
         print_vector(redistribute_chars, ",");
         std::cout << "redistribute_samples=";
         print_vector(redistribute_samples, ",");
+        std::cout << "avg_lcp_len_samples=";
+        print_vector(avg_lcp_len_samples, ",");
+        std::cout << "avg_lcp_len_merging=";
+        print_vector(avg_lcp_len_merging, ",");
+        std::cout << "avg_segment=";
+        print_vector(avg_segment, ",");
+        std::cout << "max_segment=";
+        print_vector(max_segment, ",");
         std::cout << std::endl;
     }
 
@@ -80,26 +92,11 @@ struct Statistics {
     std::vector<double> bucket_imbalance;
     std::vector<bool> redistribute_chars;
     std::vector<bool> redistribute_samples;
+    std::vector<double> avg_lcp_len_samples;
+    std::vector<double> avg_lcp_len_merging;
+    std::vector<double> avg_segment;
+    std::vector<uint64_t> max_segment;
 };
-
-double compute_max_imbalance(uint64_t local_size, kamping::Communicator<>& comm) {
-    using namespace kamping;
-    uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
-    uint64_t largest_size = mpi_util::all_reduce_max(local_size, comm);
-    double avg_size = (double)total_size / comm.size();
-    double imbalance = ((double)largest_size / avg_size) - 1.0;
-    return imbalance;
-}
-
-double compute_min_imbalance(uint64_t local_size, kamping::Communicator<>& comm) {
-    using namespace kamping;
-    uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
-    uint64_t smallest_size = mpi_util::all_reduce_min(local_size, comm);
-    double avg_size = (double)total_size / comm.size();
-    double imbalance = ((double)smallest_size / avg_size);
-    return imbalance;
-}
-
 
 // singleton instance
 inline Statistics& get_stats_instance() {

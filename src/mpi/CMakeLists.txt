@@ -6,5 +6,6 @@ target_sources(dss_base
         distribute.hpp
         reduce.hpp
         shift.hpp
+        stats.hpp
         zip.hpp
 )

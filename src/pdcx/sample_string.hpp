@@ -9,8 +9,8 @@
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/timer.hpp"
 #include "mpi/shift.hpp"
-#include "pdcx/config.hpp"
 #include "pdcx/difference_cover.hpp"
+#include "pdcx/statistics.hpp"
 #include "sorters/sample_sort_strings.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
@@ -117,11 +117,13 @@ struct SampleStringPhase {
     void string_sort_samples(std::vector<SampleString>& local_samples,
                              dsss::SeqStringSorterWrapper& string_sorter,
                              bool use_lcps) const {
+        double avg_lcp_len = 0;
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_01_sort_local_samples");
-        mpi::sample_sort_strings(local_samples, comm, string_sorter, use_lcps);
+        mpi::sample_sort_strings(local_samples, comm, string_sorter, avg_lcp_len, use_lcps);
         timer.stop();
         local_samples.shrink_to_fit();
+        get_stats_instance().avg_lcp_len_samples.push_back(avg_lcp_len);
     }
 };
 
