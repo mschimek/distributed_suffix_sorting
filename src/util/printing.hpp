@@ -165,4 +165,5 @@ void report_on_root(std::string const& str,
         std::cout << pad << str << std::endl;
     }
 }
+
 } // namespace kamping

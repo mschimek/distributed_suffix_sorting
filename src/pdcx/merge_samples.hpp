@@ -10,6 +10,7 @@
 #include "ips4o.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/timer.hpp"
+#include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
 #include "mpi/stats.hpp"
 #include "pdcx/compute_ranks.hpp"
@@ -17,6 +18,7 @@
 #include "sorters/sample_sort_strings.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "util/printing.hpp"
 #include "util/string_util.hpp"
 
 
@@ -198,34 +200,47 @@ struct MergeSamplePhase {
 
     void tie_break_ranks(std::vector<MergeSamples>& merge_samples) {
         // assuming that chars are not split by sample sorter
-        auto cmp_rank = [](const MergeSamples& a, const MergeSamples& b) { 
+        auto cmp_rank = [](const MergeSamples& a, const MergeSamples& b) {
             index_type i1 = a.index % DC::X;
             index_type i2 = b.index % DC::X;
             auto [d, r1, r2] = DC::cmpDepthRanks[i1][i2];
             return a.ranks[r1] < b.ranks[r2];
         };
 
-        // TODO print average and max segment size
-        std::vector<uint64_t> segment_sizes;
+        int64_t local_max_segment = 0;
+        int64_t local_sum_segment = 0;
+        int64_t local_num_segment = 0;
 
         // sort each segement with the same chars by rank
-        uint64_t start = 0;
-        uint64_t end = 0;
-        for (uint64_t i = 0; i < merge_samples.size() - 1; i++) {
+        int64_t start = 0;
+        int64_t end = 0;
+        for (int64_t i = 0; i < (int64_t)merge_samples.size() - 1; i++) {
             if (merge_samples[i].chars != merge_samples[i + 1].chars) {
+                local_num_segment++;
                 end = i + 1;
                 ips4o::sort(merge_samples.begin() + start, merge_samples.begin() + end, cmp_rank);
                 start = end;
-                segment_sizes.push_back(end - start);
+                local_sum_segment += end - start;
+                local_max_segment = std::max(local_max_segment, end - start);
             }
         }
-        segment_sizes.push_back(merge_samples.size() - start);
-        ips4o::sort(merge_samples.begin() + start, merge_samples.end(), cmp_rank);
 
-        uint64_t avg_len = mpi_util::avg_value(segment_sizes, comm);
-        uint64_t max_len = mpi_util::max_value(segment_sizes, comm);
+        end = merge_samples.size();
+        local_sum_segment += end - start;
+        local_max_segment = std::max(local_max_segment, end - start);
+        local_num_segment++;
+
+        if (merge_samples.size() > 1) {
+            ips4o::sort(merge_samples.begin() + start, merge_samples.end(), cmp_rank);
+        }
+
+        report_on_root("finished segments", comm);
+        int64_t total_segments = mpi_util::all_reduce_sum(local_num_segment, comm);
+        int64_t sum_segments = mpi_util::all_reduce_sum(local_sum_segment, comm);
+        int64_t max_segments = mpi_util::all_reduce_max(local_max_segment, comm);
+        double avg_len = (double)sum_segments / total_segments;
         get_stats_instance().avg_segment.push_back(avg_len);
-        get_stats_instance().max_segment.push_back(max_len);
+        get_stats_instance().max_segment.push_back(max_segments);
     }
 
     // extract SA from merge samples
