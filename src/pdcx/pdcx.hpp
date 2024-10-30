@@ -58,6 +58,7 @@ public:
           recursion_depth(0) {
         atomic_sorter.set_sorter(config.atomic_sorter);
         atomic_sorter.set_num_levels(config.ams_levels);
+        atomic_sorter.set_sample_sort_config(config.sample_sort_config);
     }
 
     // maps the index i from a recursive dcx call back to the global index
@@ -371,6 +372,7 @@ public:
             recursion_depth == 0 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
         string_sorter.set_sorter(string_algo);
 
+
         bool redist_chars = redistribute_if_imbalanced(local_string, min_imbalance);
         stats.redistribute_chars.push_back(redist_chars);
 
@@ -440,7 +442,7 @@ public:
             phase1.compute_sample_strings(local_string, chars_before[process_rank]);
         local_sample_size = local_samples.size();
         if (config.use_string_sort) {
-            phase1.string_sort_samples(local_samples, string_sorter, config.use_lcps);
+            phase1.string_sort_samples(local_samples, string_sorter, config.sample_sort_config);
         } else {
             phase1.atomic_sort_samples(local_samples, atomic_sorter);
         }
@@ -543,7 +545,7 @@ public:
                                                chars_at_proc[process_rank]);
             free_memory(std::move(local_ranks));
             report_on_root("string sort", comm, recursion_depth, config.print_phases);
-            phase4.string_sort_merge_samples(merge_samples, string_sorter, config.use_lcps);
+            phase4.string_sort_merge_samples(merge_samples, string_sorter, config.sample_sort_config);
             report_on_root("tie breaking", comm, recursion_depth, config.print_phases);
             phase4.tie_break_ranks(merge_samples);
             report_on_root("extract SA", comm, recursion_depth, config.print_phases);
@@ -590,7 +592,6 @@ public:
             std::reverse(stats.sample_imbalance.begin(), stats.sample_imbalance.end());
             std::reverse(stats.sa_imbalance.begin(), stats.sa_imbalance.end());
             std::reverse(stats.bucket_imbalance.begin(), stats.bucket_imbalance.end());
-            std::reverse(stats.avg_lcp_len_merging.begin(), stats.avg_lcp_len_merging.end());
             std::reverse(stats.avg_segment.begin(), stats.avg_segment.end());
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
         }

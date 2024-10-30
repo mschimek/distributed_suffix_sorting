@@ -2,6 +2,7 @@
 
 #include <random>
 #include <vector>
+#include "sorters/sample_sort_config.hpp"
 
 #ifdef INCLUDE_ALL_SORTERS
 #include "AmsSort/AmsSort.hpp"
@@ -31,12 +32,14 @@ struct SortingWrapper {
           data_seed(3469931 + comm.rank()),
           num_levels(1),
           tag(123),
-          sorter(AtomicSorters::SampleSort) {
+          sorter(AtomicSorters::SampleSort),
+          sample_sort_config(SampleSortConfig()) {
         RBC::Create_Comm_from_MPI(mpi_comm, &rcomm);
     }
 
     void set_sorter(AtomicSorters new_sorter) { sorter = new_sorter; }
     void set_num_levels(int new_num_levels) { num_levels = new_num_levels; }
+    void set_sample_sort_config(SampleSortConfig config) { sample_sort_config = config; }
 
     template <typename DataType, class Compare>
     inline void sort(std::vector<DataType>& local_data, Compare comp) {
@@ -44,7 +47,7 @@ struct SortingWrapper {
         MPI_Datatype my_mpi_type = kamping::mpi_datatype<DataType>();
         switch (sorter) {
             case SampleSort:
-                sample_sort(local_data, comp, comm);
+                sample_sort(local_data, comp, comm, sample_sort_config);
                 break;
             case Rquick:
                 RQuick::sort(my_mpi_type, local_data, tag, gen, mpi_comm, comp);
@@ -62,7 +65,7 @@ struct SortingWrapper {
                 sample_sort(local_data, comp, comm);
         }
 #else
-        sample_sort(local_data, comp, comm);
+        sample_sort(local_data, comp, comm, sample_sort_config);
 #endif
 
         // some problems with operators
@@ -82,5 +85,6 @@ struct SortingWrapper {
     int tag;
 
     AtomicSorters sorter;
+    SampleSortConfig sample_sort_config;
 };
 } // namespace dsss::mpi

@@ -15,6 +15,7 @@
 #include "mpi/stats.hpp"
 #include "pdcx/compute_ranks.hpp"
 #include "pdcx/statistics.hpp"
+#include "sorters/sample_sort_config.hpp"
 #include "sorters/sample_sort_strings.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
@@ -189,13 +190,11 @@ struct MergeSamplePhase {
 
     void string_sort_merge_samples(std::vector<MergeSamples>& merge_samples,
                                    dsss::SeqStringSorterWrapper& string_sorter,
-                                   bool use_lcps) const {
-        double avg_lcp_len = 0;
+                                   mpi::SampleSortConfig &config) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_04_sort_merge_samples");
-        mpi::sample_sort_strings(merge_samples, comm, string_sorter, avg_lcp_len, use_lcps);
+        mpi::sample_sort_strings(merge_samples, comm, string_sorter, config);
         timer.stop();
-        get_stats_instance().avg_lcp_len_merging.push_back(avg_lcp_len);
     }
 
     void tie_break_ranks(std::vector<MergeSamples>& merge_samples) {

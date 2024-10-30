@@ -116,14 +116,12 @@ struct SampleStringPhase {
 
     void string_sort_samples(std::vector<SampleString>& local_samples,
                              dsss::SeqStringSorterWrapper& string_sorter,
-                             bool use_lcps) const {
-        double avg_lcp_len = 0;
+                             mpi::SampleSortConfig &config) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_01_sort_local_samples");
-        mpi::sample_sort_strings(local_samples, comm, string_sorter, avg_lcp_len, use_lcps);
+        mpi::sample_sort_strings(local_samples, comm, string_sorter, config);
         timer.stop();
         local_samples.shrink_to_fit();
-        get_stats_instance().avg_lcp_len_samples.push_back(avg_lcp_len);
     }
 };
 

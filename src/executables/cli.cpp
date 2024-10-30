@@ -12,6 +12,7 @@
 #include "pdcx/difference_cover.hpp"
 #include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
+#include "sorters/sample_sort_config.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
 #include "util/printing.hpp"
@@ -37,32 +38,33 @@ dcx::PDCXConfig pdcx_config;
 std::string atomic_sorter = "sample_sort";
 std::string string_sorter = "multi_key_qsort";
 
+dsss::mpi::SampleSortConfig sample_sort_config;
+std::string splitter_sampling = "uniform";
+std::string splitter_sorting = "central";
+
 tlx::CmdlineParser cp;
 std::vector<char_type> local_string;
 std::vector<index_type> local_sa;
 
 
 void configure_cli() {
+    // basic information
     cp.set_description("Distributed Suffix Array Construction using pDCX");
     cp.set_author("Manuel Haag <uozeb@student.kit.edu>");
 
+    // input and output
     cp.add_param_string("input",
                         input_path,
                         "Path to input file. The special input 'random' generates a random text of "
                         "the size given by parameter '-s'.");
-
     cp.add_bytes('s',
                  "size",
                  string_size,
                  "Size (in bytes unless stated "
                  "otherwise) of the string that use to test our suffix array "
                  "construction algorithms.");
-
     cp.add_bytes('a', "alphabet_size", alphabet_size, "Size of the alphbet used for random.");
     cp.add_bytes('e', "seed", seed, "Seed to be used for random. PE i uses seed: seed + i");
-
-    cp.add_flag('c', "check", check, "Check if the SA has been constructed correctly.");
-
     cp.add_string('o',
                   "output",
                   "<F>",
@@ -70,29 +72,17 @@ void configure_cli() {
                   "Filename for the output (SA). Note that the output is five times larger than "
                   "the input file.");
 
+    // pdcx configuration
+    cp.add_flag('c', "check", check, "Check if the SA has been constructed correctly.");
     cp.add_string('x',
                   "dcx",
                   "<F>",
                   dcx_variant,
                   "pDCX variant to use. Available options: dc3, dc7, dc13.");
-
-    // pdcx configuration
     cp.add_double('t',
                   "discarding_threshold",
                   pdcx_config.discarding_threshold,
                   "Value between [0, 1], threshold when to use discarding optimization.");
-
-    cp.add_string('r',
-                  "atomic_sorter",
-                  "<F>",
-                  atomic_sorter,
-                  "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
-    
-    cp.add_bytes('l',
-                 "ams_levels",
-                 pdcx_config.ams_levels,
-                 "Number of levels to be used in ams.");
-
     cp.add_bytes('b',
                  "blocks_space_efficient_sort",
                  pdcx_config.blocks_space_efficient_sort,
@@ -103,17 +93,40 @@ void configure_cli() {
                  pdcx_config.threshold_space_efficient_sort,
                  "Use space efficient sort, if there are more chars than the threshold.");
 
+
+    // sorter configuration
+    cp.add_string('r',
+                  "atomic_sorter",
+                  "<F>",
+                  atomic_sorter,
+                  "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
+    cp.add_bytes('l', "ams_levels", pdcx_config.ams_levels, "Number of levels to be used in ams.");
+    cp.add_string('p',
+                  "splitter_sampling",
+                  "<F>",
+                  splitter_sampling,
+                  "Splitter sampling method in sample sort. [uniform, random]");
+    cp.add_string('T',
+                  "splitter_sorting",
+                  "<F>",
+                  splitter_sorting,
+                  "Splitter sorting method in sample sort [central, distributed]");
     cp.add_string('n',
                   "string_sorter",
                   string_sorter,
                   "String sorter to be used. [multi_key_qsort, radix_sort_ci2, radix_sort_ci3]");
-
     cp.add_flag('S',
                 "use_string_sort",
                 pdcx_config.use_string_sort,
                 "Use string sorting instead of atomic sorting.");
-
-    cp.add_flag('L', "use_lcps", pdcx_config.use_lcps, "Use LCPs in string sorting.");
+    cp.add_flag('L',
+                "use_loser_tree",
+                pdcx_config.use_loser_tree,
+                "Use loser tree in merging step of sample sort.");
+    cp.add_flag('R',
+                "use_rquick_for_splitters",
+                sample_sort_config.use_rquick_for_splitters,
+                "Use Rquick to sort splitter.");
 }
 
 template <typename EnumType>
@@ -140,10 +153,23 @@ EnumType get_enum(std::string s, std::vector<std::string> names, kamping::Commun
 }
 
 void map_strings_to_enum(kamping::Communicator<>& comm) {
+    // pdcx
     pdcx_config.atomic_sorter =
         get_enum<mpi::AtomicSorters>(atomic_sorter, mpi::atomic_sorter_names, comm);
     pdcx_config.string_sorter =
         get_enum<dsss::SeqStringSorter>(string_sorter, dsss::string_sorter_names, comm);
+
+    // sample sort
+    sample_sort_config.splitter_sorting =
+        get_enum<dsss::mpi::SplitterSorting>(splitter_sorting,
+                                             dsss::mpi::splitter_sorting_names,
+                                             comm);
+    sample_sort_config.splitter_sampling =
+        get_enum<dsss::mpi::SplitterSampling>(splitter_sampling,
+                                              dsss::mpi::splitter_sampling_names,
+                                              comm);
+
+    pdcx_config.sample_sort_config = sample_sort_config;
 }
 
 void report_arguments(kamping::Communicator<>& comm) {

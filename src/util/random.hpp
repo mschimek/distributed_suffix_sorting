@@ -14,4 +14,6 @@ std::vector<T> generate_random_data(uint64_t n, uint64_t alphabet_size, uint64_t
     }
     return v;
 }
+
+
 } // namespace dsss::random

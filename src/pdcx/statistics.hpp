@@ -29,8 +29,6 @@ struct Statistics {
         bucket_imbalance.clear();
         redistribute_chars.clear();
         redistribute_samples.clear();
-        avg_lcp_len_samples.clear();
-        avg_lcp_len_merging.clear();
         avg_segment.clear();
         max_segment.clear();
     }
@@ -65,10 +63,6 @@ struct Statistics {
         print_vector(redistribute_chars, ",");
         std::cout << "redistribute_samples=";
         print_vector(redistribute_samples, ",");
-        std::cout << "avg_lcp_len_samples=";
-        print_vector(avg_lcp_len_samples, ",");
-        std::cout << "avg_lcp_len_merging=";
-        print_vector(avg_lcp_len_merging, ",");
         std::cout << "avg_segment=";
         print_vector(avg_segment, ",");
         std::cout << "max_segment=";
@@ -92,8 +86,6 @@ struct Statistics {
     std::vector<double> bucket_imbalance;
     std::vector<bool> redistribute_chars;
     std::vector<bool> redistribute_samples;
-    std::vector<double> avg_lcp_len_samples;
-    std::vector<double> avg_lcp_len_merging;
     std::vector<double> avg_segment;
     std::vector<uint64_t> max_segment;
 };

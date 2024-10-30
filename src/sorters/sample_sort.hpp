@@ -23,14 +23,39 @@
 #include "kamping/named_parameters.hpp"
 #include "mpi/alltoall.hpp"
 #include "sorters/sample_sort_common.hpp"
+#include "sorters/sample_sort_config.hpp"
+#include "util/printing.hpp"
+
+#ifdef INCLUDE_ALL_SORTERS
+#include "RQuick/RQuick.hpp"
+#endif
 
 namespace dsss::mpi {
 
 template <typename DataType, class Compare>
-inline void
-sample_sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicator<>& comm) {
-    auto local_sorter = [&](std::vector<DataType>& local_data) {
-        ips4o::sort(local_data.begin(), local_data.end(), comp);
+inline void sample_sort(std::vector<DataType>& local_data,
+                        Compare comp,
+                        kamping::Communicator<>& comm,
+                        SampleSortConfig config = SampleSortConfig()) {
+    auto local_sorter = [&](std::vector<DataType>& data) {
+        ips4o::sort(data.begin(), data.end(), comp);
+    };
+    auto distributed_sorter = [&](std::vector<DataType>& local_splitters) {
+        SampleSortConfig config2 = config;
+        config2.splitter_sorting = SplitterSorting::Central;
+#ifdef INCLUDE_ALL_SORTERS
+        MPI_Datatype my_mpi_type = kamping::mpi_datatype<DataType>();
+        std::mt19937_64 gen;
+        int tag = 42;
+        MPI_Comm mpi_comm(comm.mpi_communicator());
+        if (config.use_rquick_for_splitters) {
+            RQuick::sort(my_mpi_type, local_splitters, tag, gen, mpi_comm, comp);
+        } else {
+            sample_sort(local_splitters, comp, comm, config2);
+        }
+#else
+        sample_sort(local_splitters, comp, comm, config2);
+#endif
     };
 
     // code breaks for very small inputs --> switch to sequential sorting
@@ -41,15 +66,9 @@ sample_sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicat
     // Sort data locally
     local_sorter(local_data);
 
-    // Compute the local splitters given the sorted data
-    std::vector<DataType> local_splitters = get_uniform_splitters(local_data, comm);
-
-    // Collect and sort all splitters
-    std::vector<DataType> all_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
-    local_sorter(all_splitters);
-
-    // select subset of splitters as global splitters
-    std::vector<DataType> global_splitters = get_uniform_splitters(all_splitters, comm);
+    // compute global splitters
+    std::vector<DataType> global_splitters =
+        get_global_splitters(local_data, local_sorter, distributed_sorter, comm, config);
 
     // Use the final set of splitters to find the intervals
     std::vector<int64_t> interval_sizes =
@@ -63,10 +82,7 @@ sample_sort(std::vector<DataType>& local_data, Compare comp, kamping::Communicat
     // exchange data in intervals
     local_data = mpi_util::alltoallv_combined(local_data, interval_sizes, comm);
 
-    //   if (false && local_data.size() > 1024 * 1024) {
-    // constexpr bool use_loser_tree = true;
-    constexpr bool use_loser_tree = false;
-    if (use_loser_tree) {
+    if (config.use_loser_tree) {
         std::vector<decltype(local_data.cbegin())> string_it(comm.size(), local_data.cbegin());
         std::vector<decltype(local_data.cbegin())> end_it(comm.size(),
                                                           local_data.cbegin() + receiving_sizes[0]);
