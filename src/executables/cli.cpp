@@ -87,6 +87,11 @@ void configure_cli() {
                   "<F>",
                   atomic_sorter,
                   "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
+    
+    cp.add_bytes('l',
+                 "ams_levels",
+                 pdcx_config.ams_levels,
+                 "Number of levels to be used in ams.");
 
     cp.add_bytes('b',
                  "blocks_space_efficient_sort",
@@ -197,21 +202,21 @@ void run_pdcx(kamping::Communicator<>& comm) {
 
 void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
-    // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    if (dcx_variant == "dc3") {
-        run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc7") {
-        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc13") {
-        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc21") {
-        run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc31") {
-        run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
-    } else {
-        std::cerr << "dcx variant " << dcx_variant
-                  << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
-    }
+    run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    // if (dcx_variant == "dc3") {
+    //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc7") {
+    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc13") {
+    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc21") {
+    //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc31") {
+    //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    // } else {
+    //     std::cerr << "dcx variant " << dcx_variant
+    //               << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
+    // }
 }
 
 void write_sa(kamping::Communicator<>& comm) {

@@ -29,7 +29,7 @@ struct SortingWrapper {
         : comm(_comm),
           mpi_comm(comm.mpi_communicator()),
           data_seed(3469931 + comm.rank()),
-          num_levels(2),
+          num_levels(1),
           tag(123),
           sorter(AtomicSorters::SampleSort) {
         RBC::Create_Comm_from_MPI(mpi_comm, &rcomm);

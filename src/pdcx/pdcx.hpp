@@ -57,6 +57,7 @@ public:
           stats(get_stats_instance()),
           recursion_depth(0) {
         atomic_sorter.set_sorter(config.atomic_sorter);
+        atomic_sorter.set_num_levels(config.ams_levels);
     }
 
     // maps the index i from a recursive dcx call back to the global index
