@@ -51,9 +51,9 @@ struct DCMergeSamples {
 
     std::string to_string() const {
         std::stringstream ss;
-        ss << "((" << chars[0];
+        ss << "((" << (uint64_t)chars[0];
         for (uint i = 1; i < DC::X - 1; i++) {
-            ss << " " << chars[i];
+            ss << " " << (uint64_t) chars[i];
         }
         ss << ") (" << ranks[0];
         for (uint i = 1; i < DC::D; i++) {
@@ -214,20 +214,21 @@ struct MergeSamplePhase {
         int64_t start = 0;
         int64_t end = 0;
         for (int64_t i = 0; i < (int64_t)merge_samples.size() - 1; i++) {
+            // TODO use lcps
             if (merge_samples[i].chars != merge_samples[i + 1].chars) {
                 local_num_segment++;
                 end = i + 1;
                 ips4o::sort(merge_samples.begin() + start, merge_samples.begin() + end, cmp_rank);
-                start = end;
                 local_sum_segment += end - start;
                 local_max_segment = std::max(local_max_segment, end - start);
+                start = end;
             }
         }
 
         end = merge_samples.size();
         local_sum_segment += end - start;
         local_max_segment = std::max(local_max_segment, end - start);
-        local_num_segment++;
+        local_num_segment += end != start;
 
         if (merge_samples.size() > 1) {
             ips4o::sort(merge_samples.begin() + start, merge_samples.end(), cmp_rank);

@@ -125,4 +125,35 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     return is_correct;
 }
 
+template <typename T>
+bool check_sorted(std::vector<T>& v, auto smaller_eq, kamping::Communicator<>& comm) {
+    using namespace kamping;
+
+    if (v.size() == 0) {
+        std::cout << "Warning: empty vector in sorted check" << std::endl;
+    }
+    KASSERT(v.size() > 0ull);
+
+    T next = mpi_util::shift_left(v.back(), comm);
+    bool ok = true;
+
+    for (int64_t i = 0; i < (int64_t)v.size() - 1; i++) {
+        ok &= smaller_eq(v[i], v[i + 1]);
+        if (!ok) {
+            std::cout << comm.rank() << " --> " << i << " " << v[i].to_string() << " "
+                      << v[i + 1].to_string() << std::endl;
+            break;
+        }
+    }
+    if (ok && comm.rank() < comm.size() - 1) {
+        ok &= smaller_eq(v.back(), next);
+        if (!ok) {
+            std::cout << comm.rank() << " --> overlapping" << v.back().to_string() << " "
+                      << next.to_string() << std::endl;
+        }
+    }
+    bool all_ok = mpi_util::all_reduce_and(ok, comm);
+    return all_ok;
+}
+
 } // namespace dsss

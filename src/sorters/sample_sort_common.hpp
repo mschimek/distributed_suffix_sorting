@@ -144,7 +144,11 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
                                             std::vector<DataType>& splitters,
                                             Communicator<>& comm,
                                             Compare comp) {
+    
     const size_t local_n = local_data.size();
+    if(local_n == 0) {
+        return std::vector<int64_t>(splitters.size(), 0);
+    }
     size_t nr_splitters = std::min<size_t>(comm.size() - 1, local_n);
     size_t splitter_dist = local_n / (nr_splitters + 1);
 

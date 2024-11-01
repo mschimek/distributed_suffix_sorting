@@ -77,18 +77,6 @@ inline void sample_sort_strings(std::vector<DataType>& local_data,
     std::vector<DataType> global_splitters =
         get_global_splitters(local_data, local_sorter, distributed_sorter, comm, config);
 
-    /*
-    // Compute the local splitters given the sorted data
-    std::vector<DataType> local_splitters = sample_uniform_splitters(local_data, comm);
-
-    // Collect and sort all splitters
-    std::vector<DataType> all_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
-    local_sorter(all_splitters);
-
-    // select subset of splitters as global splitters
-    std::vector<DataType> global_splitters = sample_uniform_splitters(all_splitters, comm);
-    */
-
     // Use the final set of splitters to find the intervals
     std::vector<int64_t> interval_sizes =
         compute_interval_sizes(local_data, global_splitters, comm, comp);

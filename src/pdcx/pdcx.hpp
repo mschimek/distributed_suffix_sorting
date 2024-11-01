@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <numeric>
 #include <sstream>
@@ -544,13 +545,17 @@ public:
                                                chars_before[process_rank],
                                                chars_at_proc[process_rank]);
             free_memory(std::move(local_ranks));
+
             report_on_root("string sort", comm, recursion_depth, config.print_phases);
-            phase4.string_sort_merge_samples(merge_samples, string_sorter, config.sample_sort_config);
+            phase4.string_sort_merge_samples(merge_samples,
+                                             string_sorter,
+                                             config.sample_sort_config);
+
             report_on_root("tie breaking", comm, recursion_depth, config.print_phases);
             phase4.tie_break_ranks(merge_samples);
+
             report_on_root("extract SA", comm, recursion_depth, config.print_phases);
             local_SA = phase4.extract_SA(merge_samples);
-
         } else {
             std::vector<MergeSamples> merge_samples =
                 phase4.construct_merge_samples(local_string,
@@ -563,7 +568,7 @@ public:
             local_SA = phase4.extract_SA(merge_samples);
         }
 
-
+        redistribute_if_imbalanced(local_SA, min_imbalance);
 
         timer.stop();
         //******* End Phase 4: Merge Suffixes  ********

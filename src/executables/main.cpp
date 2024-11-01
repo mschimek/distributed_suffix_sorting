@@ -1,4 +1,5 @@
 // #include <cstdint>
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <iostream>
@@ -19,7 +20,7 @@
 #include "util/printing.hpp"
 #include "util/random.hpp"
 #include "util/uint_types.hpp"
-
+#include "ips4o.hpp"
 
 using namespace dsss;
 using namespace kamping;
@@ -174,7 +175,7 @@ int main() {
     Communicator comm;
 
     // using namespace dcx;
-    options::report_compile_flags(comm);
+    // options::report_compile_flags(comm);
     // start_tests(comm);
 
     // using char_type = uint16_t;
