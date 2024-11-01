@@ -94,7 +94,11 @@ void configure_cli() {
                  "threshold_space_efficient_sort",
                  pdcx_config.threshold_space_efficient_sort,
                  "Use space efficient sort, if there are more chars than the threshold.");
-
+    cp.add_flag('C',
+                "use_lcps_tie_breaking",
+                pdcx_config.use_lcps_tie_breaking,
+                "Compute LCPs in string sorting and use them speedup comparison of strings in tie "
+                "breaking.");
 
     // sorter configuration
     cp.add_string('r',
@@ -192,32 +196,36 @@ void report_arguments(kamping::Communicator<>& comm) {
 }
 
 void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& comm) {
-    uint64_t max_alphabet_size = 1 <<(sizeof(char_type) * 8);
+    uint64_t max_alphabet_size = 1 << (sizeof(char_type) * 8);
 
     // determine character frequencies
     std::vector<uint64_t> local_counts(max_alphabet_size, 0);
-    for(auto c : input) {
+    for (auto c: input) {
         local_counts[c]++;
     }
-    std::vector<uint64_t> global_counts = comm.allreduce(kamping::send_buf(local_counts), kamping::op(kamping::ops::plus<>{}));
-    uint64_t alphabet_size = max_alphabet_size - std::count(global_counts.begin(), global_counts.end(), 0);
+    std::vector<uint64_t> global_counts =
+        comm.allreduce(kamping::send_buf(local_counts), kamping::op(kamping::ops::plus<>{}));
+    uint64_t alphabet_size =
+        max_alphabet_size - std::count(global_counts.begin(), global_counts.end(), 0);
 
-    if(alphabet_size == max_alphabet_size) {
-        kamping::report_on_root("Can only process alphabets with not more than 255 distinct characters. Change char_type.", comm);
+    if (alphabet_size == max_alphabet_size) {
+        kamping::report_on_root("Can only process alphabets with not more than 255 distinct "
+                                "characters. Change char_type.",
+                                comm);
         exit(1);
     }
 
     // reserve character 0 for padding
     uint64_t next_char = 1;
     std::vector<uint64_t> map_char(max_alphabet_size);
-    for(uint64_t i = 0; i < max_alphabet_size; i++) {
-        if(global_counts[i] > 0) {
+    for (uint64_t i = 0; i < max_alphabet_size; i++) {
+        if (global_counts[i] > 0) {
             map_char[i] = next_char++;
         }
     }
 
     // map input alphabet to compressed alphabet
-    for(uint64_t i = 0; i < input.size(); i++) {
+    for (uint64_t i = 0; i < input.size(); i++) {
         input[i] = map_char[input[i]];
     }
     kamping::report_on_root("input_alphabet_size=" + std::to_string(alphabet_size), comm);
@@ -256,7 +264,6 @@ void read_input(kamping::Communicator<>& comm) {
     timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
     timer.clear();
     kamping::report_on_root("\n", comm);
-    
 }
 
 template <typename PDCX, typename char_type, typename index_type>
@@ -270,8 +277,8 @@ void run_pdcx(kamping::Communicator<>& comm) {
 
 void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
-    run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    // run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // if (dcx_variant == "dc3") {
     //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc7") {

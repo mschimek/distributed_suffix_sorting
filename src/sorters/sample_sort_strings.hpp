@@ -16,6 +16,7 @@
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "util/printing.hpp"
 #include "util/string_util.hpp"
+#include "util/uint_types.hpp"
 
 #ifdef INCLUDE_ALL_SORTERS
 #include "RQuick/RQuick.hpp"
@@ -23,23 +24,26 @@
 
 namespace dsss::mpi {
 
+using LcpType = SeqStringSorterWrapper::LcpType;
+
 template <typename DataType>
-inline void sample_sort_strings(std::vector<DataType>& local_data,
+inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_data,
                                 kamping::Communicator<>& comm,
                                 SeqStringSorterWrapper sorting_wrapper,
-                                SampleSortConfig config = SampleSortConfig()) {
+                                SampleSortConfig config = SampleSortConfig(),
+                                bool output_lcps = false) {
+    
+    std::vector<LcpType> lcps;
+
     // set memory in string sorter?
-    bool write_lcps = false;
-    std::vector<SeqStringSorterWrapper::LcpType> lcps;
-    if (write_lcps) {
-        lcps.resize(local_data.size(), 0);
-    }
 
     auto local_sorter = [&](std::vector<DataType>& local_data) {
         sorting_wrapper.sort(local_data);
     };
     auto local_sorter_with_lcp = [&](std::vector<DataType>& local_data) {
-        if (write_lcps) {
+        if (output_lcps) {
+            lcps.resize(local_data.size());
+            std::fill(lcps.begin(), lcps.end(), LcpType(0));
             sorting_wrapper.sort_with_lcps(local_data, lcps);
         } else {
             sorting_wrapper.sort(local_data);
@@ -66,12 +70,16 @@ inline void sample_sort_strings(std::vector<DataType>& local_data,
     };
 
     // code breaks for very small inputs --> switch to sequential sorting
-    if (sort_on_root(local_data, comm, local_sorter)) {
-        return;
+    if (input_is_small(local_data, comm)) {
+        sort_on_root(local_data, comm, local_sorter_with_lcp);
+        if(output_lcps) {
+            lcps = mpi_util::distribute_data_custom(lcps, local_data.size(), comm);
+        }
+        return lcps;
     }
 
     // Sort data locally
-    local_sorter_with_lcp(local_data);
+    local_sorter(local_data);
 
     // compute global splitters
     std::vector<DataType> global_splitters =
@@ -83,19 +91,20 @@ inline void sample_sort_strings(std::vector<DataType>& local_data,
 
     // exchange data in intervals
     local_data = mpi_util::alltoallv_combined(local_data, interval_sizes, comm);
-    if (write_lcps) {
-        // invalidate first lcp of each interval
-        uint64_t pos = 0;
-        for (uint64_t i = 0; i < interval_sizes.size(); i++) {
-            lcps[pos] = 0;
-            pos += interval_sizes[i];
-        }
-        lcps = mpi_util::alltoallv_combined(lcps, interval_sizes, comm);
-    }
+    // if (write_lcps) {
+    //     // invalidate first lcp of each interval
+    //     uint64_t pos = 0;
+    //     for (uint64_t i = 0; i < interval_sizes.size(); i++) {
+    //         lcps[pos] = 0;
+    //         pos += interval_sizes[i];
+    //     }
+    //     lcps = mpi_util::alltoallv_combined(lcps, interval_sizes, comm);
+    // }
 
     // TODO use loser tree, for now locally sort
     // merge buckets
-    local_sorter(local_data);
+    local_sorter_with_lcp(local_data);
+    return lcps;
 }
 
 } // namespace dsss::mpi

@@ -512,7 +512,7 @@ public:
         report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_04_merge");
 
-        MergeSamplePhase<char_type, index_type, DC> phase4(comm);
+        MergeSamplePhase<char_type, index_type, DC> phase4(comm, config);
         phase4.shift_ranks_left(local_ranks);
         phase4.push_padding(local_ranks, total_chars);
 
@@ -547,12 +547,10 @@ public:
             free_memory(std::move(local_ranks));
 
             report_on_root("string sort", comm, recursion_depth, config.print_phases);
-            phase4.string_sort_merge_samples(merge_samples,
-                                             string_sorter,
-                                             config.sample_sort_config);
+            auto lcps = phase4.string_sort_merge_samples(merge_samples, string_sorter);
 
             report_on_root("tie breaking", comm, recursion_depth, config.print_phases);
-            phase4.tie_break_ranks(merge_samples);
+            phase4.tie_break_ranks(merge_samples, lcps);
 
             report_on_root("extract SA", comm, recursion_depth, config.print_phases);
             local_SA = phase4.extract_SA(merge_samples);
@@ -600,6 +598,8 @@ public:
             std::reverse(stats.avg_segment.begin(), stats.avg_segment.end());
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
         }
+        KASSERT(check_suffixarray(local_SA, local_string, comm),
+                "Suffix array is not sorted on level " + std::to_string(recursion_depth));
         return local_SA;
     }
 

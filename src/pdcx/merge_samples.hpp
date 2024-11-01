@@ -14,6 +14,7 @@
 #include "mpi/shift.hpp"
 #include "mpi/stats.hpp"
 #include "pdcx/compute_ranks.hpp"
+#include "pdcx/config.hpp"
 #include "pdcx/statistics.hpp"
 #include "sorters/sample_sort_config.hpp"
 #include "sorters/sample_sort_strings.hpp"
@@ -53,7 +54,7 @@ struct DCMergeSamples {
         std::stringstream ss;
         ss << "((" << (uint64_t)chars[0];
         for (uint i = 1; i < DC::X - 1; i++) {
-            ss << " " << (uint64_t) chars[i];
+            ss << " " << (uint64_t)chars[i];
         }
         ss << ") (" << ranks[0];
         for (uint i = 1; i < DC::D; i++) {
@@ -87,13 +88,15 @@ template <typename char_type, typename index_type, typename DC>
 struct MergeSamplePhase {
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
     using MergeSamples = DCMergeSamples<char_type, index_type, DC>;
+    using LcpType = SeqStringSorterWrapper::LcpType;
 
     static constexpr uint32_t X = DC::X;
     static constexpr uint32_t D = DC::D;
 
     Communicator<>& comm;
+    PDCXConfig& config;
 
-    MergeSamplePhase(Communicator<>& _comm) : comm(_comm) {}
+    MergeSamplePhase(Communicator<>& _comm, PDCXConfig& _config) : comm(_comm), config(_config) {}
 
     // shift ranks left to access overlapping ranks
     void shift_ranks_left(std::vector<RankIndex>& local_ranks) const {
@@ -188,16 +191,22 @@ struct MergeSamplePhase {
         timer.stop();
     }
 
-    void string_sort_merge_samples(std::vector<MergeSamples>& merge_samples,
-                                   dsss::SeqStringSorterWrapper& string_sorter,
-                                   mpi::SampleSortConfig &config) const {
+    std::vector<LcpType>
+    string_sort_merge_samples(std::vector<MergeSamples>& merge_samples,
+                              dsss::SeqStringSorterWrapper& string_sorter) const {
+        bool output_lcps = config.use_lcps_tie_breaking;
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_04_sort_merge_samples");
-        mpi::sample_sort_strings(merge_samples, comm, string_sorter, config);
+        std::vector<LcpType> lcps = mpi::sample_sort_strings(merge_samples,
+                                                             comm,
+                                                             string_sorter,
+                                                             config.sample_sort_config,
+                                                             output_lcps);
         timer.stop();
+        return lcps;
     }
 
-    void tie_break_ranks(std::vector<MergeSamples>& merge_samples) {
+    void tie_break_ranks(std::vector<MergeSamples>& merge_samples, std::vector<LcpType>& lcps) {
         // assuming that chars are not split by sample sorter
         auto cmp_rank = [](const MergeSamples& a, const MergeSamples& b) {
             index_type i1 = a.index % DC::X;
@@ -209,13 +218,29 @@ struct MergeSamplePhase {
         int64_t local_max_segment = 0;
         int64_t local_sum_segment = 0;
         int64_t local_num_segment = 0;
+        if (config.use_lcps_tie_breaking) {
+            KASSERT(lcps.size() == merge_samples.size());
+        }
+
 
         // sort each segement with the same chars by rank
         int64_t start = 0;
         int64_t end = 0;
         for (int64_t i = 0; i < (int64_t)merge_samples.size() - 1; i++) {
-            // TODO use lcps
-            if (merge_samples[i].chars != merge_samples[i + 1].chars) {
+            bool segment_ended;
+            if (config.use_lcps_tie_breaking) {
+                // for some reason LCPs can be larger than X - 1?
+                // segment_ended = lcps[i + 1] != DC::X - 1;
+                segment_ended = lcps[i + 1] < DC::X - 1;
+                KASSERT(segment_ended == (merge_samples[i].chars != merge_samples[i + 1].chars),
+                        std::to_string(lcps[i + 1]) + " " + std::to_string(DC::X - 1) + " "
+                            + merge_samples[i].to_string() + " "
+                            + merge_samples[i + 1].to_string());
+
+            } else {
+                segment_ended = merge_samples[i].chars != merge_samples[i + 1].chars;
+            }
+            if (segment_ended) {
                 local_num_segment++;
                 end = i + 1;
                 ips4o::sort(merge_samples.begin() + start, merge_samples.begin() + end, cmp_rank);

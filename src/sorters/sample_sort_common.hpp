@@ -16,20 +16,22 @@ namespace dsss::mpi {
 
 using namespace kamping;
 
+
+template <typename DataType>
+bool input_is_small(std::vector<DataType>& local_data, Communicator<>& comm) {
+    const uint64_t local_size = local_data.size();
+    const uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
+    const uint64_t small_size = std::max(4ull * comm.size(), 1000ull);
+    return total_size <= small_size;
+}
 // if input is small enough, send all data to the root and locally sort
 // returns true, if input was sorted on root
 template <typename DataType>
-bool sort_on_root(std::vector<DataType>& local_data, Communicator<>& comm, auto sorter) {
-    uint64_t local_size = local_data.size();
-    uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
-    uint64_t small_size = std::max(4ull * comm.size(), 1000ull);
-    bool do_local_sort = total_size <= small_size;
-    if (do_local_sort) {
-        std::vector<DataType> global_data = comm.gatherv(kamping::send_buf(local_data));
-        sorter(global_data);
-        local_data = mpi_util::distribute_data_custom(global_data, local_size, comm);
-    }
-    return do_local_sort;
+void sort_on_root(std::vector<DataType>& local_data, Communicator<>& comm, auto sorter) {
+    const uint64_t local_n = local_data.size();
+    std::vector<DataType> global_data = comm.gatherv(kamping::send_buf(local_data));
+    sorter(global_data);
+    local_data = mpi_util::distribute_data_custom(global_data, local_n, comm);
 }
 
 // sample 16 * log2 p splitters uniform at random
@@ -105,7 +107,7 @@ std::vector<DataType> sample_global_splitters_distributed(std::vector<DataType>&
         KASSERT(0 <= local_index && local_index < local_n);
         partial_splitters.emplace_back(local_splitters[local_index]);
     }
-    
+
     // collect global splitters
     std::vector<DataType> global_splitters = comm.allgatherv(kamping::send_buf(partial_splitters));
     KASSERT((int64_t)global_splitters.size() == nr_splitters);
@@ -144,9 +146,8 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
                                             std::vector<DataType>& splitters,
                                             Communicator<>& comm,
                                             Compare comp) {
-    
     const size_t local_n = local_data.size();
-    if(local_n == 0) {
+    if (local_n == 0) {
         return std::vector<int64_t>(splitters.size(), 0);
     }
     size_t nr_splitters = std::min<size_t>(comm.size() - 1, local_n);

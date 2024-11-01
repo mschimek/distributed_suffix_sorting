@@ -59,7 +59,8 @@ inline void sample_sort(std::vector<DataType>& local_data,
     };
 
     // code breaks for very small inputs --> switch to sequential sorting
-    if (sort_on_root(local_data, comm, local_sorter)) {
+    if (input_is_small(local_data, comm)) {
+        sort_on_root(local_data, comm, local_sorter);
         return;
     }
 
