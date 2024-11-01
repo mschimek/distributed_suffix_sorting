@@ -529,7 +529,8 @@ public:
                                                     chars_before[comm.rank()],
                                                     local_chars,
                                                     global_samples_splitters,
-                                                    atomic_sorter);
+                                                    atomic_sorter,
+                                                    string_sorter);
             uint64_t largest_bucket = *std::max_element(bucket_sizes.begin(), bucket_sizes.end());
             double avg_buckets = (double)total_chars / (blocks * comm.size());
             double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
@@ -545,14 +546,8 @@ public:
                                                chars_before[process_rank],
                                                chars_at_proc[process_rank]);
             free_memory(std::move(local_ranks));
-
-            report_on_root("string sort", comm, recursion_depth, config.print_phases);
             auto lcps = phase4.string_sort_merge_samples(merge_samples, string_sorter);
-
-            report_on_root("tie breaking", comm, recursion_depth, config.print_phases);
             phase4.tie_break_ranks(merge_samples, lcps);
-
-            report_on_root("extract SA", comm, recursion_depth, config.print_phases);
             local_SA = phase4.extract_SA(merge_samples);
         } else {
             std::vector<MergeSamples> merge_samples =

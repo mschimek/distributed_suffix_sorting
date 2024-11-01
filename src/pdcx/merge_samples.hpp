@@ -259,7 +259,6 @@ struct MergeSamplePhase {
             ips4o::sort(merge_samples.begin() + start, merge_samples.end(), cmp_rank);
         }
 
-        report_on_root("finished segments", comm);
         int64_t total_segments = mpi_util::all_reduce_sum(local_num_segment, comm);
         int64_t sum_segments = mpi_util::all_reduce_sum(local_sum_segment, comm);
         int64_t max_segments = mpi_util::all_reduce_max(local_max_segment, comm);
@@ -305,7 +304,8 @@ struct MergeSamplePhase {
                           uint64_t chars_before,
                           uint64_t local_chars,
                           std::vector<std::array<char_type, X>>& global_splitters,
-                          mpi::SortingWrapper& atomic_sorter) {
+                          mpi::SortingWrapper& atomic_sorter,
+                          dsss::SeqStringSorterWrapper& string_sorter) {
         using SA = std::vector<index_type>;
         int64_t blocks = global_splitters.size() + 1;
 
@@ -331,7 +331,14 @@ struct MergeSamplePhase {
                 }
             }
             KASSERT(bucket_sizes[k] == samples.size());
-            sort_merge_samples(samples, atomic_sorter);
+
+            if(config.use_string_sort) {
+                auto lcps = string_sort_merge_samples(samples, string_sorter);
+                tie_break_ranks(samples, lcps);
+            }
+            else {
+                sort_merge_samples(samples, atomic_sorter);
+            }
 
             // extract SA of block
             for (auto& sample: samples) {
