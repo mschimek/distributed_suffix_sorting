@@ -20,6 +20,7 @@
 #include "kamping/collectives/alltoall.hpp"
 #include "kamping/collectives/gather.hpp"
 #include "kamping/communicator.hpp"
+#include "kamping/measurements/timer.hpp"
 #include "kamping/named_parameters.hpp"
 #include "mpi/alltoall.hpp"
 #include "sorters/sample_sort_common.hpp"
@@ -37,6 +38,8 @@ inline void sample_sort(std::vector<DataType>& local_data,
                         Compare comp,
                         kamping::Communicator<>& comm,
                         SampleSortConfig config = SampleSortConfig()) {
+    auto& timer = kamping::measurements::timer();
+
     auto local_sorter = [&](std::vector<DataType>& data) {
         ips4o::sort(data.begin(), data.end(), comp);
     };
@@ -67,11 +70,16 @@ inline void sample_sort(std::vector<DataType>& local_data,
     }
 
     // Sort data locally
+    timer.synchronize_and_start("sample_sort_local_sorting_01");
     local_sorter(local_data);
+    timer.stop();
 
     // compute global splitters
+    timer.synchronize_and_start("sample_sort_global_splitters");
     std::vector<DataType> global_splitters =
         get_global_splitters(local_data, local_sorter, distributed_sorter, comm, config);
+    timer.stop();
+
 
     // Use the final set of splitters to find the intervals
     std::vector<int64_t> interval_sizes =
@@ -83,7 +91,9 @@ inline void sample_sort(std::vector<DataType>& local_data,
     }
 
     // exchange data in intervals
+    timer.synchronize_and_start("sample_sort_alltoall");
     local_data = mpi_util::alltoallv_combined(local_data, interval_sizes, comm);
+    timer.stop();
 
     if (config.use_loser_tree) {
         std::vector<decltype(local_data.cbegin())> string_it(comm.size(), local_data.cbegin());
@@ -135,7 +145,9 @@ inline void sample_sort(std::vector<DataType>& local_data,
         }
         local_data = std::move(result);
     } else if (local_data.size() > 0) {
+        timer.synchronize_and_start("sample_sort_local_sorting_02");
         local_sorter(local_data);
+        timer.stop();
     }
 }
 

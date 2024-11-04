@@ -212,6 +212,9 @@ struct MergeSamplePhase {
     }
 
     void tie_break_ranks(std::vector<MergeSamples>& merge_samples, std::vector<LcpType>& lcps) {
+        auto& timer = measurements::timer();
+        timer.synchronize_and_start("phase_04_string_tie_breaking");
+
         // assuming that chars are not split by sample sorter
         auto cmp_rank = [](const MergeSamples& a, const MergeSamples& b) {
             index_type i1 = a.index % DC::X;
@@ -269,6 +272,7 @@ struct MergeSamplePhase {
         double avg_len = (double)sum_segments / total_segments;
         get_stats_instance().avg_segment.push_back(avg_len);
         get_stats_instance().max_segment.push_back(max_segments);
+        timer.stop();
     }
 
     // extract SA from merge samples
