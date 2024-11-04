@@ -18,7 +18,7 @@ static inline int64_t string_cmp(String& s1, String& s2) {
     auto end = s1.cend_chars();
     end--;
 
-    while (it1 != end && *it1 == *it2) {
+    while (it1 < end && *it1 == *it2) {
         it1++;
         it2++;
     }
@@ -35,7 +35,7 @@ static inline int64_t string_cmp(String& s1, String& s2, size_t& lcp) {
     auto end = s1.cend_chars();
     end--;
 
-    while (it1 != end && *it1 == *it2) {
+    while (it1 < end && *it1 == *it2) {
         it1++;
         it2++;
         lcp++;

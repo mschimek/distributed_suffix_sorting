@@ -331,9 +331,9 @@ public:
     }
 
     // compute even distributed splitters from sorted local samples
-    std::vector<std::array<char_type, DC::X>>
+    std::vector<typename SampleString::SampleStringLetters>
     get_sample_splitters(std::vector<SampleString>& local_samples, uint64_t blocks) {
-        using Substring = std::array<char_type, DC::X>;
+        using Substring = typename SampleString::SampleStringLetters;
         int64_t num_samples = local_samples.size();
         int64_t samples_before = mpi_util::ex_prefix_sum(num_samples, comm);
         std::vector<Substring> local_splitters;
@@ -357,6 +357,7 @@ public:
         }
         return false;
     }
+
 
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
         timer.synchronize_and_start("pdcx");
@@ -457,7 +458,8 @@ public:
                                         && total_chars >= config.threshold_space_efficient_sort;
         uint64_t blocks = config.blocks_space_efficient_sort;
         stats.space_efficient_sort.push_back(use_space_efficient_sort);
-        std::vector<std::array<char_type, DC::X>> global_samples_splitters;
+        
+        std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
         if (use_space_efficient_sort) {
             if (blocks > comm.size()) {
                 blocks = comm.size();
@@ -547,6 +549,10 @@ public:
                                                chars_at_proc[process_rank]);
             free_memory(std::move(local_ranks));
             auto lcps = phase4.string_sort_merge_samples(merge_samples, string_sorter);
+
+            if (config.use_lcps_tie_breaking) {
+                KASSERT(check_lcp_values(merge_samples, lcps, comm, false));
+            }
             phase4.tie_break_ranks(merge_samples, lcps);
             local_SA = phase4.extract_SA(merge_samples);
         } else {
@@ -584,7 +590,6 @@ public:
         }
 
         timer.stop(); // pdcx
-        KASSERT(mpi_util::all_reduce_sum(local_SA.size(), comm) == total_chars);
         if (recursion_depth == 0) {
             std::reverse(stats.string_imbalance.begin(), stats.string_imbalance.end());
             std::reverse(stats.sample_imbalance.begin(), stats.sample_imbalance.end());
@@ -593,6 +598,7 @@ public:
             std::reverse(stats.avg_segment.begin(), stats.avg_segment.end());
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
         }
+        KASSERT(mpi_util::all_reduce_sum(local_SA.size(), comm) == total_chars);
         KASSERT(check_suffixarray(local_SA, local_string, comm),
                 "Suffix array is not sorted on level " + std::to_string(recursion_depth));
         return local_SA;

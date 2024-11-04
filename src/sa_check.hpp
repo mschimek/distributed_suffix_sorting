@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "kamping/communicator.hpp"
+#include "mpi/distribute.hpp"
 #include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
 #include "mpi/zip.hpp"
@@ -126,7 +128,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
 }
 
 template <typename T>
-bool check_sorted(std::vector<T>& v, auto smaller_eq, kamping::Communicator<>& comm) {
+bool check_sorted(std::vector<T>& v, auto less, kamping::Communicator<>& comm) {
     using namespace kamping;
 
     if (v.size() == 0) {
@@ -138,7 +140,7 @@ bool check_sorted(std::vector<T>& v, auto smaller_eq, kamping::Communicator<>& c
     bool ok = true;
 
     for (int64_t i = 0; i < (int64_t)v.size() - 1; i++) {
-        ok &= smaller_eq(v[i], v[i + 1]);
+        ok &= !less(v[i + 1], v[i]);
         if (!ok) {
             std::cout << comm.rank() << " --> " << i << " " << v[i].to_string() << " "
                       << v[i + 1].to_string() << std::endl;
@@ -146,12 +148,86 @@ bool check_sorted(std::vector<T>& v, auto smaller_eq, kamping::Communicator<>& c
         }
     }
     if (ok && comm.rank() < comm.size() - 1) {
-        ok &= smaller_eq(v.back(), next);
+        ok &= !less(next, v.back());
         if (!ok) {
             std::cout << comm.rank() << " --> overlapping" << v.back().to_string() << " "
                       << next.to_string() << std::endl;
         }
     }
+    bool all_ok = mpi_util::all_reduce_and(ok, comm);
+    return all_ok;
+}
+
+template <typename T>
+bool check_vector_same(std::vector<T>& a,
+                       std::vector<T>& b,
+                       auto eq,
+                       kamping::Communicator<>& comm) {
+    // check for same total size
+    uint64_t total_size_a = mpi_util::all_reduce_sum(a.size(), comm);
+    uint64_t total_size_b = mpi_util::all_reduce_sum(b.size(), comm);
+    bool ok = total_size_a == total_size_b;
+    if (!ok) {
+        kamping::report_on_root("vector sizes not equal: " + std::to_string(total_size_a) + " "
+                                    + std::to_string(total_size_b),
+                                comm);
+        return false;
+    }
+
+    // align local vector and compare elementwise
+    uint64_t local_size_a = a.size();
+    uint64_t local_size_b = b.size();
+    a = mpi_util::distribute_data(a, comm);
+    b = mpi_util::distribute_data(b, comm);
+    for (uint64_t i = 0; i < a.size(); i++) {
+        ok &= eq(a[i], b[i]);
+        if (!ok) {
+            kamping::report_on_root("vector elements not equal at " + std::to_string(i) + " "
+                                        + a[i].to_string() + " " + b[i].to_string(),
+                                    comm);
+            break;
+        }
+    }
+    bool all_ok = mpi_util::all_reduce_and(ok, comm);
+
+    // reverse modification made to vectors
+    a = mpi_util::distribute_data_custom(a, local_size_a, comm);
+    b = mpi_util::distribute_data_custom(b, local_size_b, comm);
+    return all_ok;
+}
+
+template <typename char_type, typename lcp_type>
+bool check_lcp_values(std::vector<char_type>& local_string,
+                      std::vector<lcp_type>& lcps,
+                      kamping::Communicator<>& comm,
+                      bool strict = true) {
+    KASSERT(local_string.size() == lcps.size());
+    bool ok = local_string.size() == lcps.size();
+
+    for (uint64_t i = 1; i < local_string.size(); i++) {
+        uint64_t common_prefix = 0;
+        int64_t result = string_cmp(local_string[i - 1], local_string[i], common_prefix);
+        if(result == 0) {
+            common_prefix++; // tlx also counts 0-character at the end
+        }
+        if(strict) {
+            ok &= (common_prefix == lcps[i]);
+        }
+        else {
+            // lcp is exact, but does not yield wrong results
+            ok &= (common_prefix >= lcps[i]);
+        }
+        // if(!ok) {
+        if(common_prefix < lcps[i]) {
+        // if(common_prefix != lcps[i]) {
+            std::string msg = "lcp values wrong at " + std::to_string(i) + " lcp: " +
+                              std::to_string(lcps[i]) + ", correct lcp: " + std::to_string(common_prefix);
+            msg += " " + local_string[i - 1].to_string() + " " + local_string[i].to_string();
+            kamping::print_result(msg, comm);
+            break;
+        }
+    }
+
     bool all_ok = mpi_util::all_reduce_and(ok, comm);
     return all_ok;
 }

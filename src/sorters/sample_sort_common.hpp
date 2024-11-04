@@ -25,13 +25,11 @@ bool input_is_small(std::vector<DataType>& local_data, Communicator<>& comm) {
     return total_size <= small_size;
 }
 // if input is small enough, send all data to the root and locally sort
-// returns true, if input was sorted on root
 template <typename DataType>
 void sort_on_root(std::vector<DataType>& local_data, Communicator<>& comm, auto sorter) {
-    const uint64_t local_n = local_data.size();
     std::vector<DataType> global_data = comm.gatherv(kamping::send_buf(local_data));
     sorter(global_data);
-    local_data = mpi_util::distribute_data_custom(global_data, local_n, comm);
+    local_data = global_data;
 }
 
 // sample 16 * log2 p splitters uniform at random

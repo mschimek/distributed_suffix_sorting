@@ -71,6 +71,7 @@ inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_dat
 
     // code breaks for very small inputs --> switch to sequential sorting
     if (input_is_small(local_data, comm)) {
+        report_on_root("sorting on root", comm);
         sort_on_root(local_data, comm, local_sorter_with_lcp);
         if(output_lcps) {
             lcps = mpi_util::distribute_data_custom(lcps, local_data.size(), comm);

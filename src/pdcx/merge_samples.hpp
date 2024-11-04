@@ -13,6 +13,7 @@
 #include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
 #include "mpi/stats.hpp"
+#include "pdcx/sample_string.hpp"
 #include "pdcx/compute_ranks.hpp"
 #include "pdcx/config.hpp"
 #include "pdcx/statistics.hpp"
@@ -35,7 +36,7 @@ struct DCMergeSamples {
     // for string sorter
     using CharType = char_type;
     const CharType* cbegin_chars() const { return chars.data(); }
-    const CharType* cend_chars() const { return chars.data() + DC::X - 1; }
+    const CharType* cend_chars() const { return chars.data() + DC::X; }
     std::string get_string() { return to_string(); }
 
     DCMergeSamples() {
@@ -43,7 +44,7 @@ struct DCMergeSamples {
         chars.fill(0);
         ranks.fill(0);
     }
-    DCMergeSamples(std::array<char_type, DC::X - 1>&& _chars,
+    DCMergeSamples(std::array<char_type, DC::X>&& _chars,
                    std::array<index_type, DC::D>&& _ranks,
                    index_type _index)
         : chars(_chars),
@@ -79,13 +80,15 @@ struct DCMergeSamples {
         return ranks[r1] < b.ranks[r2];
     }
 
-    std::array<char_type, DC::X - 1> chars;
+    // X - 1 chars + 0
+    std::array<char_type, DC::X> chars;
     std::array<index_type, DC::D> ranks;
     index_type index;
 };
 
 template <typename char_type, typename index_type, typename DC>
 struct MergeSamplePhase {
+    using SampleString = DCSampleString<char_type, index_type, DC>;
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
     using MergeSamples = DCMergeSamples<char_type, index_type, DC>;
     using LcpType = SeqStringSorterWrapper::LcpType;
@@ -133,11 +136,13 @@ struct MergeSamplePhase {
                                           uint64_t rank_pos) const {
         KASSERT(char_pos + X - 2 < local_string.size());
         KASSERT(rank_pos + D - 1 < local_ranks.size());
-        std::array<char_type, X - 1> chars;
+        std::array<char_type, X> chars;
         std::array<index_type, D> ranks;
         for (uint32_t i = 0; i < X - 1; i++) {
             chars[i] = local_string[char_pos + i];
         }
+        // strings must be terminated with 0
+        chars.back() = 0;
         for (uint32_t i = 0; i < D; i++) {
             ranks[i] = local_ranks[rank_pos + i].rank;
         }
@@ -222,7 +227,6 @@ struct MergeSamplePhase {
             KASSERT(lcps.size() == merge_samples.size());
         }
 
-
         // sort each segement with the same chars by rank
         int64_t start = 0;
         int64_t end = 0;
@@ -278,7 +282,7 @@ struct MergeSamplePhase {
     std::vector<uint64_t>
     compute_bucket_sizes(std::vector<char_type>& local_string,
                          uint64_t local_chars,
-                         std::vector<std::array<char_type, X>>& global_splitters) {
+                         std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
         int64_t blocks = global_splitters.size() + 1;
         std::vector<uint64_t> bucket_sizes(blocks, 0);
         for (uint64_t i = 0; i < local_chars; i++) {
@@ -303,7 +307,7 @@ struct MergeSamplePhase {
                           std::vector<uint64_t>& bucket_sizes,
                           uint64_t chars_before,
                           uint64_t local_chars,
-                          std::vector<std::array<char_type, X>>& global_splitters,
+                          std::vector<typename SampleString::SampleStringLetters>& global_splitters,
                           mpi::SortingWrapper& atomic_sorter,
                           dsss::SeqStringSorterWrapper& string_sorter) {
         using SA = std::vector<index_type>;

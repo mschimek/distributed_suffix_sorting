@@ -38,7 +38,7 @@ bool check = false;
 
 dcx::PDCXConfig pdcx_config;
 std::string atomic_sorter = "sample_sort";
-std::string string_sorter = "multi_key_qsort";
+std::string string_sorter = "radix_sort_ci3";
 
 dsss::mpi::SampleSortConfig sample_sort_config;
 std::string splitter_sampling = "uniform";

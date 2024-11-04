@@ -28,14 +28,18 @@ struct DCSampleString {
     // for string sorter
     using CharType = char_type;
     const CharType* cbegin_chars() const { return letters.data(); }
-    const CharType* cend_chars() const { return letters.data() + DC::X; }
+    const CharType* cend_chars() const { return letters.data() + DC::X + 1; }
     std::string get_string() { return to_string(); }
+
+    // X chars and one 0-character 
+    using SampleStringLetters = std::array<char_type, DC::X + 1>;
+
 
     DCSampleString() {
         letters.fill(0);
         index = 0;
     }
-    DCSampleString(std::array<char_type, DC::X>&& _letters, index_type _index)
+    DCSampleString(SampleStringLetters&& _letters, index_type _index)
         : letters(_letters),
           index(_index) {}
 
@@ -58,7 +62,7 @@ struct DCSampleString {
         return ss.str();
     }
 
-    std::array<char_type, DC::X> letters;
+    SampleStringLetters letters;
     index_type index;
 };
 
@@ -92,10 +96,11 @@ struct SampleStringPhase {
             uint64_t m = (i + offset) % X;
             if (is_in_dc<DC>(m)) {
                 index_type index = index_type(chars_before + i);
-                std::array<char_type, X> letters;
+                std::array<char_type, X + 1> letters;
                 for (uint k = 0; k < X; k++) {
                     letters[k] = local_string[i + k];
                 }
+                letters.back() = 0; // 0-terminated string
                 local_samples.push_back(SampleString(std::move(letters), index));
             }
         }
