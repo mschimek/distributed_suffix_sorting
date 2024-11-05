@@ -458,7 +458,7 @@ public:
                                         && total_chars >= config.threshold_space_efficient_sort;
         uint64_t blocks = config.blocks_space_efficient_sort;
         stats.space_efficient_sort.push_back(use_space_efficient_sort);
-        
+
         std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
         if (use_space_efficient_sort) {
             if (blocks > comm.size()) {
@@ -568,7 +568,6 @@ public:
         }
 
         redistribute_if_imbalanced(local_SA, min_imbalance);
-
         timer.stop();
         //******* End Phase 4: Merge Suffixes  ********
 

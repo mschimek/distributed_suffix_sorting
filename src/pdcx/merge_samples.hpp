@@ -314,6 +314,9 @@ struct MergeSamplePhase {
                           std::vector<typename SampleString::SampleStringLetters>& global_splitters,
                           mpi::SortingWrapper& atomic_sorter,
                           dsss::SeqStringSorterWrapper& string_sorter) {
+
+        auto &timer = measurements::timer();
+
         using SA = std::vector<index_type>;
         int64_t blocks = global_splitters.size() + 1;
 
@@ -326,6 +329,7 @@ struct MergeSamplePhase {
         // TODO: maybe discard ranks that are not used anymore?
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < blocks; k++) {
+            timer.synchronize_and_start("phase_04_space_efficient_sort_collect_bucket");
             // collect samples falling into kth block
             samples.reserve(bucket_sizes[k]);
             for (uint64_t idx = 0; idx < local_chars; idx++) {
@@ -338,6 +342,7 @@ struct MergeSamplePhase {
                     samples.push_back(sample);
                 }
             }
+            timer.stop();
             KASSERT(bucket_sizes[k] == samples.size());
 
             if(config.use_string_sort) {
@@ -422,7 +427,9 @@ struct MergeSamplePhase {
         int64_t total_sa = std::accumulate(sa_block_size.begin(), sa_block_size.end(), int64_t(0));
         KASSERT(total_send == total_sa);
 
+        timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
         SA local_SA = mpi_util::alltoallv_combined(concat_sa_blocks, send_cnts, comm);
+        timer.stop();
         return local_SA;
     }
 };
