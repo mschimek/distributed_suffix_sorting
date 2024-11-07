@@ -12,15 +12,16 @@
 #include "kamping/named_parameters.hpp"
 #include "options.hpp"
 #include "pdcx/config.hpp"
-#include "pdcx/difference_cover.hpp"
-#include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
+#include "sorters/sample_sort_strings.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "strings/lcp_type.hpp"
+#include "strings/merging.hpp"
+#include "strings/string_set.hpp"
 #include "test.hpp"
+#include "tlx/sort/strings/string_ptr.hpp"
 #include "util/printing.hpp"
 #include "util/random.hpp"
-#include "util/uint_types.hpp"
-#include "ips4o.hpp"
 
 using namespace dsss;
 using namespace kamping;
@@ -175,7 +176,7 @@ int main() {
     Communicator comm;
 
     // using namespace dcx;
-    // options::report_compile_flags(comm);
+    // options::report_compile_flags(comm);/
     // start_tests(comm);
 
     // using char_type = uint16_t;

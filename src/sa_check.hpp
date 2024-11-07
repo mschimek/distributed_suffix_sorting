@@ -9,6 +9,7 @@
 #include "mpi/shift.hpp"
 #include "mpi/zip.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "strings/lcp_type.hpp"
 #include "util/printing.hpp"
 
 namespace dsss {
@@ -205,7 +206,7 @@ bool check_lcp_values(std::vector<char_type>& local_string,
     bool ok = local_string.size() == lcps.size();
 
     for (uint64_t i = 1; i < local_string.size(); i++) {
-        uint64_t common_prefix = 0;
+        LcpType common_prefix = 0;
         int64_t result = string_cmp(local_string[i - 1], local_string[i], common_prefix);
         if(result == 0) {
             common_prefix++; // tlx also counts 0-character at the end

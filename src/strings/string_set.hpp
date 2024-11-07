@@ -48,7 +48,6 @@ public:
     typedef Parent::CharIterator CharIterator;
     typedef Parent::Container Container;
 
-
     //! Construct from begin and end string pointers
     GeneralStringSet(const Iterator& begin, const Iterator& end) : begin_(begin), end_(end) {}
 

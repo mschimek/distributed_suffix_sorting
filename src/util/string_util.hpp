@@ -5,6 +5,7 @@
 #include <iterator>
 #include <numeric>
 #include <vector>
+#include "strings/lcp_type.hpp"
 
 namespace dsss {
 
@@ -26,8 +27,8 @@ static inline int64_t string_cmp(String& s1, String& s2) {
 }
 
 // compare strings by scanning. Start at given lcp, which also returns the final lcp.
-template <typename String>
-static inline int64_t string_cmp(String& s1, String& s2, size_t& lcp) {
+template <typename String, typename lcp_type>
+static inline int64_t string_cmp(String& s1, String& s2, lcp_type& lcp) {
     KASSERT(std::distance(s1.cbegin_chars(), s1.cend_chars())
             == std::distance(s2.cbegin_chars(), s2.cend_chars()));
     auto it1 = s1.cbegin_chars() + lcp;
@@ -41,6 +42,14 @@ static inline int64_t string_cmp(String& s1, String& s2, size_t& lcp) {
         lcp++;
     }
     return static_cast<int64_t>(*it1) - static_cast<int64_t>(*it2);
+}
+
+
+template <typename String>
+static inline LcpType compute_lcp(String& s1, String& s2) {
+    LcpType lcp = 0;
+    string_cmp(s1, s2, lcp);
+    return lcp;
 }
 
 template <typename char_type, uint64_t X>

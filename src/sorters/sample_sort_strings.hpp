@@ -15,9 +15,12 @@
 #include "sorters/sample_sort_common.hpp"
 #include "sorters/sample_sort_config.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
+#include "strings/merging.hpp"
+#include "strings/string_ptr.hpp"
 #include "util/printing.hpp"
 #include "util/string_util.hpp"
 #include "util/uint_types.hpp"
+
 
 #ifdef INCLUDE_ALL_SORTERS
 #include "RQuick/RQuick.hpp"
@@ -33,12 +36,10 @@ inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_dat
                                                 SeqStringSorterWrapper sorting_wrapper,
                                                 SampleSortConfig config = SampleSortConfig(),
                                                 bool output_lcps = false) {
-    
+    // TODO: set memory in string sorter?
+
     auto& timer = kamping::measurements::timer();
     std::vector<LcpType> lcps;
-
-    // set memory in string sorter?
-
     auto local_sorter = [&](std::vector<DataType>& local_data) {
         sorting_wrapper.sort(local_data);
     };
@@ -83,7 +84,13 @@ inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_dat
 
     // Sort data locally
     timer.synchronize_and_start("string_sample_sort_local_sorting_01");
-    local_sorter(local_data);
+    if (config.use_loser_tree) {
+        lcps.resize(local_data.size());
+        std::fill(lcps.begin(), lcps.end(), LcpType(0));
+        sorting_wrapper.sort_with_lcps(local_data, lcps);
+    } else {
+        local_sorter(local_data);
+    }
     timer.stop();
 
     // compute global splitters
@@ -102,21 +109,27 @@ inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_dat
     timer.synchronize_and_start("string_sample_sort_alltoall");
     local_data = mpi_util::alltoallv_combined(local_data, interval_sizes, comm);
     timer.stop();
-    // if (write_lcps) {
-    //     // invalidate first lcp of each interval
-    //     uint64_t pos = 0;
-    //     for (uint64_t i = 0; i < interval_sizes.size(); i++) {
-    //         lcps[pos] = 0;
-    //         pos += interval_sizes[i];
-    //     }
-    //     lcps = mpi_util::alltoallv_combined(lcps, interval_sizes, comm);
-    // }
 
-    // TODO use loser tree, for now locally sort
+    if (config.use_loser_tree) {
+        timer.synchronize_and_start("string_sample_sort_lcp_alltoall");
+        lcps = mpi_util::alltoallv_combined(lcps, interval_sizes, comm);
+        timer.stop();
+    }
+
     // merge buckets
-    timer.synchronize_and_start("string_sample_sort_local_sorting_02");
-    local_sorter_with_lcp(local_data);
-    timer.stop();
+    if (config.use_loser_tree) {
+        timer.synchronize_and_start("string_sample_sort_loser_tree");
+        std::vector<int64_t> receiving_sizes = comm.alltoall(kamping::send_buf(interval_sizes));
+        for (uint64_t i = interval_sizes.size(); i < comm.size(); ++i) {
+            interval_sizes.emplace_back(0);
+        }
+        multiway_merge(local_data, lcps, receiving_sizes);
+        timer.stop();
+    } else {
+        timer.synchronize_and_start("string_sample_sort_local_sorting_02");
+        local_sorter_with_lcp(local_data);
+        timer.stop();
+    }
     return lcps;
 }
 

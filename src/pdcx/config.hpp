@@ -19,7 +19,6 @@ struct PDCXConfig {
     uint64_t ams_levels = 1;
     double discarding_threshold = 0.7;
     bool use_string_sort = false;
-    bool use_loser_tree = false;
     bool use_lcps_tie_breaking = false;
     bool print_phases = true;
 
@@ -29,7 +28,6 @@ struct PDCXConfig {
         std::cout << "atomic_sorter=" << mpi::atomic_sorter_names[atomic_sorter] << "\n";
         std::cout << "string_sorter=" << dsss::string_sorter_names[string_sorter] << "\n";
         std::cout << V(use_string_sort) << "\n";
-        std::cout << V(use_loser_tree) << "\n";
         std::cout << V(use_lcps_tie_breaking) << "\n";
         std::cout << V(blocks_space_efficient_sort) << "\n";
         std::cout << V(threshold_space_efficient_sort) << "\n";
