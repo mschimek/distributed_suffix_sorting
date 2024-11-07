@@ -31,6 +31,7 @@ struct Statistics {
         redistribute_samples.clear();
         avg_segment.clear();
         max_segment.clear();
+        bucket_sizes.clear();
     }
 
     void print() const {
@@ -67,6 +68,8 @@ struct Statistics {
         print_vector(avg_segment, ",");
         std::cout << "max_segment=";
         print_vector(max_segment, ",");
+        std::cout << "bucket_sizes=";
+        print_vector(bucket_sizes, ",");
         std::cout << std::endl;
     }
 
@@ -88,6 +91,7 @@ struct Statistics {
     std::vector<bool> redistribute_samples;
     std::vector<double> avg_segment;
     std::vector<uint64_t> max_segment;
+    std::vector<uint64_t> bucket_sizes;
 };
 
 // singleton instance

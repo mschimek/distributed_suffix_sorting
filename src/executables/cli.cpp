@@ -89,7 +89,6 @@ void configure_cli() {
                  "blocks_space_efficient_sort",
                  pdcx_config.blocks_space_efficient_sort,
                  "Number of blocks to be used for space efficient sort.");
-
     cp.add_bytes('i',
                  "threshold_space_efficient_sort",
                  pdcx_config.threshold_space_efficient_sort,
@@ -99,6 +98,14 @@ void configure_cli() {
                 pdcx_config.use_lcps_tie_breaking,
                 "Compute LCPs in string sorting and use them speedup comparison of strings in tie "
                 "breaking.");
+    cp.add_bytes('B',
+                 "num_samples_splitters",
+                 pdcx_config.num_samples_splitters,
+                 "Total number of random samples to use to determine block splitters in space efficient sort.");
+    cp.add_flag('U',
+                 "use_random_sampling_splitters",
+                 pdcx_config.use_random_sampling_splitters,
+                 "Use random sampling to determine block splitters in space efficient sort.");
 
     // sorter configuration
     cp.add_string('r',

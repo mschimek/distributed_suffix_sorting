@@ -13,9 +13,9 @@
 #include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
 #include "mpi/stats.hpp"
-#include "pdcx/sample_string.hpp"
 #include "pdcx/compute_ranks.hpp"
 #include "pdcx/config.hpp"
+#include "pdcx/sample_string.hpp"
 #include "pdcx/statistics.hpp"
 #include "sorters/sample_sort_config.hpp"
 #include "sorters/sample_sort_strings.hpp"
@@ -269,7 +269,7 @@ struct MergeSamplePhase {
         int64_t total_segments = mpi_util::all_reduce_sum(local_num_segment, comm);
         int64_t sum_segments = mpi_util::all_reduce_sum(local_sum_segment, comm);
         int64_t max_segments = mpi_util::all_reduce_max(local_max_segment, comm);
-        double avg_len = (double)sum_segments / total_segments;
+        double avg_len = total_segments == 0 ? 0 : (double)sum_segments / total_segments;
         get_stats_instance().avg_segment.push_back(avg_len);
         get_stats_instance().max_segment.push_back(max_segments);
         timer.stop();
@@ -283,10 +283,41 @@ struct MergeSamplePhase {
         return local_SA;
     }
 
-    std::vector<uint64_t>
-    compute_bucket_sizes(std::vector<char_type>& local_string,
-                         uint64_t local_chars,
-                         std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
+    std::vector<typename SampleString::SampleStringLetters>
+    random_sample_splitters(uint64_t local_chars, uint64_t blocks, auto materialize_sample) {
+        std::vector<typename SampleString::SampleStringLetters> local_splitters;
+
+        size_t nr_splitters =
+            std::max<size_t>((config.num_samples_splitters + comm.size() - 1) / comm.size(),
+                             blocks);
+
+        std::random_device dev;
+        std::mt19937 rng(dev());
+        std::uniform_int_distribution<uint64_t> dist(0, local_chars - 1);
+
+        local_splitters.reserve(nr_splitters);
+        for (size_t i = 0; i < nr_splitters; ++i) {
+            uint64_t r = dist(rng);
+            local_splitters.emplace_back(materialize_sample(r));
+        }
+        auto cmp = [](auto const& a, auto const& b) {
+            for (uint i = 0; i < a.size(); i++) {
+                if (a[i] != b[i])
+                    return a[i] < b[i];
+            }
+            return false;
+        };
+
+        auto all_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
+        ips4o::sort(all_splitters.begin(), all_splitters.end(), cmp);
+
+        return mpi::sample_uniform_splitters(all_splitters, blocks - 1, comm);
+    }
+
+    std::vector<uint64_t> compute_bucket_sizes(
+        std::vector<char_type>& local_string,
+        uint64_t local_chars,
+        std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
         int64_t blocks = global_splitters.size() + 1;
         std::vector<uint64_t> bucket_sizes(blocks, 0);
         for (uint64_t i = 0; i < local_chars; i++) {
@@ -314,8 +345,7 @@ struct MergeSamplePhase {
                           std::vector<typename SampleString::SampleStringLetters>& global_splitters,
                           mpi::SortingWrapper& atomic_sorter,
                           dsss::SeqStringSorterWrapper& string_sorter) {
-
-        auto &timer = measurements::timer();
+        auto& timer = measurements::timer();
 
         using SA = std::vector<index_type>;
         int64_t blocks = global_splitters.size() + 1;
@@ -345,11 +375,10 @@ struct MergeSamplePhase {
             timer.stop();
             KASSERT(bucket_sizes[k] == samples.size());
 
-            if(config.use_string_sort) {
+            if (config.use_string_sort) {
                 auto lcps = string_sort_merge_samples(samples, string_sorter);
                 tie_break_ranks(samples, lcps);
-            }
-            else {
+            } else {
                 sort_merge_samples(samples, atomic_sorter);
             }
 

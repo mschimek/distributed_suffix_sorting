@@ -84,6 +84,15 @@ struct SampleStringPhase {
         local_string.shrink_to_fit();
     }
 
+    SampleString::SampleStringLetters materialize_sample(std::vector<char_type>& local_string, uint64_t i) const {
+        std::array<char_type, X + 1> letters;
+        for (uint k = 0; k < X; k++) {
+            letters[k] = local_string[i + k];
+        }
+        letters.back() = 0; // 0-terminated string
+        return letters;
+    }
+
     // sample substrings of length X at difference cover samples
     std::vector<SampleString> compute_sample_strings(std::vector<char_type>& local_string,
                                                      uint64_t chars_before) const {
@@ -96,11 +105,7 @@ struct SampleStringPhase {
             uint64_t m = (i + offset) % X;
             if (is_in_dc<DC>(m)) {
                 index_type index = index_type(chars_before + i);
-                std::array<char_type, X + 1> letters;
-                for (uint k = 0; k < X; k++) {
-                    letters[k] = local_string[i + k];
-                }
-                letters.back() = 0; // 0-terminated string
+                std::array<char_type, X + 1> letters = materialize_sample(local_string, i);
                 local_samples.push_back(SampleString(std::move(letters), index));
             }
         }

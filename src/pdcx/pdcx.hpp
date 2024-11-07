@@ -31,6 +31,7 @@
 #include "pdcx/sequential_sa.hpp"
 #include "pdcx/statistics.hpp"
 #include "sa_check.hpp"
+#include "sorters/sample_sort_common.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
 #include "util/memory.hpp"
@@ -374,7 +375,6 @@ public:
             recursion_depth == 0 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
         string_sorter.set_sorter(string_algo);
 
-
         bool redist_chars = redistribute_if_imbalanced(local_string, min_imbalance);
         stats.redistribute_chars.push_back(redist_chars);
 
@@ -468,9 +468,10 @@ public:
                                recursion_depth,
                                config.print_phases);
             }
-            global_samples_splitters = get_sample_splitters(local_samples, blocks);
+            if (!config.use_random_sampling_splitters) {
+                global_samples_splitters = get_sample_splitters(local_samples, blocks);
+            }
         }
-
         //******* End Phase 1: Construct Samples  ********
 
         //******* Start Phase 2: Construct Ranks  ********
@@ -520,6 +521,18 @@ public:
 
         std::vector<index_type> local_SA;
         if (use_space_efficient_sort) {
+            if (config.use_random_sampling_splitters) {
+                timer.synchronize_and_start("phase_04_random_sample_splitters");
+                auto materialize_sample = [&](uint64_t i) {
+                    return phase1.materialize_sample(local_string, i);
+                };
+                global_samples_splitters =
+                    phase4.random_sample_splitters(local_chars, blocks, materialize_sample);
+                timer.stop();
+            }
+
+            KASSERT(global_samples_splitters.size() == blocks - 1);
+
             report_on_root("compute bucket sizes", comm, recursion_depth, config.print_phases);
             std::vector<uint64_t> bucket_sizes =
                 phase4.compute_bucket_sizes(local_string, local_chars, global_samples_splitters);
@@ -533,13 +546,23 @@ public:
                                                     global_samples_splitters,
                                                     atomic_sorter,
                                                     string_sorter);
+
+
+            // log all bucket sizes
+            auto all_buckets = comm.gatherv(kamping::send_buf(bucket_sizes));
+            // phase 4 stats are logged in deepest level first
+            std::reverse(all_buckets.begin(), all_buckets.end());
+            stats.bucket_sizes.insert(stats.bucket_sizes.end(),
+                                      all_buckets.begin(),
+                                      all_buckets.end());
+            
+            // print_concatenated(bucket_sizes, comm, "bucket_sizes");
+
             uint64_t largest_bucket = *std::max_element(bucket_sizes.begin(), bucket_sizes.end());
             double avg_buckets = (double)total_chars / (blocks * comm.size());
             double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
             double max_bucket_imbalance = mpi_util::all_reduce_max(bucket_imbalance, comm);
             stats.bucket_imbalance.push_back(max_bucket_imbalance);
-            // print_concatenated(bucket_sizes, comm, "bucket_sizes");
-            // print_concatenated_string(std::to_string(local_SA.size()), comm, "local_SA.size()");
         } else if (config.use_string_sort) {
             report_on_root("create merge samples", comm, recursion_depth, config.print_phases);
             std::vector<MergeSamples> merge_samples =
@@ -596,6 +619,7 @@ public:
             std::reverse(stats.bucket_imbalance.begin(), stats.bucket_imbalance.end());
             std::reverse(stats.avg_segment.begin(), stats.avg_segment.end());
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
+            std::reverse(stats.bucket_sizes.begin(), stats.bucket_sizes.end());
         }
         KASSERT(mpi_util::all_reduce_sum(local_SA.size(), comm) == total_chars);
         KASSERT(check_suffixarray(local_SA, local_string, comm),
