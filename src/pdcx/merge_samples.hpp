@@ -10,6 +10,7 @@
 #include "ips4o.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/timer.hpp"
+#include "mpi/distribute.hpp"
 #include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
 #include "mpi/stats.hpp"
@@ -374,6 +375,13 @@ struct MergeSamplePhase {
             }
             timer.stop();
             KASSERT(bucket_sizes[k] == samples.size());
+
+            
+            if(config.balance_blocks_space_efficient_sort) {
+                timer.synchronize_and_start("phase_04_space_efficient_sort_balance_buckets");
+                samples = mpi_util::distribute_data(samples, comm);
+                timer.stop();
+            }
 
             if (config.use_string_sort) {
                 auto lcps = string_sort_merge_samples(samples, string_sorter);

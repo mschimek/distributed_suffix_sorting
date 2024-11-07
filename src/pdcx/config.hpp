@@ -22,6 +22,7 @@ struct PDCXConfig {
     bool use_string_sort = false;
     bool use_lcps_tie_breaking = false;
     bool use_random_sampling_splitters = false;
+    bool balance_blocks_space_efficient_sort = false;
     bool print_phases = true;
 
     void print_config() const {
@@ -36,6 +37,7 @@ struct PDCXConfig {
         std::cout << V(ams_levels) << "\n";
         std::cout << V(num_samples_splitters) << "\n";
         std::cout << V(use_random_sampling_splitters) << "\n";
+        std::cout << V(balance_blocks_space_efficient_sort) << "\n";
         std::cout << std::endl;
         
         sample_sort_config.print_config();
