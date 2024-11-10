@@ -101,15 +101,16 @@ void configure_cli() {
     cp.add_bytes('m',
                  "num_samples_splitters",
                  pdcx_config.num_samples_splitters,
-                 "Total number of random samples to use to determine block splitters in space efficient sort.");
+                 "Total number of random samples to use to determine block splitters in space "
+                 "efficient sort.");
     cp.add_flag('U',
-                 "use_random_sampling_splitters",
-                 pdcx_config.use_random_sampling_splitters,
-                 "Use random sampling to determine block splitters in space efficient sort.");
+                "use_random_sampling_splitters",
+                pdcx_config.use_random_sampling_splitters,
+                "Use random sampling to determine block splitters in space efficient sort.");
     cp.add_flag('B',
-                 "balance_blocks_space_efficient_sort",
-                 pdcx_config.balance_blocks_space_efficient_sort,
-                 "Balance blocks after materialization in space efficient sorting.");
+                "balance_blocks_space_efficient_sort",
+                pdcx_config.balance_blocks_space_efficient_sort,
+                "Balance blocks after materialization in space efficient sorting.");
 
     // sorter configuration
     cp.add_string('r',
@@ -288,8 +289,8 @@ void run_pdcx(kamping::Communicator<>& comm) {
 
 void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
-    run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    // run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // if (dcx_variant == "dc3") {
     //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     // } else

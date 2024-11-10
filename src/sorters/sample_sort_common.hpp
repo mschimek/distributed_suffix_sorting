@@ -60,7 +60,8 @@ std::vector<DataType> sample_random_splitters(std::vector<DataType>& local_data,
 // samples splitters in regular interval of sorted data
 
 template <typename DataType>
-std::vector<DataType> sample_uniform_splitters(std::vector<DataType>& local_data, size_t nr_splitters,
+std::vector<DataType> sample_uniform_splitters(std::vector<DataType>& local_data,
+                                               size_t nr_splitters,
                                                Communicator<>& comm) {
     const size_t local_n = local_data.size();
     size_t splitter_dist = local_n / (nr_splitters + 1);
@@ -178,6 +179,10 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
             ++element_pos;
         }
         interval_sizes.emplace_back(element_pos);
+    }
+
+    for (size_t i = 0; i < interval_sizes.size() - 1; ++i) {
+        KASSERT(interval_sizes[i] <= interval_sizes[i + 1]);
     }
 
     // convert position to interval sizes

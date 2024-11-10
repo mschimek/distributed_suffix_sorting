@@ -4,8 +4,8 @@
 #include <vector>
 
 #include "strings/string_set.hpp"
-#include "tlx/sort/strings/multikey_quicksort.hpp"
-#include "tlx/sort/strings/radix_sort.hpp"
+#include "strings/multikey_quicksort.hpp"
+#include "strings/radix_sort.hpp"
 #include "tlx/sort/strings/string_ptr.hpp"
 #include "tlx/sort/strings/string_set.hpp"
 
