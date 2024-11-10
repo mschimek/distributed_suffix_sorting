@@ -109,7 +109,15 @@ struct LexicographicRankPhase {
         }
     }
 
+    // create lexicographic ranks and flag unique ranks
+    // sideeffect: shifts one sample from next PE to local_string
+    std::vector<RankIndex>
+    create_lexicographic_ranks(std::vector<SampleString>& local_samples) const {
+        shift_samples_left(local_samples);
+        std::vector<RankIndex> local_ranks = compute_lexicographic_ranks(local_samples);
+        flag_unique_ranks(local_ranks);
+        return local_ranks;
+    }
 };
-
 
 } // namespace dsss::dcx

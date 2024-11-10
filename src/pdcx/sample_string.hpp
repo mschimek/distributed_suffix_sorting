@@ -9,12 +9,13 @@
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/timer.hpp"
 #include "mpi/shift.hpp"
+#include "pdcx/config.hpp"
 #include "pdcx/difference_cover.hpp"
+#include "pdcx/redistribute.hpp"
 #include "pdcx/statistics.hpp"
 #include "sorters/sample_sort_strings.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
-
 
 namespace dsss::dcx {
 
@@ -31,7 +32,7 @@ struct DCSampleString {
     const CharType* cend_chars() const { return letters.data() + DC::X + 1; }
     std::string get_string() { return to_string(); }
 
-    // X chars and one 0-character 
+    // X chars and one 0-character
     using SampleStringLetters = std::array<char_type, DC::X + 1>;
 
 
@@ -66,7 +67,6 @@ struct DCSampleString {
     index_type index;
 };
 
-
 template <typename char_type, typename index_type, typename DC>
 struct SampleStringPhase {
     using SampleString = DCSampleString<char_type, index_type, DC>;
@@ -75,8 +75,20 @@ struct SampleStringPhase {
     static constexpr uint32_t D = DC::D;
 
     Communicator<>& comm;
+    PDCXConfig& config;
+    mpi::SortingWrapper& atomic_sorter;
+    dsss::SeqStringSorterWrapper& string_sorter;
+    uint64_t local_sample_size;
 
-    SampleStringPhase(Communicator<>& _comm) : comm(_comm) {}
+    SampleStringPhase(Communicator<>& _comm,
+                      PDCXConfig& _config,
+                      mpi::SortingWrapper& _atomic_sorter,
+                      dsss::SeqStringSorterWrapper& _string_sorter)
+        : comm(_comm),
+          config(_config),
+          atomic_sorter(_atomic_sorter),
+          string_sorter(_string_sorter) {}
+
 
     // shift characters left to compute overlapping samples
     void shift_chars_left(std::vector<char_type>& local_string) const {
@@ -84,7 +96,9 @@ struct SampleStringPhase {
         local_string.shrink_to_fit();
     }
 
-    SampleString::SampleStringLetters materialize_sample(std::vector<char_type>& local_string, uint64_t i) const {
+    // materilize a difference cover sample
+    SampleString::SampleStringLetters materialize_sample(std::vector<char_type>& local_string,
+                                                         uint64_t i) const {
         std::array<char_type, X + 1> letters;
         for (uint k = 0; k < X; k++) {
             letters[k] = local_string[i + k];
@@ -115,8 +129,8 @@ struct SampleStringPhase {
         return local_samples;
     }
 
-    void atomic_sort_samples(std::vector<SampleString>& local_samples,
-                             mpi::SortingWrapper& atomic_sorter) const {
+    // sort samples using an atomic sorter
+    void atomic_sort_samples(std::vector<SampleString>& local_samples) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_01_sort_local_samples");
         atomic_sorter.sort(local_samples, std::less<>{});
@@ -124,14 +138,36 @@ struct SampleStringPhase {
         local_samples.shrink_to_fit();
     }
 
-    void string_sort_samples(std::vector<SampleString>& local_samples,
-                             dsss::SeqStringSorterWrapper& string_sorter,
-                             mpi::SampleSortConfig &config) const {
+    // sort samples using a string sorter
+    void string_sort_samples(std::vector<SampleString>& local_samples) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_01_sort_local_samples");
-        mpi::sample_sort_strings(local_samples, comm, string_sorter, config);
+        mpi::sample_sort_strings(local_samples, comm, string_sorter, config.sample_sort_config);
         timer.stop();
         local_samples.shrink_to_fit();
+    }
+
+    uint64_t get_local_sample_size() const { return local_sample_size; }
+
+    // create and sort difference cover samples
+    // sideeffect: shifts characters from next PE to localstring
+    std::vector<SampleString> sorted_dc_samples(std::vector<char_type>& local_string,
+                                                uint64_t chars_before) {
+        shift_chars_left(local_string);
+        std::vector<SampleString> local_samples =
+            compute_sample_strings(local_string, chars_before);
+
+        // number of dc-samples in local string
+        local_sample_size = local_samples.size();
+        if (config.use_string_sort) {
+            string_sort_samples(local_samples);
+        } else {
+            atomic_sort_samples(local_samples);
+        }
+
+        bool redist_samples = redistribute_if_imbalanced(local_samples, config.min_imbalance, comm);
+        get_stats_instance().redistribute_samples.push_back(redist_samples);
+        return local_samples;
     }
 };
 

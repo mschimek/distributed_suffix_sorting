@@ -19,6 +19,7 @@ struct PDCXConfig {
     uint64_t ams_levels = 1;
     uint64_t num_samples_splitters = 1;
     double discarding_threshold = 0.7;
+    double min_imbalance = 0.25;
     bool use_string_sort = false;
     bool use_lcps_tie_breaking = false;
     bool use_random_sampling_splitters = false;

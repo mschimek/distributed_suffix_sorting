@@ -27,6 +27,7 @@
 #include "pdcx/compute_ranks.hpp"
 #include "pdcx/config.hpp"
 #include "pdcx/merge_samples.hpp"
+#include "pdcx/redistribute.hpp"
 #include "pdcx/sample_string.hpp"
 #include "pdcx/sequential_sa.hpp"
 #include "pdcx/statistics.hpp"
@@ -148,7 +149,7 @@ public:
         atomic_sorter.sort(local_ranks, RankIndex::cmp_mod_div);
         timer.stop();
 
-        redistribute_if_imbalanced(local_ranks, 0.25);
+        redistribute_if_imbalanced(local_ranks, config.min_imbalance, comm);
 
         uint64_t after_discarding = num_ranks_after_discarding(local_ranks);
         uint64_t total_after_discarding = mpi_util::all_reduce_sum(after_discarding, comm);
@@ -349,22 +350,10 @@ public:
         return global_splitters;
     }
 
-    template <typename T>
-    bool redistribute_if_imbalanced(std::vector<T>& data, double min_imbalance) {
-        double imbalance = mpi_util::compute_min_imbalance(data.size(), comm);
-        if (imbalance <= min_imbalance) {
-            data = mpi_util::distribute_data(data, comm);
-            return true;
-        }
-        return false;
-    }
-
-
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
         timer.synchronize_and_start("pdcx");
 
         const int process_rank = comm.rank();
-        double min_imbalance = 0.25;
 
         //******* Start Phase 0: Preparation  ********
         timer.synchronize_and_start("phase_00_preparation");
@@ -375,7 +364,7 @@ public:
             recursion_depth == 0 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
         string_sorter.set_sorter(string_algo);
 
-        bool redist_chars = redistribute_if_imbalanced(local_string, min_imbalance);
+        bool redist_chars = redistribute_if_imbalanced(local_string, config.min_imbalance, comm);
         stats.redistribute_chars.push_back(redist_chars);
 
         // figure out lengths of the other strings
@@ -411,6 +400,19 @@ public:
         total_sample_size = samples_before.back();
         add_padding(local_string);
 
+        // configure space efficient sort
+        bool use_space_efficient_sort = config.blocks_space_efficient_sort > 1
+                                        && total_chars >= config.threshold_space_efficient_sort;
+        uint64_t blocks = config.blocks_space_efficient_sort;
+        stats.space_efficient_sort.push_back(use_space_efficient_sort);
+        if (use_space_efficient_sort && blocks > comm.size()) {
+            blocks = comm.size();
+            report_on_root("Warning: #blocks > #PEs, setting blocks to #PEs.",
+                           comm,
+                           recursion_depth,
+                           config.print_phases);
+        }
+
         // logging
         stats.algo = "DC" + std::to_string(X);
         stats.num_processors = comm.size();
@@ -437,53 +439,28 @@ public:
         //******* Start Phase 1: Construct Samples  ********
         report_on_root("Phase 1: Sort Samples", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_01_samples");
-
-        SampleStringPhase<char_type, index_type, DC> phase1(comm);
-        phase1.shift_chars_left(local_string);
+        SampleStringPhase<char_type, index_type, DC> phase1(comm,
+                                                            config,
+                                                            atomic_sorter,
+                                                            string_sorter);
         std::vector<SampleString> local_samples =
-            phase1.compute_sample_strings(local_string, chars_before[process_rank]);
-        local_sample_size = local_samples.size();
-        if (config.use_string_sort) {
-            phase1.string_sort_samples(local_samples, string_sorter, config.sample_sort_config);
-        } else {
-            phase1.atomic_sort_samples(local_samples, atomic_sorter);
-        }
-
-        bool redist_samples = redistribute_if_imbalanced(local_samples, min_imbalance);
-        stats.redistribute_samples.push_back(redist_samples);
+            phase1.sorted_dc_samples(local_string, chars_before[process_rank]);
+        local_sample_size = phase1.get_local_sample_size();
         timer.stop();
 
         // get splitters from sorted sample sequence
-        bool use_space_efficient_sort = config.blocks_space_efficient_sort > 1
-                                        && total_chars >= config.threshold_space_efficient_sort;
-        uint64_t blocks = config.blocks_space_efficient_sort;
-        stats.space_efficient_sort.push_back(use_space_efficient_sort);
-
         std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
-        if (use_space_efficient_sort) {
-            if (blocks > comm.size()) {
-                blocks = comm.size();
-                report_on_root("Warning: #blocks > #PEs, setting blocks to #PEs.",
-                               comm,
-                               recursion_depth,
-                               config.print_phases);
-            }
-            if (!config.use_random_sampling_splitters) {
-                global_samples_splitters = get_sample_splitters(local_samples, blocks);
-            }
+        if (use_space_efficient_sort && !config.use_random_sampling_splitters) {
+            global_samples_splitters = get_sample_splitters(local_samples, blocks);
         }
         //******* End Phase 1: Construct Samples  ********
 
         //******* Start Phase 2: Construct Ranks  ********
         report_on_root("Phase 2: Construct Ranks", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_02_ranks");
-
         LexicographicRankPhase<char_type, index_type, DC> phase2(comm);
-        phase2.shift_samples_left(local_samples);
-        std::vector<RankIndex> local_ranks = phase2.compute_lexicographic_ranks(local_samples);
-        phase2.flag_unique_ranks(local_ranks);
+        std::vector<RankIndex> local_ranks = phase2.create_lexicographic_ranks(local_samples);
         free_memory(std::move(local_samples));
-
         timer.stop();
         //******* End Phase 2: Construct Ranks  ********
 
@@ -569,7 +546,7 @@ public:
             local_SA = phase4.extract_SA(merge_samples);
         }
 
-        redistribute_if_imbalanced(local_SA, min_imbalance);
+        redistribute_if_imbalanced(local_SA, config.min_imbalance, comm);
         timer.stop();
         //******* End Phase 4: Merge Suffixes  ********
 
