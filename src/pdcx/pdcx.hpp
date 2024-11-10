@@ -515,7 +515,10 @@ public:
         report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_04_merge");
 
-        MergeSamplePhase<char_type, index_type, DC> phase4(comm, config);
+        MergeSamplePhase<char_type, index_type, DC> phase4(comm,
+                                                           config,
+                                                           atomic_sorter,
+                                                           string_sorter);
         phase4.shift_ranks_left(local_ranks);
         phase4.push_padding(local_ranks, total_chars);
 
@@ -532,37 +535,13 @@ public:
             }
 
             KASSERT(global_samples_splitters.size() == blocks - 1);
-
-            report_on_root("compute bucket sizes", comm, recursion_depth, config.print_phases);
-            std::vector<uint64_t> bucket_sizes =
-                phase4.compute_bucket_sizes(local_string, local_chars, global_samples_splitters);
-
-            report_on_root("bucket sorting", comm, recursion_depth, config.print_phases);
             local_SA = phase4.space_effient_sort_SA(local_string,
                                                     local_ranks,
-                                                    bucket_sizes,
                                                     chars_before[comm.rank()],
                                                     local_chars,
-                                                    global_samples_splitters,
-                                                    atomic_sorter,
-                                                    string_sorter);
+                                                    global_samples_splitters);
 
 
-            // log all bucket sizes
-            auto all_buckets = comm.gatherv(kamping::send_buf(bucket_sizes));
-            // phase 4 stats are logged in deepest level first
-            std::reverse(all_buckets.begin(), all_buckets.end());
-            stats.bucket_sizes.insert(stats.bucket_sizes.end(),
-                                      all_buckets.begin(),
-                                      all_buckets.end());
-            
-            // print_concatenated(bucket_sizes, comm, "bucket_sizes");
-
-            uint64_t largest_bucket = *std::max_element(bucket_sizes.begin(), bucket_sizes.end());
-            double avg_buckets = (double)total_chars / (blocks * comm.size());
-            double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
-            double max_bucket_imbalance = mpi_util::all_reduce_max(bucket_imbalance, comm);
-            stats.bucket_imbalance.push_back(max_bucket_imbalance);
         } else if (config.use_string_sort) {
             report_on_root("create merge samples", comm, recursion_depth, config.print_phases);
             std::vector<MergeSamples> merge_samples =
@@ -571,7 +550,7 @@ public:
                                                chars_before[process_rank],
                                                chars_at_proc[process_rank]);
             free_memory(std::move(local_ranks));
-            auto lcps = phase4.string_sort_merge_samples(merge_samples, string_sorter);
+            auto lcps = phase4.string_sort_merge_samples(merge_samples);
 
             if (config.use_lcps_tie_breaking) {
                 KASSERT(check_lcp_values(merge_samples, lcps, comm, false));
@@ -586,7 +565,7 @@ public:
                                                chars_at_proc[process_rank]);
 
             free_memory(std::move(local_ranks));
-            phase4.sort_merge_samples(merge_samples, atomic_sorter);
+            phase4.sort_merge_samples(merge_samples);
             local_SA = phase4.extract_SA(merge_samples);
         }
 

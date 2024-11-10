@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include <sys/types.h>
+
 #include "ips4o.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/timer.hpp"
@@ -99,8 +101,17 @@ struct MergeSamplePhase {
 
     Communicator<>& comm;
     PDCXConfig& config;
+    mpi::SortingWrapper& atomic_sorter;
+    dsss::SeqStringSorterWrapper& string_sorter;
 
-    MergeSamplePhase(Communicator<>& _comm, PDCXConfig& _config) : comm(_comm), config(_config) {}
+    MergeSamplePhase(Communicator<>& _comm,
+                     PDCXConfig& _config,
+                     mpi::SortingWrapper& _atomic_sorter,
+                     dsss::SeqStringSorterWrapper& _string_sorter)
+        : comm(_comm),
+          config(_config),
+          atomic_sorter(_atomic_sorter),
+          string_sorter(_string_sorter) {}
 
     // shift ranks left to access overlapping ranks
     void shift_ranks_left(std::vector<RankIndex>& local_ranks) const {
@@ -189,17 +200,14 @@ struct MergeSamplePhase {
     }
 
     // sort merge samples using substrings and rank information
-    void sort_merge_samples(std::vector<MergeSamples>& merge_samples,
-                            mpi::SortingWrapper& atomic_sorter) const {
+    void sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_04_sort_merge_samples");
         atomic_sorter.sort(merge_samples, std::less<>{});
         timer.stop();
     }
 
-    std::vector<LcpType>
-    string_sort_merge_samples(std::vector<MergeSamples>& merge_samples,
-                              dsss::SeqStringSorterWrapper& string_sorter) const {
+    std::vector<LcpType> string_sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
         bool output_lcps = config.use_lcps_tie_breaking;
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_04_sort_merge_samples");
@@ -315,35 +323,36 @@ struct MergeSamplePhase {
         return mpi::sample_uniform_splitters(all_splitters, blocks - 1, comm);
     }
 
-    std::vector<uint64_t> compute_bucket_sizes(
+    std::pair<std::vector<uint64_t>, std::vector<uint8_t>> compute_sample_to_block_mapping(
         std::vector<char_type>& local_string,
         uint64_t local_chars,
         std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
         int64_t blocks = global_splitters.size() + 1;
         std::vector<uint64_t> bucket_sizes(blocks, 0);
+        std::vector<uint8_t> sample_to_block(local_string.size(), 0);
+        KASSERT(blocks <= 255);
+
+        // assign each substring to a block
         for (uint64_t i = 0; i < local_chars; i++) {
-            bool found = false;
+            uint8_t block_id = blocks - 1;
             for (int64_t j = 0; j < blocks - 1; j++) {
                 if (cmp_index_substring(local_string, i, global_splitters[j])) {
-                    bucket_sizes[j]++;
-                    found = true;
+                    block_id = j;
                     break;
                 }
             }
-            bucket_sizes.back() += !found;
+            bucket_sizes[block_id]++;
+            sample_to_block[i] = block_id;
         }
-        return bucket_sizes;
+        return {bucket_sizes, sample_to_block};
     }
 
-    std::vector<index_type>
-    space_effient_sort_SA(std::vector<char_type>& local_string,
-                          std::vector<RankIndex>& local_ranks,
-                          std::vector<uint64_t>& bucket_sizes,
-                          uint64_t chars_before,
-                          uint64_t local_chars,
-                          std::vector<typename SampleString::SampleStringLetters>& global_splitters,
-                          mpi::SortingWrapper& atomic_sorter,
-                          dsss::SeqStringSorterWrapper& string_sorter) {
+    std::vector<index_type> space_effient_sort_SA(
+        std::vector<char_type>& local_string,
+        std::vector<RankIndex>& local_ranks,
+        uint64_t chars_before,
+        uint64_t local_chars,
+        std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
         auto& timer = measurements::timer();
 
         using SA = std::vector<index_type>;
@@ -352,39 +361,55 @@ struct MergeSamplePhase {
         std::vector<MergeSamples> samples;
         SA concat_sa_blocks;
         std::vector<uint64_t> sa_block_size;
-        std::vector<bool> processed(local_chars, false);
         sa_block_size.reserve(blocks);
 
-        // TODO: maybe discard ranks that are not used anymore?
+        auto [bucket_sizes, sample_to_block] =
+            compute_sample_to_block_mapping(local_string, local_chars, global_splitters);
+
+        /*
+            // log all bucket sizes
+            auto all_buckets = comm.gatherv(kamping::send_buf(bucket_sizes));
+            // phase 4 stats are logged in deepest level first
+            std::reverse(all_buckets.begin(), all_buckets.end());
+            stats.bucket_sizes.insert(stats.bucket_sizes.end(),
+                                      all_buckets.begin(),
+                                      all_buckets.end());
+        */
+        // log imbalance of buckets
+        uint64_t largest_bucket = *std::max_element(bucket_sizes.begin(), bucket_sizes.end());
+        uint64_t total_chars = mpi_util::all_reduce_sum(local_chars, comm); 
+        double avg_buckets = (double)total_chars / (blocks * comm.size());
+        double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
+        double max_bucket_imbalance = mpi_util::all_reduce_max(bucket_imbalance, comm);
+        get_stats_instance().bucket_imbalance.push_back(max_bucket_imbalance);
+
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < blocks; k++) {
             timer.synchronize_and_start("phase_04_space_efficient_sort_collect_bucket");
+            
             // collect samples falling into kth block
             samples.reserve(bucket_sizes[k]);
             for (uint64_t idx = 0; idx < local_chars; idx++) {
-                if (!processed[idx]
-                    && ((k == blocks - 1)
-                        || cmp_index_substring(local_string, idx, global_splitters[k]))) {
+                if (sample_to_block[idx] == k) {
                     MergeSamples sample =
                         materialize_merge_sample_at(local_string, local_ranks, chars_before, idx);
-                    processed[idx] = true;
                     samples.push_back(sample);
                 }
             }
             timer.stop();
             KASSERT(bucket_sizes[k] == samples.size());
 
-            if(config.balance_blocks_space_efficient_sort) {
+            if (config.balance_blocks_space_efficient_sort) {
                 timer.synchronize_and_start("phase_04_space_efficient_sort_balance_buckets");
                 samples = mpi_util::distribute_data(samples, comm);
                 timer.stop();
             }
 
             if (config.use_string_sort) {
-                auto lcps = string_sort_merge_samples(samples, string_sorter);
+                auto lcps = string_sort_merge_samples(samples);
                 tie_break_ranks(samples, lcps);
             } else {
-                sort_merge_samples(samples, atomic_sorter);
+                sort_merge_samples(samples);
             }
 
             // extract SA of block
