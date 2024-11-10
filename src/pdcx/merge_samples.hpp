@@ -335,8 +335,6 @@ struct MergeSamplePhase {
         return bucket_sizes;
     }
 
-
-    // TODO: test, space efficient construction
     std::vector<index_type>
     space_effient_sort_SA(std::vector<char_type>& local_string,
                           std::vector<RankIndex>& local_ranks,
@@ -376,7 +374,6 @@ struct MergeSamplePhase {
             timer.stop();
             KASSERT(bucket_sizes[k] == samples.size());
 
-            
             if(config.balance_blocks_space_efficient_sort) {
                 timer.synchronize_and_start("phase_04_space_efficient_sort_balance_buckets");
                 samples = mpi_util::distribute_data(samples, comm);
@@ -398,75 +395,10 @@ struct MergeSamplePhase {
             samples.clear();
         }
 
-        std::vector<uint64_t> pref_sum_kth_block =
-            comm.exscan(send_buf(sa_block_size), op(ops::plus<>{}));
-        std::vector<uint64_t> sum_kth_block =
-            comm.reduce(send_buf(sa_block_size), op(ops::plus<>{}));
-
-        if (comm.rank() == 0) {
-            comm.bcast(send_recv_buf(sum_kth_block));
-        } else {
-            sum_kth_block = comm.bcast(send_recv_buf((alloc_new<std::vector<uint64_t>>)));
-        }
-        KASSERT(blocks <= (int64_t)comm.size());
-
-        // sort block indices by decreasing size
-        std::vector<int64_t> idx_blocks(blocks);
-        std::iota(idx_blocks.begin(), idx_blocks.end(), 0);
-        std::sort(idx_blocks.begin(), idx_blocks.end(), [&](int64_t a, int64_t b) {
-            return sum_kth_block[a] > sum_kth_block[b];
-        });
-
-        // divide one block amoung #PEs / #blocks
-        // remainder is distributed amoung largest blocks
-        std::vector<int64_t> num_pe_per_block(blocks, comm.size() / blocks);
-        int64_t rem = comm.size() % blocks;
-        for (int64_t k = 0; k < rem; k++) {
-            int64_t k2 = idx_blocks[k];
-            num_pe_per_block[k2]++;
-        }
-
-        std::vector<int64_t> pe_range(blocks + 1, 0);
-        std::inclusive_scan(num_pe_per_block.begin(), num_pe_per_block.end(), pe_range.begin() + 1);
-
-        std::vector<int64_t> target_size(comm.size(), 0);
-        for (int64_t k = 0; k < blocks; k++) {
-            for (int64_t rank = pe_range[k]; rank < pe_range[k + 1]; rank++) {
-                target_size[rank] = sum_kth_block[k] / num_pe_per_block[k];
-            }
-            target_size[pe_range[k + 1] - 1] += sum_kth_block[k] % num_pe_per_block[k];
-        }
-
-        std::vector<int64_t> pred_target_size(comm.size(), 0);
-        for (int64_t k = 0; k < blocks; k++) {
-            std::exclusive_scan(target_size.begin() + pe_range[k],
-                                target_size.begin() + pe_range[k + 1],
-                                pred_target_size.begin() + pe_range[k],
-                                0);
-        }
-
-        std::vector<int64_t> send_cnts(comm.size(), 0);
-        for (int64_t k = 0; k < blocks; k++) {
-            int64_t local_data_size = sa_block_size[k];
-            int64_t preceding_size = pref_sum_kth_block[k];
-            int64_t last_pe = pe_range[k + 1] - 1;
-            for (int rank = pe_range[k]; rank < last_pe && local_data_size > 0; rank++) {
-                int64_t to_send = std::max(int64_t(0), pred_target_size[rank + 1] - preceding_size);
-                to_send = std::min(to_send, local_data_size);
-                send_cnts[rank] = to_send;
-                local_data_size -= to_send;
-                preceding_size += to_send;
-            }
-            send_cnts[last_pe] += local_data_size;
-        }
-
-        int64_t total_send = std::accumulate(send_cnts.begin(), send_cnts.end(), int64_t(0));
-        int64_t total_sa = std::accumulate(sa_block_size.begin(), sa_block_size.end(), int64_t(0));
-        KASSERT(total_send == total_sa);
-
         timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
-        SA local_SA = mpi_util::alltoallv_combined(concat_sa_blocks, send_cnts, comm);
+        SA local_SA = mpi_util::transpose_blocks(concat_sa_blocks, sa_block_size, comm);
         timer.stop();
+
         return local_SA;
     }
 };
