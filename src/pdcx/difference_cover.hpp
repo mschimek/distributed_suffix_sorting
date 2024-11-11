@@ -6,20 +6,14 @@
 namespace dsss::dcx {
 template <typename DC>
 bool is_in_dc(uint64_t idx) {
-    // simple scan sufficient for small difference cover
-    for (auto d: DC::DC) {
-        if (idx == d) {
-            return true;
-        }
-    }
-    return false;
+    return DC::IN_DC[idx];
 }
-
 
 struct DC3Param {
     static constexpr unsigned int X = 3;
     static constexpr unsigned int D = 2;
     static constexpr unsigned int DC[D] = {1, 2};
+    static constexpr bool IN_DC[X] = {0, 1, 1};
     static constexpr int cmpDepthRanks[X][X][3] = {{{1, 0, 0}, {1, 0, 1}, {2, 1, 1}},
 
                                                    {{1, 1, 0}, {0, 0, 0}, {0, 0, 0}},
@@ -32,6 +26,7 @@ struct DC7Param {
     static constexpr unsigned int X = 7;
     static constexpr unsigned int D = 3;
     static constexpr unsigned int DC[D] = {0, 1, 3};
+    static constexpr bool IN_DC[X] = {1, 1, 0, 1, 0, 0, 0};
     static constexpr int cmpDepthRanks[X][X][3] = {
         {{0, 0, 0}, {0, 0, 0}, {1, 1, 0}, {0, 0, 0}, {3, 2, 0}, {3, 2, 1}, {1, 1, 0}},
 
@@ -53,6 +48,7 @@ struct DC13Param {
     static constexpr unsigned int X = 13;
     static constexpr unsigned int D = 4;
     static constexpr unsigned int DC[D] = {0, 1, 3, 9};
+    static constexpr bool IN_DC[X] = {1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0};
     static constexpr int cmpDepthRanks[X][X][3] = {{{0, 0, 0},
                                                     {0, 0, 0},
                                                     {1, 1, 0},
@@ -241,6 +237,8 @@ struct DC21Param {
     static constexpr unsigned int X = 21;
     static constexpr unsigned int D = 5;
     static constexpr unsigned int DC[D] = {1, 2, 7, 9, 19};
+    static constexpr bool IN_DC[X] = {0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0, 1, 0};
     static constexpr int cmpDepthRanks[X][X][3] = {
         {{1, 0, 0}, {1, 0, 1}, {7, 2, 2},  {19, 4, 3}, {19, 4, 4}, {2, 1, 0}, {1, 0, 0},
          {2, 1, 1}, {1, 0, 0}, {19, 4, 4}, {9, 3, 0},  {19, 4, 4}, {7, 2, 0}, {9, 3, 1},
@@ -332,6 +330,8 @@ struct DC31Param {
     static constexpr unsigned int X = 31;
     static constexpr unsigned int D = 6;
     static constexpr unsigned int DC[D] = {1, 2, 4, 9, 13, 19};
+    static constexpr bool IN_DC[X] = {0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+                                      0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     static constexpr int cmpDepthRanks[X][X][3] = {
         {{1, 0, 0},  {1, 0, 1},  {2, 1, 1},  {1, 0, 0}, {9, 3, 2},  {4, 2, 0},  {13, 4, 2},
          {2, 1, 0},  {1, 0, 0},  {4, 2, 1},  {9, 3, 1}, {2, 1, 0},  {1, 0, 0},  {19, 5, 2},
