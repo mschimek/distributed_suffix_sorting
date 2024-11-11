@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <numeric>
 #include <vector>
 
 #include "kamping/collectives/allgather.hpp"
@@ -93,6 +94,8 @@ std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
                                        Communicator<>& comm) {
     int64_t num_blocks = block_size.size();
     KASSERT(num_blocks <= (int64_t)comm.size());
+
+    KASSERT(local_data.size() == std::accumulate(block_size.begin(), block_size.end(), uint64_t(0)));
 
     // compute prefix sums
     std::vector<uint64_t> pref_sum_kth_block = comm.exscan(send_buf(block_size), op(ops::plus<>{}));

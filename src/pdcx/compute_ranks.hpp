@@ -1,14 +1,24 @@
 #pragma once
 
+#include <cstdint>
+#include <numeric>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "kamping/collectives/bcast.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/timer.hpp"
+#include "kamping/named_parameters.hpp"
+#include "mpi/p2p.hpp"
 #include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
+#include "pdcx/config.hpp"
+#include "pdcx/difference_cover.hpp"
 #include "pdcx/sample_string.hpp"
+#include "pdcx/space_efficient_sort.hpp"
+#include "util/memory.hpp"
+#include "util/printing.hpp"
 
 
 //******* Start Phase 2: Construct Ranks  ********
@@ -50,7 +60,6 @@ struct LexicographicRankPhase {
     Communicator<>& comm;
 
     LexicographicRankPhase(Communicator<>& _comm) : comm(_comm) {}
-
 
     // shift one sample left be able to compute rank of last element
     void shift_samples_left(std::vector<SampleString>& local_samples) const {
@@ -115,6 +124,141 @@ struct LexicographicRankPhase {
     create_lexicographic_ranks(std::vector<SampleString>& local_samples) const {
         shift_samples_left(local_samples);
         std::vector<RankIndex> local_ranks = compute_lexicographic_ranks(local_samples);
+        flag_unique_ranks(local_ranks);
+        return local_ranks;
+    }
+
+    std::vector<RankIndex>
+    create_ranks_space_efficient(SampleStringPhase<char_type, index_type, DC> phase1,
+                                 std::vector<char_type>& local_string,
+                                 uint64_t local_chars,
+                                 uint64_t chars_before,
+                                 uint64_t num_buckets,
+                                 uint64_t& local_sample_size) {
+        using SpaceEfficient = SpaceEfficientSort<char_type, index_type, DC>;
+        using Splitter = typename SpaceEfficient::Splitter;
+        const uint32_t X = DC::X;
+
+        auto& timer = measurements::timer();
+        phase1.shift_chars_left(local_string);
+
+        PDCXConfig config = phase1.config;
+        SpaceEfficient space_efficient(comm, config);
+
+        auto materialize_sample = [&](uint64_t i) {
+            return phase1.materialize_sample(local_string, i);
+        };
+        std::vector<Splitter> bucket_splitter =
+            space_efficient.random_sample_splitters(local_chars, num_buckets, materialize_sample);
+
+        // assign dc-substrings to blocks
+        std::vector<uint64_t> bucket_sizes(num_buckets, 0);
+        std::vector<uint8_t> sample_to_bucket(local_string.size(), num_buckets);
+        KASSERT(num_buckets <= 255ull);
+
+        uint64_t offset = chars_before % X;
+        for (uint64_t i = 0; i < local_chars; i++) {
+            uint64_t m = (i + offset) % X;
+            if (is_in_dc<DC>(m)) {
+                local_sample_size++;
+                uint8_t block_id = num_buckets - 1;
+                for (uint64_t j = 0; j < num_buckets - 1; j++) {
+                    if (cmp_index_substring(local_string, i, bucket_splitter[j])) {
+                        block_id = j;
+                        break;
+                    }
+                }
+                bucket_sizes[block_id]++;
+                sample_to_bucket[i] = block_id;
+            }
+        }
+
+        std::vector<SampleString> samples;
+        std::vector<RankIndex> concat_rank_buckets;
+        std::vector<uint64_t> bucket_size;
+        bucket_size.reserve(num_buckets);
+
+        // log imbalance of buckets
+        uint64_t largest_bucket = mpi_util::all_reduce_max(bucket_sizes, comm);
+        uint64_t total_samples = mpi_util::all_reduce_sum(local_sample_size, comm);
+        double avg_buckets = (double)total_samples / (num_buckets * comm.size());
+        double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
+        get_stats_instance().bucket_imbalance_samples.push_back(bucket_imbalance);
+
+        SampleString prev_sample;
+        // sorting in each round one blocks of materialized samples
+        for (uint64_t k = 0; k < num_buckets; k++) {
+            timer.synchronize_and_start("phase_01_02_space_efficient_soPrt_collect_buckets");
+
+            // collect samples falling into kth block
+            samples.reserve(bucket_sizes[k]);
+            for (uint64_t idx = 0; idx < local_chars; idx++) {
+                if (sample_to_bucket[idx] == k) {
+                    index_type index = index_type(chars_before + idx);
+                    Splitter letters = materialize_sample(idx);
+                    samples.push_back(SampleString(std::move(letters), index));
+                }
+            }
+            timer.stop();
+            KASSERT(bucket_sizes[k] == samples.size());
+
+            // Phase 1: sort dc-samples
+            if (config.use_string_sort) {
+                phase1.atomic_sort_samples(samples);
+            } else {
+                phase1.string_sort_samples(samples);
+            }
+
+            // Phase 2: compute lexicographic ranks
+            shift_samples_left(samples);
+
+            if (k != 0) {
+                SampleString first_sample =
+                    mpi_util::send_from_to(samples.front(), 0, comm.size() - 1, comm);
+                if (comm.rank() == comm.size() - 1) {
+                    // last PE compared samples with Padding --> change is always 1
+                    // if there was no change revert to 0
+                    concat_rank_buckets.back().rank -=
+                        prev_sample.letters == first_sample.letters ? 1 : 0;
+                }
+            }
+            // skip padding sample
+            prev_sample = samples[samples.size() - 2];
+
+            // exclude sample from process i + 1
+            uint64_t num_ranks = samples.size() - 1;
+            concat_rank_buckets.reserve(concat_rank_buckets.size() + num_ranks);
+
+            // only store changes
+            uint64_t last_changed = 0;
+            for (uint64_t i = 0; i < num_ranks; i++) {
+                last_changed = samples[i].letters != samples[i + 1].letters ? 1 : 0;
+                concat_rank_buckets.emplace_back(index_type(last_changed), samples[i].index, false);
+            }
+
+            bucket_size.push_back(num_ranks);
+            samples.clear();
+        }
+
+        timer.synchronize_and_start("phase_01_02_space_efficient_sort_alltoall");
+        std::vector<RankIndex> local_ranks =
+            mpi_util::transpose_blocks(concat_rank_buckets, bucket_size, comm);
+        timer.stop();
+
+        // compute local ranks
+        uint64_t prev_rank = 0;
+        for (uint64_t i = 0; i < local_ranks.size(); i++) {
+            uint64_t change = local_ranks[i].rank;
+            local_ranks[i].rank = index_type(prev_rank);
+            prev_rank += change;
+        }
+
+        // shift ranks by 1 + prefix sum
+        uint64_t ranks_before = mpi_util::ex_prefix_sum(prev_rank, comm);
+        std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
+            x.rank += index_type(1 + ranks_before);
+        });
+
         flag_unique_ranks(local_ranks);
         return local_ranks;
     }

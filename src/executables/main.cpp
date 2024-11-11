@@ -43,8 +43,6 @@ void test_pdcx(int repeats, int n, int alphabet_size, Communicator<>& comm) {
     int print_limit = 200;
     dcx::PDCXConfig pdcx_config;
     pdcx_config.atomic_sorter = mpi::AtomicSorters::SampleSort;
-    pdcx_config.blocks_space_efficient_sort = 3;
-    pdcx_config.threshold_space_efficient_sort = n / 2;
     pdcx_config.print_phases = false;
 
     for (int i = 0; i < repeats; i++) {

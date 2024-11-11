@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <random>
 #include <vector>
 
@@ -32,23 +33,32 @@ void sort_on_root(std::vector<DataType>& local_data, Communicator<>& comm, auto 
 }
 
 // sample splitters uniform at random
-
 template <typename DataType>
-std::vector<DataType> sample_random_splitters(std::vector<DataType>& local_data,
+std::vector<DataType> sample_random_splitters1(uint64_t total_elements,
                                               size_t nr_splitters,
+                                              auto get_element_at,
                                               Communicator<>& comm) {
     std::random_device dev;
     std::mt19937 rng(dev());
-    std::uniform_int_distribution<uint64_t> dist(0, local_data.size() - 1);
+    std::uniform_int_distribution<uint64_t> dist(0, total_elements - 1);
 
     std::vector<DataType> local_splitters;
     local_splitters.reserve(nr_splitters);
     for (size_t i = 0; i < nr_splitters; ++i) {
         uint64_t r = dist(rng);
-        local_splitters.emplace_back(local_data[r]);
+        local_splitters.emplace_back(get_element_at(r));
     }
     return local_splitters;
 }
+
+template <typename DataType>
+std::vector<DataType> sample_random_splitters(std::vector<DataType>& local_data,
+                                              size_t nr_splitters,
+                                              Communicator<>& comm) {
+    auto get_element_at = [&](uint64_t i) { return local_data[i]; };
+    return sample_random_splitters1<DataType>(local_data.size(), nr_splitters, get_element_at, comm);
+}
+
 template <typename DataType>
 std::vector<DataType> sample_random_splitters(std::vector<DataType>& local_data,
                                               Communicator<>& comm) {

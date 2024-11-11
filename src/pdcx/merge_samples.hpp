@@ -19,6 +19,7 @@
 #include "pdcx/compute_ranks.hpp"
 #include "pdcx/config.hpp"
 #include "pdcx/sample_string.hpp"
+#include "pdcx/space_efficient_sort.hpp"
 #include "pdcx/statistics.hpp"
 #include "sorters/sample_sort_config.hpp"
 #include "sorters/sample_sort_strings.hpp"
@@ -103,6 +104,7 @@ struct MergeSamplePhase {
     PDCXConfig& config;
     mpi::SortingWrapper& atomic_sorter;
     dsss::SeqStringSorterWrapper& string_sorter;
+    SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort;
 
     MergeSamplePhase(Communicator<>& _comm,
                      PDCXConfig& _config,
@@ -111,7 +113,8 @@ struct MergeSamplePhase {
         : comm(_comm),
           config(_config),
           atomic_sorter(_atomic_sorter),
-          string_sorter(_string_sorter) {}
+          string_sorter(_string_sorter),
+          space_efficient_sort(comm, config) {}
 
     // shift ranks left to access overlapping ranks
     void shift_ranks_left(std::vector<RankIndex>& local_ranks) const {
@@ -292,61 +295,6 @@ struct MergeSamplePhase {
         return local_SA;
     }
 
-    std::vector<typename SampleString::SampleStringLetters>
-    random_sample_splitters(uint64_t local_chars, uint64_t blocks, auto materialize_sample) {
-        std::vector<typename SampleString::SampleStringLetters> local_splitters;
-
-        size_t nr_splitters =
-            std::max<size_t>((config.num_samples_splitters + comm.size() - 1) / comm.size(),
-                             blocks);
-
-        std::random_device dev;
-        std::mt19937 rng(dev());
-        std::uniform_int_distribution<uint64_t> dist(0, local_chars - 1);
-
-        local_splitters.reserve(nr_splitters);
-        for (size_t i = 0; i < nr_splitters; ++i) {
-            uint64_t r = dist(rng);
-            local_splitters.emplace_back(materialize_sample(r));
-        }
-        auto cmp = [](auto const& a, auto const& b) {
-            for (uint i = 0; i < a.size(); i++) {
-                if (a[i] != b[i])
-                    return a[i] < b[i];
-            }
-            return false;
-        };
-
-        auto all_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
-        ips4o::sort(all_splitters.begin(), all_splitters.end(), cmp);
-
-        return mpi::sample_uniform_splitters(all_splitters, blocks - 1, comm);
-    }
-
-    std::pair<std::vector<uint64_t>, std::vector<uint8_t>> compute_sample_to_block_mapping(
-        std::vector<char_type>& local_string,
-        uint64_t local_chars,
-        std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
-        int64_t blocks = global_splitters.size() + 1;
-        std::vector<uint64_t> bucket_sizes(blocks, 0);
-        std::vector<uint8_t> sample_to_block(local_string.size(), 0);
-        KASSERT(blocks <= 255);
-
-        // assign each substring to a block
-        for (uint64_t i = 0; i < local_chars; i++) {
-            uint8_t block_id = blocks - 1;
-            for (int64_t j = 0; j < blocks - 1; j++) {
-                if (cmp_index_substring(local_string, i, global_splitters[j])) {
-                    block_id = j;
-                    break;
-                }
-            }
-            bucket_sizes[block_id]++;
-            sample_to_block[i] = block_id;
-        }
-        return {bucket_sizes, sample_to_block};
-    }
-
     std::vector<index_type> space_effient_sort_SA(
         std::vector<char_type>& local_string,
         std::vector<RankIndex>& local_ranks,
@@ -356,15 +304,16 @@ struct MergeSamplePhase {
         auto& timer = measurements::timer();
 
         using SA = std::vector<index_type>;
-        int64_t blocks = global_splitters.size() + 1;
+        int64_t num_buckets = global_splitters.size() + 1;
 
+        auto [bucket_sizes, sample_to_bucket] =
+            space_efficient_sort.compute_sample_to_block_mapping(local_string,
+                                                                 local_chars,
+                                                                 global_splitters);
         std::vector<MergeSamples> samples;
-        SA concat_sa_blocks;
-        std::vector<uint64_t> sa_block_size;
-        sa_block_size.reserve(blocks);
-
-        auto [bucket_sizes, sample_to_block] =
-            compute_sample_to_block_mapping(local_string, local_chars, global_splitters);
+        SA concat_sa_buckets;
+        std::vector<uint64_t> sa_bucket_size;
+        sa_bucket_size.reserve(num_buckets);
 
         /*
             // log all bucket sizes
@@ -376,21 +325,20 @@ struct MergeSamplePhase {
                                       all_buckets.end());
         */
         // log imbalance of buckets
-        uint64_t largest_bucket = *std::max_element(bucket_sizes.begin(), bucket_sizes.end());
-        uint64_t total_chars = mpi_util::all_reduce_sum(local_chars, comm); 
-        double avg_buckets = (double)total_chars / (blocks * comm.size());
+        uint64_t largest_bucket = mpi_util::all_reduce_max(bucket_sizes, comm);
+        uint64_t total_chars = mpi_util::all_reduce_sum(local_chars, comm);
+        double avg_buckets = (double)total_chars / (num_buckets * comm.size());
         double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
-        double max_bucket_imbalance = mpi_util::all_reduce_max(bucket_imbalance, comm);
-        get_stats_instance().bucket_imbalance.push_back(max_bucket_imbalance);
+        get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
 
         // sorting in each round one blocks of materialized samples
-        for (int64_t k = 0; k < blocks; k++) {
+        for (int64_t k = 0; k < num_buckets; k++) {
             timer.synchronize_and_start("phase_04_space_efficient_sort_collect_bucket");
-            
+
             // collect samples falling into kth block
             samples.reserve(bucket_sizes[k]);
             for (uint64_t idx = 0; idx < local_chars; idx++) {
-                if (sample_to_block[idx] == k) {
+                if (sample_to_bucket[idx] == k) {
                     MergeSamples sample =
                         materialize_merge_sample_at(local_string, local_ranks, chars_before, idx);
                     samples.push_back(sample);
@@ -414,14 +362,14 @@ struct MergeSamplePhase {
 
             // extract SA of block
             for (auto& sample: samples) {
-                concat_sa_blocks.push_back(sample.index);
+                concat_sa_buckets.push_back(sample.index);
             }
-            sa_block_size.push_back(samples.size());
+            sa_bucket_size.push_back(samples.size());
             samples.clear();
         }
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
-        SA local_SA = mpi_util::transpose_blocks(concat_sa_blocks, sa_block_size, comm);
+        SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
         timer.stop();
 
         return local_SA;

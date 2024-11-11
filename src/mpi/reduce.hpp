@@ -25,6 +25,13 @@ template <typename T>
 T all_reduce_max(T local_data, Communicator<>& comm) {
     return all_reduce(local_data, ops::max<>(), comm);
 }
+
+template <typename T>
+T all_reduce_max(std::vector<T> &local_data, Communicator<>& comm) {
+    T local_max = *max_element(local_data.begin(), local_data.end());
+    return all_reduce_max(local_max, comm);
+}
+
 template <typename T>
 T all_reduce_min(T local_data, Communicator<>& comm) {
     return all_reduce(local_data, ops::min<>(), comm);

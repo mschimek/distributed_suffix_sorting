@@ -1,4 +1,5 @@
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -39,6 +40,8 @@ bool check = false;
 dcx::PDCXConfig pdcx_config;
 std::string atomic_sorter = "sample_sort";
 std::string string_sorter = "radix_sort_ci3";
+std::string buckets_samples;
+std::string buckets_merging;
 
 dsss::mpi::SampleSortConfig sample_sort_config;
 std::string splitter_sampling = "uniform";
@@ -85,14 +88,6 @@ void configure_cli() {
                   "discarding_threshold",
                   pdcx_config.discarding_threshold,
                   "Value between [0, 1], threshold when to use discarding optimization.");
-    cp.add_bytes('b',
-                 "blocks_space_efficient_sort",
-                 pdcx_config.blocks_space_efficient_sort,
-                 "Number of blocks to be used for space efficient sort.");
-    cp.add_bytes('i',
-                 "threshold_space_efficient_sort",
-                 pdcx_config.threshold_space_efficient_sort,
-                 "Use space efficient sort, if there are more chars than the threshold.");
     cp.add_flag('C',
                 "use_lcps_tie_breaking",
                 pdcx_config.use_lcps_tie_breaking,
@@ -111,6 +106,18 @@ void configure_cli() {
                 "balance_blocks_space_efficient_sort",
                 pdcx_config.balance_blocks_space_efficient_sort,
                 "Balance blocks after materialization in space efficient sorting.");
+    cp.add_string('P',
+                  "buckets_samples",
+                  "<F>",
+                  buckets_samples,
+                  "Number of buckets to use for space efficient sorting of samples on each "
+                  "recursion level. Missing values default to 1. Example: 16,8,4");
+    cp.add_string('M',
+                  "buckets_merging",
+                  "<F>",
+                  buckets_merging,
+                  "Number of buckets to use for space efficient sorting in merging phase on each "
+                  "recursion level. Missing values default to 1. Example: 16,8,4");
 
     // sorter configuration
     cp.add_string('r',
@@ -188,6 +195,40 @@ void map_strings_to_enum(kamping::Communicator<>& comm) {
                                               comm);
 
     pdcx_config.sample_sort_config = sample_sort_config;
+}
+
+std::vector<uint32_t> parse_list_of_ints(std::string s) {
+    char separator = ',';
+    std::replace(s.begin(), s.end(), separator, ' ');
+
+    std::vector<uint32_t> numbers;
+    std::stringstream ss(s);
+    uint32_t temp;
+    while (ss >> temp) {
+        numbers.push_back(temp);
+    }
+    return numbers;
+}
+
+void check_limit(std::vector<uint32_t>& vec,
+                 uint32_t limit,
+                 std::string name,
+                 kamping::Communicator<>& comm) {
+    if (vec.size() == 0)
+        return;
+    uint32_t _max = *std::max_element(vec.begin(), vec.end());
+    if (_max > limit) {
+        kamping::report_on_root(name + " must be <= " + std::to_string(limit) + ".", comm);
+        exit(1);
+    }
+}
+
+void parse_enums_and_lists(kamping::Communicator<>& comm) {
+    map_strings_to_enum(comm);
+    pdcx_config.buckets_samples = parse_list_of_ints(buckets_samples);
+    pdcx_config.buckets_merging = parse_list_of_ints(buckets_merging);
+    check_limit(pdcx_config.buckets_samples, 255, "buckets_samples", comm);
+    check_limit(pdcx_config.buckets_merging, 255, "buckets_merging", comm);
 }
 
 void report_arguments(kamping::Communicator<>& comm) {
@@ -349,7 +390,7 @@ int main(int32_t argc, char const* argv[]) {
     if (!cp.process(argc, argv)) {
         return -1;
     }
-    map_strings_to_enum(comm);
+    parse_enums_and_lists(comm);
     report_arguments(comm);
     read_input(comm);
     compute_sa(comm);

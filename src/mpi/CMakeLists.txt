@@ -3,6 +3,7 @@ target_sources(dss_base
         alltoall.hpp
         big_type.hpp
         io.hpp
+        p2p.hpp
         distribute.hpp
         reduce.hpp
         shift.hpp

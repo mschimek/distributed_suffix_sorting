@@ -96,7 +96,7 @@ struct SampleStringPhase {
         local_string.shrink_to_fit();
     }
 
-    // materilize a difference cover sample
+    // materialize a difference cover sample
     SampleString::SampleStringLetters materialize_sample(std::vector<char_type>& local_string,
                                                          uint64_t i) const {
         std::array<char_type, X + 1> letters;

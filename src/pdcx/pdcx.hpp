@@ -30,6 +30,7 @@
 #include "pdcx/redistribute.hpp"
 #include "pdcx/sample_string.hpp"
 #include "pdcx/sequential_sa.hpp"
+#include "pdcx/space_efficient_sort.hpp"
 #include "pdcx/statistics.hpp"
 #include "sa_check.hpp"
 #include "sorters/sample_sort_common.hpp"
@@ -401,13 +402,20 @@ public:
         add_padding(local_string);
 
         // configure space efficient sort
-        bool use_space_efficient_sort = config.blocks_space_efficient_sort > 1
-                                        && total_chars >= config.threshold_space_efficient_sort;
-        uint64_t blocks = config.blocks_space_efficient_sort;
-        stats.space_efficient_sort.push_back(use_space_efficient_sort);
-        if (use_space_efficient_sort && blocks > comm.size()) {
-            blocks = comm.size();
-            report_on_root("Warning: #blocks > #PEs, setting blocks to #PEs.",
+        uint64_t buckets_samples = config.buckets_samples_at_level(recursion_depth);
+        uint64_t buckets_merging = config.buckets_merging_at_level(recursion_depth);
+        bool use_bucket_sorting_samples = buckets_samples > 1;
+        bool use_bucket_sorting_merging = buckets_merging > 1;
+        if (use_bucket_sorting_samples && buckets_samples > comm.size()) {
+            buckets_samples = comm.size();
+            report_on_root("Warning: #buckets_samples > #PEs, setting blocks to #PEs.",
+                           comm,
+                           recursion_depth,
+                           config.print_phases);
+        }
+        if (use_bucket_sorting_merging && buckets_merging > comm.size()) {
+            buckets_merging = comm.size();
+            report_on_root("Warning: #buckets_merging > #PEs, setting blocks to #PEs.",
                            comm,
                            recursion_depth,
                            config.print_phases);
@@ -436,33 +444,55 @@ public:
         }
         //******* End Phase 0: Preparation  ********
 
-        //******* Start Phase 1: Construct Samples  ********
-        report_on_root("Phase 1: Sort Samples", comm, recursion_depth, config.print_phases);
-        timer.synchronize_and_start("phase_01_samples");
+        std::vector<RankIndex> local_ranks;
+        std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
         SampleStringPhase<char_type, index_type, DC> phase1(comm,
                                                             config,
                                                             atomic_sorter,
                                                             string_sorter);
-        std::vector<SampleString> local_samples =
-            phase1.sorted_dc_samples(local_string, chars_before[process_rank]);
-        local_sample_size = phase1.get_local_sample_size();
-        timer.stop();
+        if (use_bucket_sorting_samples) {
+            //******* Start Phase 1 + 2: Construct Samples +   Construct Ranks********
+            report_on_root("Phase 1 + 2: Sort Samples + Compute Ranks with "
+                               + std::to_string(buckets_samples) + " buckets.",
+                           comm,
+                           recursion_depth,
+                           config.print_phases);
+            timer.synchronize_and_start("phase_01_02_samples_ranks");
+            LexicographicRankPhase<char_type, index_type, DC> phase2(comm);
+            local_sample_size = 0;
+            local_ranks = phase2.create_ranks_space_efficient(phase1,
+                                                              local_string,
+                                                              local_chars,
+                                                              chars_before[comm.rank()],
+                                                              buckets_samples,
+                                                              local_sample_size);
+            timer.stop();
+            //******* End Phase 1 + 2: Construct Samples +   Construct Ranks********
 
-        // get splitters from sorted sample sequence
-        std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
-        if (use_space_efficient_sort && !config.use_random_sampling_splitters) {
-            global_samples_splitters = get_sample_splitters(local_samples, blocks);
+        } else {
+            //******* Start Phase 1: Construct Samples  ********
+            report_on_root("Phase 1: Sort Samples", comm, recursion_depth, config.print_phases);
+            timer.synchronize_and_start("phase_01_samples");
+            std::vector<SampleString> local_samples =
+                phase1.sorted_dc_samples(local_string, chars_before[process_rank]);
+            local_sample_size = phase1.get_local_sample_size();
+            timer.stop();
+
+            // get splitters from sorted sample sequence
+            if (use_bucket_sorting_merging && !config.use_random_sampling_splitters) {
+                global_samples_splitters = get_sample_splitters(local_samples, buckets_merging);
+            }
+            //******* End Phase 1: Construct Samples  ********
+
+            //******* Start Phase 2: Construct Ranks  ********
+            report_on_root("Phase 2: Construct Ranks", comm, recursion_depth, config.print_phases);
+            timer.synchronize_and_start("phase_02_ranks");
+            LexicographicRankPhase<char_type, index_type, DC> phase2(comm);
+            local_ranks = phase2.create_lexicographic_ranks(local_samples);
+            free_memory(std::move(local_samples));
+            timer.stop();
+            //******* End Phase 2: Construct Ranks  ********
         }
-        //******* End Phase 1: Construct Samples  ********
-
-        //******* Start Phase 2: Construct Ranks  ********
-        report_on_root("Phase 2: Construct Ranks", comm, recursion_depth, config.print_phases);
-        timer.synchronize_and_start("phase_02_ranks");
-        LexicographicRankPhase<char_type, index_type, DC> phase2(comm);
-        std::vector<RankIndex> local_ranks = phase2.create_lexicographic_ranks(local_samples);
-        free_memory(std::move(local_samples));
-        timer.stop();
-        //******* End Phase 2: Construct Ranks  ********
 
         //******* Start Phase 3: Recursive Call  ********
         report_on_root("Phase 3: Recursion", comm, recursion_depth, config.print_phases);
@@ -500,18 +530,23 @@ public:
         phase4.push_padding(local_ranks, total_chars);
 
         std::vector<index_type> local_SA;
-        if (use_space_efficient_sort) {
-            if (config.use_random_sampling_splitters) {
+        if (use_bucket_sorting_merging) {
+            if (config.use_random_sampling_splitters || global_samples_splitters.empty()) {
+                SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort(comm, config);
                 timer.synchronize_and_start("phase_04_random_sample_splitters");
                 auto materialize_sample = [&](uint64_t i) {
                     return phase1.materialize_sample(local_string, i);
                 };
                 global_samples_splitters =
-                    phase4.random_sample_splitters(local_chars, blocks, materialize_sample);
+                    space_efficient_sort.random_sample_splitters(local_chars,
+                                                                 buckets_merging,
+                                                                 materialize_sample);
                 timer.stop();
             }
 
-            KASSERT(global_samples_splitters.size() == blocks - 1);
+            KASSERT(global_samples_splitters.size() == buckets_merging - 1);
+            report_on_root("Using " + std::to_string(buckets_merging) + " buckets for merging.", comm, recursion_depth, config.print_phases);
+
             local_SA = phase4.space_effient_sort_SA(local_string,
                                                     local_ranks,
                                                     chars_before[comm.rank()],
@@ -572,7 +607,8 @@ public:
             std::reverse(stats.string_imbalance.begin(), stats.string_imbalance.end());
             std::reverse(stats.sample_imbalance.begin(), stats.sample_imbalance.end());
             std::reverse(stats.sa_imbalance.begin(), stats.sa_imbalance.end());
-            std::reverse(stats.bucket_imbalance.begin(), stats.bucket_imbalance.end());
+            std::reverse(stats.bucket_imbalance_merging.begin(),
+                         stats.bucket_imbalance_merging.end());
             std::reverse(stats.avg_segment.begin(), stats.avg_segment.end());
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
             std::reverse(stats.bucket_sizes.begin(), stats.bucket_sizes.end());

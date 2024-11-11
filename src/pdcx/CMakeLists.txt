@@ -5,7 +5,8 @@ target_sources(dss_base
         sample_string.hpp
         compute_ranks.hpp
         merge_samples.hpp
-        redistribute.hpp.hpp
+        redistribute.hpp
+        space_efficient_sort.hpp
         statistics.hpp
         sequential_sa.hpp
 )
