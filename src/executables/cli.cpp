@@ -332,6 +332,8 @@ void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
     // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC133Param>, char_type, index_type>(comm);
     // if (dcx_variant == "dc3") {
     //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     // } else
