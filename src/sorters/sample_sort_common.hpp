@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <random>
@@ -35,9 +36,9 @@ void sort_on_root(std::vector<DataType>& local_data, Communicator<>& comm, auto 
 // sample splitters uniform at random
 template <typename DataType>
 std::vector<DataType> sample_random_splitters1(uint64_t total_elements,
-                                              size_t nr_splitters,
-                                              auto get_element_at,
-                                              Communicator<>& comm) {
+                                               size_t nr_splitters,
+                                               auto get_element_at,
+                                               Communicator<>& comm) {
     std::random_device dev;
     std::mt19937 rng(dev());
     std::uniform_int_distribution<uint64_t> dist(0, total_elements - 1);
@@ -56,7 +57,10 @@ std::vector<DataType> sample_random_splitters(std::vector<DataType>& local_data,
                                               size_t nr_splitters,
                                               Communicator<>& comm) {
     auto get_element_at = [&](uint64_t i) { return local_data[i]; };
-    return sample_random_splitters1<DataType>(local_data.size(), nr_splitters, get_element_at, comm);
+    return sample_random_splitters1<DataType>(local_data.size(),
+                                              nr_splitters,
+                                              get_element_at,
+                                              comm);
 }
 
 template <typename DataType>
@@ -162,31 +166,51 @@ std::vector<DataType> get_global_splitters(std::vector<DataType>& local_data,
 }
 
 
+template <typename DataType, class Compare>
+size_t linear_scan_splitter_position(std::vector<DataType>& local_data,
+                                     Compare comp,
+                                     DataType& splitter,
+                                     size_t initial_guess = 0) {
+    size_t element_pos = initial_guess;
+    // search for splitter border
+    while (element_pos > 0 && !comp(local_data[element_pos], splitter)) {
+        --element_pos;
+    }
+    while (element_pos < local_data.size() && comp(local_data[element_pos], splitter)) {
+        ++element_pos;
+    }
+    return element_pos;
+}
+
 // compute size of intervals into which element are divided by splitters
 template <typename DataType, class Compare>
 std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
                                             std::vector<DataType>& splitters,
                                             Communicator<>& comm,
-                                            Compare comp) {
+                                            Compare comp,
+                                            SampleSortConfig& config) {
     const size_t local_n = local_data.size();
+    const size_t nr_splitters = std::min<size_t>(comm.size() - 1, local_n);
     if (local_n == 0) {
         return std::vector<int64_t>(splitters.size(), 0);
     }
-    size_t nr_splitters = std::min<size_t>(comm.size() - 1, local_n);
-    size_t splitter_dist = local_n / (nr_splitters + 1);
 
     std::vector<int64_t> interval_sizes;
+    interval_sizes.reserve(splitters.size());
     size_t element_pos = 0;
     for (size_t i = 0; i < splitters.size(); ++i) {
-        // inital guess of border borders
-        element_pos = ((i + 1) * splitter_dist);
-
-        // search for splitter border
-        while (element_pos > 0 && !comp(local_data[element_pos], splitters[i])) {
-            --element_pos;
+        if(config.use_binary_search_for_splitters) {
+            // start left interval from last found element
+            const size_t start_pos = element_pos;
+            auto it = std::lower_bound(local_data.begin() + start_pos, local_data.end(), splitters[i], comp);
+            element_pos = it - local_data.begin();
         }
-        while (element_pos < local_n && comp(local_data[element_pos], splitters[i])) {
-            ++element_pos;
+        else {
+            // assume splitters to be distributed equally in remaining interval
+            const size_t remaining_n = local_n - element_pos;
+            const size_t splitter_dist = remaining_n / (nr_splitters + 1 - i);
+            const size_t initial_guess = element_pos +  splitter_dist;
+            element_pos = linear_scan_splitter_position(local_data, comp, splitters[i], initial_guess);
         }
         interval_sizes.emplace_back(element_pos);
     }

@@ -428,8 +428,10 @@ public:
         stats.string_sizes.push_back(total_chars);
         stats.local_string_sizes.push_back(local_string.size());
         stats.char_type_used.push_back(8 * sizeof(char_type));
-        timer.stop();
 
+        timer.stop();
+        //******* End Phase 0: Preparation  ********
+        
         // solve sequentially on root to avoid corner cases with empty PEs
         if (total_chars <= comm.size() * 2 * X) {
             report_on_root("Solve SA sequentially on root",
@@ -442,7 +444,7 @@ public:
             timer.stop(); // pdcx
             return local_SA;
         }
-        //******* End Phase 0: Preparation  ********
+        
 
         std::vector<RankIndex> local_ranks;
         std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;

@@ -330,6 +330,8 @@ struct MergeSamplePhase {
         double avg_buckets = (double)total_chars / (num_buckets * comm.size());
         double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
+        report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance), comm);
+
 
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {

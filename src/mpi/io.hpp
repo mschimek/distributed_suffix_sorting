@@ -29,6 +29,7 @@ bool file_exists(const std::string& path) {
     return f.good();
 }
 
+
 static std::vector<char_type> read_and_distribute_string(const std::string& input_path,
                                                          Communicator<>& comm,
                                                          size_t max_size = 0) {

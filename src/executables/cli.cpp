@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
-#include <unordered_map>
 
 #include <tlx/cmdline_parser.hpp>
 
@@ -51,6 +50,7 @@ tlx::CmdlineParser cp;
 std::vector<char_type> local_string;
 std::vector<index_type> local_sa;
 
+uint64_t input_alphabet_size = 0;
 
 void configure_cli() {
     // basic information
@@ -152,6 +152,10 @@ void configure_cli() {
                 "use_rquick_for_splitters",
                 sample_sort_config.use_rquick_for_splitters,
                 "Use Rquick to sort splitter.");
+    cp.add_flag('b',
+                "use_binary_search_for_splitters",
+                sample_sort_config.use_binary_search_for_splitters,
+                "Use binary search instead of linear scan to find intervals in sample sort.");
 }
 
 template <typename EnumType>
@@ -248,6 +252,33 @@ void report_arguments(kamping::Communicator<>& comm) {
     comm.barrier();
 }
 
+void read_input(kamping::Communicator<>& comm) {
+    if (input_path != "random" && !mpi::file_exists(input_path)) {
+        if (comm.rank() == 0) {
+            std::cerr << "File " << input_path << " does not exist!" << std::endl;
+        }
+        exit(1);
+    }
+    auto& timer = kamping::measurements::timer();
+    timer.synchronize_and_start("io");
+    if (!input_path.compare("random")) {
+        string_size /= comm.size();
+        uint64_t local_seed = seed + comm.rank();
+        local_string =
+            random::generate_random_data<char_type>(string_size, alphabet_size, local_seed);
+    } else {
+        if (string_size > 0) {
+            local_string = mpi::read_and_distribute_string(input_path, comm, string_size);
+        } else {
+            local_string = mpi::read_and_distribute_string(input_path, comm);
+        }
+    }
+    timer.stop();
+    timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
+    timer.clear();
+    kamping::report_on_root("\n", comm);
+}
+
 void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& comm) {
     uint64_t max_alphabet_size = 1 << (sizeof(char_type) * 8);
 
@@ -282,41 +313,7 @@ void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& c
         input[i] = map_char[input[i]];
     }
     kamping::report_on_root("input_alphabet_size=" + std::to_string(alphabet_size), comm);
-}
-
-void read_input(kamping::Communicator<>& comm) {
-    if (input_path != "random" && !mpi::file_exists(input_path)) {
-        if (comm.rank() == 0) {
-            std::cerr << "File " << input_path << " does not exist!" << std::endl;
-        }
-        exit(1);
-    }
-    auto& timer = kamping::measurements::timer();
-    timer.clear();
-    timer.synchronize_and_start("io");
-    if (!input_path.compare("random")) {
-        string_size /= comm.size();
-        uint64_t local_seed = seed + comm.rank();
-        local_string =
-            random::generate_random_data<char_type>(string_size, alphabet_size, local_seed);
-    } else {
-        if (string_size > 0) {
-            local_string = mpi::read_and_distribute_string(input_path, comm, string_size);
-        } else {
-            local_string = mpi::read_and_distribute_string(input_path, comm);
-        }
-    }
-    timer.stop();
-    timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
-    timer.clear();
-    kamping::report_on_root("\n", comm);
-
-    timer.synchronize_and_start("compress_alphabet");
-    compress_alphabet(local_string, comm);
-    timer.stop();
-    timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
-    timer.clear();
-    kamping::report_on_root("\n", comm);
+    input_alphabet_size = alphabet_size;
 }
 
 template <typename PDCX, typename char_type, typename index_type>
@@ -330,6 +327,17 @@ void run_pdcx(kamping::Communicator<>& comm) {
 
 void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
+
+    measurements::Timer<Communicator<>> algo_timer;
+    algo_timer.synchronize_and_start("total_time");
+
+    auto& timer = kamping::measurements::timer();
+    timer.clear();
+
+    timer.synchronize_and_start("compress_alphabet");
+    compress_alphabet(local_string, comm);
+    timer.stop();
+
     // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
@@ -349,6 +357,10 @@ void compute_sa(kamping::Communicator<>& comm) {
     //     std::cerr << "dcx variant " << dcx_variant
     //               << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
     // }
+
+    algo_timer.stop();
+    algo_timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
+    kamping::report_on_root("\n", comm);
 }
 
 void write_sa(kamping::Communicator<>& comm) {
@@ -361,10 +373,13 @@ void write_sa(kamping::Communicator<>& comm) {
 }
 
 void check_sa(kamping::Communicator<>& comm) {
+    using namespace kamping;
     if (check) {
-        auto& timer = kamping::measurements::timer();
-        timer.clear();
-        timer.synchronize_and_start("check_SA");
+        measurements::Timer<Communicator<>> check_timer;
+        check_timer.synchronize_and_start("check_SA");
+
+        // TODO maybe read again
+        // read_input(comm);
 
         kamping::report_on_root("Checking SA ... ", comm);
         // assuming algorithm did not change local string
@@ -375,9 +390,8 @@ void check_sa(kamping::Communicator<>& comm) {
             std::cout << msg << std::endl;
             std::cout << "SA_ok=" << correct << std::endl;
         }
-        timer.stop();
-        timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
-        timer.clear();
+        check_timer.stop();
+        check_timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
         kamping::report_on_root("\n", comm);
     }
 }

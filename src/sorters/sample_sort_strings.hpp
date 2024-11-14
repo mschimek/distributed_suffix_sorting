@@ -102,7 +102,7 @@ inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_dat
     // Use the final set of splitters to find the intervals
     timer.synchronize_and_start("string_sample_sort_interval_sizes");
     std::vector<int64_t> interval_sizes =
-        compute_interval_sizes(local_data, global_splitters, comm, comp);
+        compute_interval_sizes(local_data, global_splitters, comm, comp, config);
     timer.stop();
 
     // exchange data in intervals
