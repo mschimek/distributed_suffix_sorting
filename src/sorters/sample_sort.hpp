@@ -69,6 +69,11 @@ inline void sample_sort(std::vector<DataType>& local_data,
         return;
     }
 
+    // handle cases with empty PEs
+    timer.synchronize_and_start("sample_sort_distribute_data");
+    redistribute_imbalanced_data(local_data, comm);
+    timer.stop();
+
     // Sort data locally
     timer.synchronize_and_start("sample_sort_local_sorting_01");
     local_sorter(local_data);

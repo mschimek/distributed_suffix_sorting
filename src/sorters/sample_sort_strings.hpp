@@ -11,6 +11,8 @@
 #include "kamping/measurements/timer.hpp"
 #include "kamping/named_parameters.hpp"
 #include "mpi/alltoall.hpp"
+#include "mpi/distribute.hpp"
+#include "mpi/reduce.hpp"
 #include "mpi/stats.hpp"
 #include "sorters/sample_sort_common.hpp"
 #include "sorters/sample_sort_config.hpp"
@@ -39,6 +41,7 @@ inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_dat
     // TODO: set memory in string sorter?
 
     auto& timer = kamping::measurements::timer();
+
     std::vector<LcpType> lcps;
     auto local_sorter = [&](std::vector<DataType>& local_data) {
         sorting_wrapper.sort(local_data);
@@ -81,6 +84,11 @@ inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_dat
         }
         return lcps;
     }
+
+    // handle cases with empty PEs
+    timer.synchronize_and_start("string_sample_sort_distribute_data");
+    redistribute_imbalanced_data(local_data, comm);
+    timer.stop();
 
     // Sort data locally
     timer.synchronize_and_start("string_sample_sort_local_sorting_01");

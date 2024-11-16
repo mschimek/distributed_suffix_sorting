@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include "kamping/communicator.hpp"
@@ -128,6 +129,129 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     return is_correct;
 }
 
+// a little more space efficient version of SA-checking algorithm
+// write sa_tuple in rank_triple vector
+template <typename IndexType, typename CharType>
+bool check_suffixarray2(std::vector<IndexType>& sa,
+                        std::vector<CharType>& text,
+                        kamping::Communicator<>& comm) {
+    using namespace kamping;
+
+    mpi::SortingWrapper sorting_wrapper(comm);
+    sorting_wrapper.set_sorter(mpi::AtomicSorters::Ams);
+
+    bool is_correct = true;
+
+    size_t local_size_sa = sa.size();
+    size_t local_size_text = text.size();
+    size_t global_size_sa = mpi_util::all_reduce_sum(local_size_sa, comm);
+    size_t global_size_text = mpi_util::all_reduce_sum(local_size_text, comm);
+
+    if (global_size_text != global_size_sa) {
+        print_on_root("SA and text size don't match: " + std::to_string(global_size_sa)
+                          + " != " + std::to_string(global_size_text),
+                      comm);
+        return false;
+    }
+
+    struct rank_triple {
+        IndexType rank1; // or rank
+        IndexType rank2; // or sa
+        CharType chr;
+
+        bool operator<(const rank_triple& other) const {
+            return std::tie(chr, rank2) < std::tie(other.chr, other.rank2);
+        }
+
+        bool operator<=(const rank_triple& other) const {
+            return std::tie(chr, rank2) <= std::tie(other.chr, other.rank2);
+        }
+
+        // assume rank is store in rank1
+        IndexType get_rank() const { return rank1; }
+
+        // assume sa is store in rank2
+        IndexType get_sa() const { return rank2; }
+
+        static bool cmp_sa(const rank_triple& a, const rank_triple& b) {
+            return a.get_sa() < b.get_sa();
+        }
+    };
+
+    // index sa with 1, ..., n
+    auto index_function = [](uint64_t idx, IndexType sa_idx) {
+        return rank_triple{1 + IndexType(idx), sa_idx, 0};
+    };
+
+    // sa_tuples: (rank, sa, _)
+    std::vector<rank_triple> rts =
+        mpi_util::zip_with_index<IndexType, rank_triple>(sa, index_function, comm);
+
+    sorting_wrapper.sort(rts, rank_triple::cmp_sa);
+
+    rts = mpi_util::distribute_data(rts, comm);
+    text = mpi_util::distribute_data(text, comm);
+    comm.barrier();
+
+    size_t local_size = rts.size();
+    size_t offset = mpi_util::ex_prefix_sum(local_size, comm);
+
+    bool is_permutation = true;
+    for (size_t i = 0; i < local_size; ++i) {
+        is_permutation &= (rts[i].get_sa() == IndexType(i + offset));
+    }
+
+    is_correct = mpi_util::all_reduce_and(is_permutation, comm);
+    if (!is_correct) {
+        print_on_root("no permutation", comm);
+        return false;
+    }
+
+    rank_triple tuple_to_right = mpi_util::shift_left(rts.front(), comm);
+    rts.reserve(rts.size() + 1);
+
+    if (comm.rank() + 1 < comm.size()) {
+        rts.emplace_back(tuple_to_right);
+    } else {
+        rts.emplace_back(rank_triple{0, 0, 0});
+    }
+
+    for (size_t i = 0; i < local_size; ++i) {
+        rts[i] = {rts[i].get_rank(), rts[i + 1].get_rank(), text[i]};
+    }
+    // pop dummy
+    rts.pop_back();
+    rts.shrink_to_fit();
+
+    sorting_wrapper.sort(rts, [](const rank_triple& a, const rank_triple& b) {
+        return a.rank1 < b.rank1;
+    });
+
+    local_size = rts.size();
+    bool is_sorted = true;
+    for (size_t i = 0; i < local_size - 1; ++i) {
+        is_sorted &= (rts[i] <= rts[i + 1]);
+    }
+
+    auto smaller_triple = mpi_util::shift_right(rts.back(), comm);
+    auto larger_triple = mpi_util::shift_left(rts.front(), comm);
+
+    if (comm.rank() > 0) {
+        is_sorted &= (smaller_triple < rts.front());
+    }
+    if (comm.rank() + 1 < comm.size()) {
+        is_sorted &= (rts.back() < larger_triple);
+    }
+
+    is_correct = mpi_util::all_reduce_and(is_sorted, comm);
+
+    if (!is_correct) {
+        print_on_root("not sorted", comm);
+    }
+    return is_correct;
+}
+
+
 template <typename T>
 bool check_sorted(std::vector<T>& v, auto less, kamping::Communicator<>& comm) {
     using namespace kamping;
@@ -208,21 +332,21 @@ bool check_lcp_values(std::vector<char_type>& local_string,
     for (uint64_t i = 1; i < local_string.size(); i++) {
         LcpType common_prefix = 0;
         int64_t result = string_cmp(local_string[i - 1], local_string[i], common_prefix);
-        if(result == 0) {
+        if (result == 0) {
             common_prefix++; // tlx also counts 0-character at the end
         }
-        if(strict) {
+        if (strict) {
             ok &= (common_prefix == lcps[i]);
-        }
-        else {
+        } else {
             // lcp is exact, but does not yield wrong results
             ok &= (common_prefix >= lcps[i]);
         }
         // if(!ok) {
-        if(common_prefix < lcps[i]) {
-        // if(common_prefix != lcps[i]) {
-            std::string msg = "lcp values wrong at " + std::to_string(i) + " lcp: " +
-                              std::to_string(lcps[i]) + ", correct lcp: " + std::to_string(common_prefix);
+        if (common_prefix < lcps[i]) {
+            // if(common_prefix != lcps[i]) {
+            std::string msg = "lcp values wrong at " + std::to_string(i)
+                              + " lcp: " + std::to_string(lcps[i])
+                              + ", correct lcp: " + std::to_string(common_prefix);
             msg += " " + local_string[i - 1].to_string() + " " + local_string[i].to_string();
             kamping::print_result(msg, comm);
             break;

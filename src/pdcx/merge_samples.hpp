@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -25,9 +26,10 @@
 #include "sorters/sample_sort_strings.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "util/division.hpp"
+#include "util/memory.hpp"
 #include "util/printing.hpp"
 #include "util/string_util.hpp"
-
 
 namespace dsss::dcx {
 
@@ -202,28 +204,8 @@ struct MergeSamplePhase {
         return merge_samples;
     }
 
-    // sort merge samples using substrings and rank information
-    void sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
-        auto& timer = measurements::timer();
-        timer.synchronize_and_start("phase_04_sort_merge_samples");
-        atomic_sorter.sort(merge_samples, std::less<>{});
-        timer.stop();
-    }
-
-    std::vector<LcpType> string_sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
-        bool output_lcps = config.use_lcps_tie_breaking;
-        auto& timer = measurements::timer();
-        timer.synchronize_and_start("phase_04_sort_merge_samples");
-        std::vector<LcpType> lcps = mpi::sample_sort_strings(merge_samples,
-                                                             comm,
-                                                             string_sorter,
-                                                             config.sample_sort_config,
-                                                             output_lcps);
-        timer.stop();
-        return lcps;
-    }
-
-    void tie_break_ranks(std::vector<MergeSamples>& merge_samples, std::vector<LcpType>& lcps) {
+    void tie_break_ranks(std::vector<MergeSamples>& merge_samples,
+                         std::vector<LcpType>& lcps) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_04_string_tie_breaking");
 
@@ -287,6 +269,36 @@ struct MergeSamplePhase {
         timer.stop();
     }
 
+    // sort merge samples using substrings and rank information
+    void atomic_sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
+        auto& timer = measurements::timer();
+        timer.synchronize_and_start("phase_04_sort_merge_samples");
+        atomic_sorter.sort(merge_samples, std::less<>{});
+        timer.stop();
+    }
+
+    std::vector<LcpType> string_sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
+        bool output_lcps = config.use_lcps_tie_breaking;
+        auto& timer = measurements::timer();
+        timer.synchronize_and_start("phase_04_sort_merge_samples");
+        std::vector<LcpType> lcps = mpi::sample_sort_strings(merge_samples,
+                                                             comm,
+                                                             string_sorter,
+                                                             config.sample_sort_config,
+                                                             output_lcps);
+        timer.stop();
+        return lcps;
+    }
+
+    void sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
+        if (config.use_string_sort) {
+            auto lcps = string_sort_merge_samples(merge_samples);
+            tie_break_ranks(merge_samples, lcps);
+        } else {
+            atomic_sort_merge_samples(merge_samples);
+        }
+    }
+
     // extract SA from merge samples
     std::vector<index_type> extract_SA(std::vector<MergeSamples>& merge_samples) const {
         auto get_index = [](MergeSamples& m) { return m.index; };
@@ -294,6 +306,7 @@ struct MergeSamplePhase {
             extract_attribute<MergeSamples, index_type>(merge_samples, get_index);
         return local_SA;
     }
+
 
     std::vector<index_type> space_effient_sort_SA(
         std::vector<char_type>& local_string,
@@ -355,12 +368,7 @@ struct MergeSamplePhase {
                 timer.stop();
             }
 
-            if (config.use_string_sort) {
-                auto lcps = string_sort_merge_samples(samples);
-                tie_break_ranks(samples, lcps);
-            } else {
-                sort_merge_samples(samples);
-            }
+            sort_merge_samples(samples);
 
             // extract SA of block
             for (auto& sample: samples) {
@@ -376,7 +384,229 @@ struct MergeSamplePhase {
 
         return local_SA;
     }
-};
+
+    std::vector<index_type> space_effient_sort_chunking_SA(
+        std::vector<char_type>& local_string,
+        std::vector<RankIndex>& local_ranks,
+        uint64_t chars_before,
+        uint64_t local_chars,
+        std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
+        auto& timer = measurements::timer();
+        using SA = std::vector<index_type>;
+
+        // randomized chunking
+        struct Chunk {
+            index_type start_index;
+            uint32_t target_pe;
+        };
+        std::vector<int64_t> send_cnt_chars(comm.size(), 0);
+        std::vector<int64_t> send_cnt_ranks(comm.size(), 0);
+        std::vector<int64_t> send_cnt_index(comm.size(), 0);
+
+
+        uint64_t total_chars = mpi_util::all_reduce_sum(local_chars, comm);
+        uint64_t total_chunks = config.num_randomized_chunks;
+        uint64_t chunk_size = total_chars / total_chunks;
+        uint64_t num_local_chunks = util::div_ceil(local_chars, chunk_size);
+
+        // uint64_t chunk_size = config.num_randomized_chunks;
+        // uint64_t num_local_chunks = (local_chars + chunk_size - 1) / chunk_size;
+
+        // add padding to be able to materialize last suffix in chunk
+        uint64_t num_dc_samples = util::div_ceil(chunk_size, X) * D + 1;
+        uint64_t chars_with_padding = chunk_size + X - 2;
+        uint64_t ranks_with_padding = num_dc_samples + D - 1;
+
+        std::mt19937 rng(config.seed + comm.rank());
+        std::uniform_int_distribution<uint32_t> dist(0, comm.size() - 1);
+
+        // create chunks in evenly spaced intervals
+        std::vector<Chunk> chunks;
+        chunks.reserve(num_local_chunks);
+        for (uint64_t i = 0; i < num_local_chunks; i++) {
+            Chunk chunk = {i * chunk_size, dist(rng)};
+            chunks.push_back(chunk);
+            send_cnt_chars[chunk.target_pe] += chars_with_padding;
+            send_cnt_ranks[chunk.target_pe] += ranks_with_padding;
+            send_cnt_index[chunk.target_pe] += 1;
+        }
+
+        // sort chunks by PE
+        ips4o::sort(chunks.begin(), chunks.end(), [&](const Chunk& a, const Chunk& b) {
+            return a.target_pe < b.target_pe;
+        });
+
+        // store global index of beginning of each chunk
+        std::vector<index_type> chunk_global_index =
+            extract_attribute<Chunk, index_type>(chunks, [&](Chunk& c) {
+                return index_type(chars_before + c.start_index);
+            });
+
+        // linearize data
+        std::vector<char_type> chunked_chars;
+        std::vector<RankIndex> chunked_ranks;
+        chunked_chars.reserve(chars_with_padding * num_local_chunks);
+        chunked_ranks.reserve(ranks_with_padding * num_local_chunks);
+
+        // we need a special character to represent dummy padding for chunks
+        // --> we cannot use 0, because it is padding, so char 255 is also blocked
+        char_type fill_char = char_type(0);
+        char_type padding_char = std::numeric_limits<char_type>::max();
+        uint64_t padding_rank = total_chars + 1;
+        KASSERT(mpi_util::max_value(local_string, comm) < padding_char);
+
+        for (auto& chunk: chunks) {
+            // chars
+            uint64_t start = chunk.start_index;
+            uint64_t limit = std::min(start + chars_with_padding, local_string.size());
+            for (uint64_t i = start; i < limit; i++) {
+                chunked_chars.push_back(local_string[i]);
+            }
+            for (uint64_t i = 0; i < chars_with_padding - (limit - start); i++) {
+                chunked_chars.push_back(padding_char);
+            }
+
+            // ranks
+            uint64_t first_rank = get_ranks_pos(local_ranks, start, chars_before);
+            limit = std::min(first_rank + ranks_with_padding, local_ranks.size());
+            for (uint64_t i = first_rank; i < limit; i++) {
+                chunked_ranks.push_back(local_ranks[i]);
+            }
+            for (uint64_t i = 0; i < ranks_with_padding - (limit - first_rank); i++) {
+                chunked_ranks.push_back({padding_rank, padding_rank, false});
+            }
+        }
+
+        // sanity checks
+        KASSERT(chunked_chars.size() == chars_with_padding * num_local_chunks);
+        KASSERT(chunked_ranks.size() == ranks_with_padding * num_local_chunks);
+        KASSERT(std::accumulate(send_cnt_chars.begin(), send_cnt_chars.end(), 0)
+                == (int64_t)chunked_chars.size());
+        KASSERT(std::accumulate(send_cnt_ranks.begin(), send_cnt_ranks.end(), 0)
+                == (int64_t)chunked_ranks.size());
+        KASSERT(std::accumulate(send_cnt_index.begin(), send_cnt_index.end(), 0)
+                == (int64_t)chunk_global_index.size());
+
+        free_memory(local_ranks);
+
+        // exchange linearized data
+        chunked_chars = mpi_util::alltoallv_combined(chunked_chars, send_cnt_chars, comm);
+        chunked_ranks = mpi_util::alltoallv_combined(chunked_ranks, send_cnt_ranks, comm);
+        chunk_global_index = mpi_util::alltoallv_combined(chunk_global_index, send_cnt_index, comm);
+
+        uint64_t received_chunks = chunk_global_index.size();
+        KASSERT(chunked_chars.size() == received_chunks * chars_with_padding);
+        KASSERT(chunked_ranks.size() == received_chunks * ranks_with_padding);
+
+        // compute bucket sizes and mapping
+        int64_t num_buckets = global_splitters.size() + 1;
+        std::vector<uint64_t> bucket_sizes(num_buckets, 0);
+        std::vector<uint8_t> sample_to_bucket(chunked_chars.size(), num_buckets);
+
+        uint64_t num_materialized_samples = 0;
+        for (uint64_t i = 0; i < received_chunks; i++) {
+            uint64_t start_chunk = i * chars_with_padding;
+            for (uint64_t j = 0; j < chunk_size; j++) {
+                uint8_t block_id = num_buckets - 1;
+                uint64_t suffix_start = start_chunk + j;
+                uint64_t suffix_last_char = suffix_start + X - 1;
+                // we don't want to materialize padding suffixes
+                bool is_fill_suffix = chunked_chars[suffix_start] == fill_char
+                                      && chunked_chars[suffix_last_char] == fill_char;
+                bool is_overlapping_suffix = chunked_chars[suffix_last_char] == padding_char;
+
+                if (is_fill_suffix || is_overlapping_suffix) {
+                    break;
+                }
+                for (int64_t k = 0; k < num_buckets - 1; k++) {
+                    auto cmp = [&]() {
+                        for (uint64_t i = suffix_start; i < suffix_start + X - 1; i++) {
+                            char_type c = chunked_chars[i];
+                            if (c != global_splitters[k][i - suffix_start]) {
+                                return c < global_splitters[k][i - suffix_start];
+                            }
+                        }
+                        return false;
+                    };
+
+                    if (cmp()) {
+                        block_id = k;
+                        break;
+                    }
+                }
+                bucket_sizes[block_id]++;
+                sample_to_bucket[suffix_start] = block_id;
+                num_materialized_samples++;
+            }
+        }
+
+        // log imbalance
+        uint64_t largest_bucket = mpi_util::max_value(bucket_sizes, comm);
+        double avg_bucket = (double)total_chars / (num_buckets * comm.size());
+        double bucket_imbalance = ((double)largest_bucket / avg_bucket) - 1.0;
+        get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
+        report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance), comm);
+
+        KASSERT(mpi_util::all_reduce_sum(num_materialized_samples, comm) == total_chars);
+
+        std::vector<MergeSamples> samples;
+        SA concat_sa_buckets;
+        std::vector<uint64_t> sa_bucket_size;
+        sa_bucket_size.reserve(num_buckets);
+
+        // sorting in each round one blocks of materialized samples
+        for (int64_t k = 0; k < num_buckets; k++) {
+            timer.synchronize_and_start("phase_04_space_efficient_sort_collect_bucket");
+
+            // collect samples falling into kth block
+            samples.reserve(bucket_sizes[k]);
+
+            for (uint64_t i = 0; i < received_chunks; i++) {
+                uint64_t start_chunk = i * chars_with_padding;
+                uint64_t rank_pos = i * ranks_with_padding;
+                uint64_t global_index_chunk = chunk_global_index[i];
+                for (uint64_t j = 0; j < chunk_size; j++) {
+                    uint64_t char_pos = start_chunk + j;
+                    if (sample_to_bucket[char_pos] == k) {
+                        uint64_t global_index = global_index_chunk + j;
+
+                        // advance rank position index
+                        while (global_index > (uint64_t)chunked_ranks[rank_pos].index) {
+                            rank_pos++;
+                            KASSERT(rank_pos < chunked_ranks.size(),
+                                    std::to_string(global_index) + " > "
+                                        + std::to_string(chunked_ranks[rank_pos - 1].index));
+                        }
+                        auto merge_sample = materialize_merge_sample(chunked_chars,
+                                                                     chunked_ranks,
+                                                                     chars_before,
+                                                                     char_pos,
+                                                                     rank_pos);
+
+                        // above function does not compute global_index the right way
+                        merge_sample.index = global_index;
+                        samples.push_back(merge_sample);
+                    }
+                }
+            }
+            timer.stop();
+            sort_merge_samples(samples);
+
+            // extract SA of block
+            for (auto& sample: samples) {
+                concat_sa_buckets.push_back(sample.index);
+            }
+            sa_bucket_size.push_back(samples.size());
+            samples.clear();
+        }
+
+        timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
+        SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
+        timer.stop();
+
+        return local_SA;
+    }
+}; // namespace dsss::dcx
 
 
 } // namespace dsss::dcx

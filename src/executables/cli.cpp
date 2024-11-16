@@ -70,6 +70,7 @@ void configure_cli() {
                  "construction algorithms.");
     cp.add_bytes('a', "alphabet_size", alphabet_size, "Size of the alphbet used for random.");
     cp.add_bytes('e', "seed", seed, "Seed to be used for random. PE i uses seed: seed + i");
+    pdcx_config.seed = seed;
     cp.add_string('o',
                   "output",
                   "<F>",
@@ -118,6 +119,15 @@ void configure_cli() {
                   buckets_merging,
                   "Number of buckets to use for space efficient sorting in merging phase on each "
                   "recursion level. Missing values default to 1. Example: 16,8,4");
+    cp.add_flag('Z',
+                "use_randomized_chunks_merging",
+                pdcx_config.use_randomized_chunks_merging,
+                "Use randomized chunks in merging phase to distribute work.");
+    cp.add_bytes('z',
+                "num_randomized_chunks",
+                pdcx_config.num_randomized_chunks,
+                "Number of chunks to use for randomized chunks in merging phase.");
+
 
     // sorter configuration
     cp.add_string('r',
@@ -293,8 +303,8 @@ void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& c
         max_alphabet_size - std::count(global_counts.begin(), global_counts.end(), 0);
 
     if (alphabet_size == max_alphabet_size) {
-        kamping::report_on_root("Can only process alphabets with not more than 255 distinct "
-                                "characters. Change char_type.",
+        kamping::report_on_root("Can only process alphabets with not more than 254 distinct "
+                                "characters. 0 and 255 are reserved for special characters. Change char_type.",
                                 comm);
         exit(1);
     }
@@ -384,11 +394,14 @@ void check_sa(kamping::Communicator<>& comm) {
         kamping::report_on_root("Checking SA ... ", comm);
         // assuming algorithm did not change local string
         bool correct = check_suffixarray(local_sa, local_string, comm);
+        // bool correct = check_suffixarray2(local_sa, local_string, comm);
+        // bool correct2 = check_suffixarray2(local_sa, local_string, comm);
 
         if (comm.rank() == 0) {
             std::string msg = correct ? "Correct SA!" : "ERROR: Not a correct SA!";
             std::cout << msg << std::endl;
             std::cout << "SA_ok=" << correct << std::endl;
+            // std::cout << "SA_ok2=" << correct2 << std::endl;
         }
         check_timer.stop();
         check_timer.aggregate_and_print(kamping::measurements::FlatPrinter{});

@@ -1,5 +1,6 @@
 target_sources(dss_base
     PUBLIC
+        division.hpp
         macros.hpp
         memory.hpp
         memory_monitor.hpp

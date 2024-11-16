@@ -38,9 +38,9 @@ double avg_value(std::vector<T>& v, kamping::Communicator<>& comm) {
 }
 
 template <typename T>
-double max_value(std::vector<T>& v, kamping::Communicator<>& comm) {
-    uint64_t local_max = *std::max_element(v.begin(), v.end());
-    uint64_t global_max = all_reduce_max(local_max, comm);
+T max_value(std::vector<T>& v, kamping::Communicator<>& comm) {
+    T local_max = *std::max_element(v.begin(), v.end());
+    T global_max = all_reduce_max(local_max, comm);
     return global_max;
 }
 } // namespace dsss::mpi_util

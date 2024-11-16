@@ -18,12 +18,15 @@ struct PDCXConfig {
     std::vector<uint32_t> buckets_merging;
     uint64_t ams_levels = 1;
     uint64_t num_samples_splitters = 100;
+    uint64_t num_randomized_chunks = 100;
+    uint64_t seed = 0;
     double discarding_threshold = 0.7;
     double min_imbalance = 0.25;
     bool use_string_sort = false;
     bool use_lcps_tie_breaking = false;
     bool use_random_sampling_splitters = false;
     bool balance_blocks_space_efficient_sort = false;
+    bool use_randomized_chunks_merging = false;
     bool print_phases = true;
 
 
@@ -50,6 +53,8 @@ struct PDCXConfig {
         std::cout << V(num_samples_splitters) << "\n";
         std::cout << V(use_random_sampling_splitters) << "\n";
         std::cout << V(balance_blocks_space_efficient_sort) << "\n";
+        std::cout << V(use_randomized_chunks_merging) << "\n";
+        std::cout << V(num_randomized_chunks) << "\n";
         std::cout << std::endl;
 
         sample_sort_config.print_config();

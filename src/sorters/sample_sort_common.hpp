@@ -33,6 +33,15 @@ void sort_on_root(std::vector<DataType>& local_data, Communicator<>& comm, auto 
     local_data = global_data;
 }
 
+template <typename DataType>
+void redistribute_imbalanced_data(std::vector<DataType>& local_data, Communicator<>& comm) {
+    uint64_t min_size = mpi_util::all_reduce_min(local_data.size(), comm);
+    if (min_size <= comm.size()) {
+        local_data = mpi_util::distribute_data(local_data, comm);
+    }
+}
+
+
 // sample splitters uniform at random
 template <typename DataType>
 std::vector<DataType> sample_random_splitters1(uint64_t total_elements,
@@ -199,18 +208,21 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
     interval_sizes.reserve(splitters.size());
     size_t element_pos = 0;
     for (size_t i = 0; i < splitters.size(); ++i) {
-        if(config.use_binary_search_for_splitters) {
+        if (config.use_binary_search_for_splitters) {
             // start left interval from last found element
             const size_t start_pos = element_pos;
-            auto it = std::lower_bound(local_data.begin() + start_pos, local_data.end(), splitters[i], comp);
+            auto it = std::lower_bound(local_data.begin() + start_pos,
+                                       local_data.end(),
+                                       splitters[i],
+                                       comp);
             element_pos = it - local_data.begin();
-        }
-        else {
+        } else {
             // assume splitters to be distributed equally in remaining interval
             const size_t remaining_n = local_n - element_pos;
             const size_t splitter_dist = remaining_n / (nr_splitters + 1 - i);
-            const size_t initial_guess = element_pos +  splitter_dist;
-            element_pos = linear_scan_splitter_position(local_data, comp, splitters[i], initial_guess);
+            const size_t initial_guess = element_pos + splitter_dist;
+            element_pos =
+                linear_scan_splitter_position(local_data, comp, splitters[i], initial_guess);
         }
         interval_sizes.emplace_back(element_pos);
     }

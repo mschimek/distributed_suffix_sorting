@@ -431,7 +431,7 @@ public:
 
         timer.stop();
         //******* End Phase 0: Preparation  ********
-        
+
         // solve sequentially on root to avoid corner cases with empty PEs
         if (total_chars <= comm.size() * 2 * X) {
             report_on_root("Solve SA sequentially on root",
@@ -444,7 +444,7 @@ public:
             timer.stop(); // pdcx
             return local_SA;
         }
-        
+
 
         std::vector<RankIndex> local_ranks;
         std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
@@ -547,14 +547,26 @@ public:
             }
 
             KASSERT(global_samples_splitters.size() == buckets_merging - 1);
-            report_on_root("Using " + std::to_string(buckets_merging) + " buckets for merging.", comm, recursion_depth, config.print_phases);
+            report_on_root("Using " + std::to_string(buckets_merging) + " buckets for merging.",
+                           comm,
+                           recursion_depth,
+                           config.print_phases);
 
-            local_SA = phase4.space_effient_sort_SA(local_string,
-                                                    local_ranks,
-                                                    chars_before[comm.rank()],
-                                                    local_chars,
-                                                    global_samples_splitters);
+            if (recursion_depth == 0 && config.use_randomized_chunks_merging) {
+                // with chunking
+                local_SA = phase4.space_effient_sort_chunking_SA(local_string,
+                                                                 local_ranks,
+                                                                 chars_before[comm.rank()],
+                                                                 local_chars,
+                                                                 global_samples_splitters);
 
+            } else {
+                local_SA = phase4.space_effient_sort_SA(local_string,
+                                                        local_ranks,
+                                                        chars_before[comm.rank()],
+                                                        local_chars,
+                                                        global_samples_splitters);
+            }
 
         } else if (config.use_string_sort) {
             report_on_root("create merge samples", comm, recursion_depth, config.print_phases);
@@ -579,7 +591,7 @@ public:
                                                chars_at_proc[process_rank]);
 
             free_memory(std::move(local_ranks));
-            phase4.sort_merge_samples(merge_samples);
+            phase4.atomic_sort_merge_samples(merge_samples);
             local_SA = phase4.extract_SA(merge_samples);
         }
 
