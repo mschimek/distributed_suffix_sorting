@@ -4,6 +4,7 @@
 
 #include "kamping/communicator.hpp"
 #include "mpi/reduce.hpp"
+#include "util/printing.hpp"
 
 namespace dsss::mpi_util {
 

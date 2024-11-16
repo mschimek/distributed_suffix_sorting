@@ -15,6 +15,7 @@ double compute_max_imbalance(uint64_t local_size, kamping::Communicator<>& comm)
     uint64_t total_size = all_reduce_sum(local_size, comm);
     uint64_t largest_size = all_reduce_max(local_size, comm);
     double avg_size = (double)total_size / comm.size();
+    KASSERT(avg_size > 0.0);
     double imbalance = ((double)largest_size / avg_size) - 1.0;
     return imbalance;
 }
@@ -24,6 +25,7 @@ double compute_min_imbalance(uint64_t local_size, kamping::Communicator<>& comm)
     uint64_t total_size = all_reduce_sum(local_size, comm);
     uint64_t smallest_size = all_reduce_min(local_size, comm);
     double avg_size = (double)total_size / comm.size();
+    KASSERT(avg_size > 0.0);
     double imbalance = ((double)smallest_size / avg_size);
     return imbalance;
 }

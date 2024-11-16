@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 #include "kamping/communicator.hpp"
@@ -28,7 +29,6 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     sorting_wrapper.set_sorter(mpi::AtomicSorters::SampleSort);
 
     bool is_correct = true;
-
     size_t local_size_sa = sa.size();
     size_t local_size_text = text.size();
     size_t global_size_sa = mpi_util::all_reduce_sum(local_size_sa, comm);
@@ -64,6 +64,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     auto index_function = [](uint64_t idx, IndexType sa_idx) {
         return sa_tuple{1 + IndexType(idx), sa_idx};
     };
+
     std::vector<sa_tuple> sa_tuples =
         mpi_util::zip_with_index<IndexType, sa_tuple>(sa, index_function, comm);
 
@@ -89,7 +90,6 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     }
 
     sa_tuple tuple_to_right = mpi_util::shift_left(sa_tuples.front(), comm);
-
     if (comm.rank() + 1 < comm.size()) {
         sa_tuples.emplace_back(tuple_to_right);
     } else {

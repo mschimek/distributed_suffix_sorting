@@ -85,11 +85,10 @@ inline void sample_sort(std::vector<DataType>& local_data,
         get_global_splitters(local_data, local_sorter, distributed_sorter, comm, config);
     timer.stop();
 
-
     // Use the final set of splitters to find the intervals
     std::vector<int64_t> interval_sizes =
         compute_interval_sizes(local_data, global_splitters, comm, comp, config);
-
+    
     std::vector<int64_t> receiving_sizes = comm.alltoall(kamping::send_buf(interval_sizes));
     for (size_t i = interval_sizes.size(); i < comm.size(); ++i) {
         interval_sizes.emplace_back(0);

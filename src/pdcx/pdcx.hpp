@@ -599,6 +599,7 @@ public:
         timer.stop();
         //******* End Phase 4: Merge Suffixes  ********
 
+
         // logging
         stats.string_imbalance.push_back(mpi_util::compute_max_imbalance(local_chars, comm));
         stats.sample_imbalance.push_back(mpi_util::compute_max_imbalance(local_sample_size, comm));

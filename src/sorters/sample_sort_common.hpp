@@ -6,9 +6,11 @@
 #include <cstdint>
 #include <functional>
 #include <random>
+#include <string>
 #include <vector>
 
 #include "kamping/communicator.hpp"
+#include "kassert/kassert.hpp"
 #include "mpi/distribute.hpp"
 #include "mpi/reduce.hpp"
 #include "sorters/sample_sort_config.hpp"
@@ -199,7 +201,8 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
                                             Compare comp,
                                             SampleSortConfig& config) {
     const size_t local_n = local_data.size();
-    const size_t nr_splitters = std::min<size_t>(comm.size() - 1, local_n);
+    const size_t nr_splitters = splitters.size();
+
     if (local_n == 0) {
         return std::vector<int64_t>(splitters.size(), 0);
     }
@@ -210,7 +213,8 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
     for (size_t i = 0; i < splitters.size(); ++i) {
         if (config.use_binary_search_for_splitters) {
             // start left interval from last found element
-            const size_t start_pos = element_pos;
+            const size_t start_pos = std::min(element_pos, local_data.size() - 1);
+            KASSERT(start_pos < local_data.size());
             auto it = std::lower_bound(local_data.begin() + start_pos,
                                        local_data.end(),
                                        splitters[i],
@@ -219,6 +223,7 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
         } else {
             // assume splitters to be distributed equally in remaining interval
             const size_t remaining_n = local_n - element_pos;
+            KASSERT(nr_splitters + 1 > i);
             const size_t splitter_dist = remaining_n / (nr_splitters + 1 - i);
             const size_t initial_guess = element_pos + splitter_dist;
             element_pos =
