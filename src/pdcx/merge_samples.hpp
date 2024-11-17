@@ -391,10 +391,12 @@ struct MergeSamplePhase {
         uint64_t chars_before,
         uint64_t local_chars,
         std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
+
         auto& timer = measurements::timer();
         using SA = std::vector<index_type>;
 
         // randomized chunking
+        timer.synchronize_and_start("space_effient_sort_chunking_create_chunks");
         struct Chunk {
             index_type start_index;
             uint32_t target_pe;
@@ -403,14 +405,9 @@ struct MergeSamplePhase {
         std::vector<int64_t> send_cnt_ranks(comm.size(), 0);
         std::vector<int64_t> send_cnt_index(comm.size(), 0);
 
-
         uint64_t total_chars = mpi_util::all_reduce_sum(local_chars, comm);
-        uint64_t total_chunks = config.num_randomized_chunks;
-        uint64_t chunk_size = total_chars / total_chunks;
+        uint64_t chunk_size = config.num_randomized_chunks;
         uint64_t num_local_chunks = util::div_ceil(local_chars, chunk_size);
-
-        // uint64_t chunk_size = config.num_randomized_chunks;
-        // uint64_t num_local_chunks = (local_chars + chunk_size - 1) / chunk_size;
 
         // add padding to be able to materialize last suffix in chunk
         uint64_t num_dc_samples = util::div_ceil(chunk_size, X) * D + 1;
@@ -445,15 +442,13 @@ struct MergeSamplePhase {
         // linearize data
         std::vector<char_type> chunked_chars;
         std::vector<RankIndex> chunked_ranks;
+        std::vector<uint32_t> chunk_sizes;
         chunked_chars.reserve(chars_with_padding * num_local_chunks);
         chunked_ranks.reserve(ranks_with_padding * num_local_chunks);
+        chunk_sizes.reserve(num_local_chunks);
 
-        // we need a special character to represent dummy padding for chunks
-        // --> we cannot use 0, because it is padding, so char 255 is also blocked
         char_type fill_char = char_type(0);
-        char_type padding_char = std::numeric_limits<char_type>::max();
         uint64_t padding_rank = total_chars + 1;
-        KASSERT(mpi_util::max_value(local_string, comm) < padding_char);
 
         for (auto& chunk: chunks) {
             // chars
@@ -463,8 +458,10 @@ struct MergeSamplePhase {
                 chunked_chars.push_back(local_string[i]);
             }
             for (uint64_t i = 0; i < chars_with_padding - (limit - start); i++) {
-                chunked_chars.push_back(padding_char);
+                chunked_chars.push_back(fill_char);
             }
+            uint32_t size = std::min(chunk_size, (local_chars - start));
+            chunk_sizes.push_back(size);
 
             // ranks
             uint64_t first_rank = get_ranks_pos(local_ranks, start, chars_before);
@@ -488,15 +485,21 @@ struct MergeSamplePhase {
                 == (int64_t)chunk_global_index.size());
 
         free_memory(local_ranks);
+        timer.stop();
 
         // exchange linearized data
+        timer.synchronize_and_start("space_effient_sort_chunking_alltoall_chunks");
         chunked_chars = mpi_util::alltoallv_combined(chunked_chars, send_cnt_chars, comm);
         chunked_ranks = mpi_util::alltoallv_combined(chunked_ranks, send_cnt_ranks, comm);
         chunk_global_index = mpi_util::alltoallv_combined(chunk_global_index, send_cnt_index, comm);
+        chunk_sizes = mpi_util::alltoallv_combined(chunk_sizes, send_cnt_index, comm);
+        timer.stop();
 
+        timer.synchronize_and_start("space_effient_sort_chunking_mapping");
         uint64_t received_chunks = chunk_global_index.size();
         KASSERT(chunked_chars.size() == received_chunks * chars_with_padding);
         KASSERT(chunked_ranks.size() == received_chunks * ranks_with_padding);
+        KASSERT(chunk_sizes.size() == received_chunks);
 
         // compute bucket sizes and mapping
         int64_t num_buckets = global_splitters.size() + 1;
@@ -506,18 +509,9 @@ struct MergeSamplePhase {
         uint64_t num_materialized_samples = 0;
         for (uint64_t i = 0; i < received_chunks; i++) {
             uint64_t start_chunk = i * chars_with_padding;
-            for (uint64_t j = 0; j < chunk_size; j++) {
+            for (uint64_t j = 0; j < chunk_sizes[i]; j++) {
                 uint8_t block_id = num_buckets - 1;
                 uint64_t suffix_start = start_chunk + j;
-                uint64_t suffix_last_char = suffix_start + X - 1;
-                // we don't want to materialize padding suffixes
-                bool is_fill_suffix = chunked_chars[suffix_start] == fill_char
-                                      && chunked_chars[suffix_last_char] == fill_char;
-                bool is_overlapping_suffix = chunked_chars[suffix_last_char] == padding_char;
-
-                if (is_fill_suffix || is_overlapping_suffix) {
-                    break;
-                }
                 for (int64_t k = 0; k < num_buckets - 1; k++) {
                     auto cmp = [&]() {
                         for (uint64_t i = suffix_start; i < suffix_start + X - 1; i++) {
@@ -539,15 +533,15 @@ struct MergeSamplePhase {
                 num_materialized_samples++;
             }
         }
+        KASSERT(mpi_util::all_reduce_sum(num_materialized_samples, comm) == total_chars);
 
         // log imbalance
         uint64_t largest_bucket = mpi_util::max_value(bucket_sizes, comm);
         double avg_bucket = (double)total_chars / (num_buckets * comm.size());
         double bucket_imbalance = ((double)largest_bucket / avg_bucket) - 1.0;
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
-        report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance), comm);
-
-        KASSERT(mpi_util::all_reduce_sum(num_materialized_samples, comm) == total_chars);
+        report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance), comm);
+        timer.stop();
 
         std::vector<MergeSamples> samples;
         SA concat_sa_buckets;
@@ -556,7 +550,7 @@ struct MergeSamplePhase {
 
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
-            timer.synchronize_and_start("phase_04_space_efficient_sort_collect_bucket");
+            timer.synchronize_and_start("phase_04_space_effient_sort_chunking_collect_bucket");
 
             // collect samples falling into kth block
             samples.reserve(bucket_sizes[k]);
@@ -570,7 +564,7 @@ struct MergeSamplePhase {
                     if (sample_to_bucket[char_pos] == k) {
                         uint64_t global_index = global_index_chunk + j;
 
-                        // advance rank position index
+                        // increment rank position index
                         while (global_index > (uint64_t)chunked_ranks[rank_pos].index) {
                             rank_pos++;
                             KASSERT(rank_pos < chunked_ranks.size(),

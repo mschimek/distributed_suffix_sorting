@@ -303,8 +303,8 @@ void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& c
         max_alphabet_size - std::count(global_counts.begin(), global_counts.end(), 0);
 
     if (alphabet_size == max_alphabet_size) {
-        kamping::report_on_root("Can only process alphabets with not more than 254 distinct "
-                                "characters. 0 and 255 are reserved for special characters. Change char_type.",
+        kamping::report_on_root("Can only process alphabets with not more than 255 distinct "
+                                "characters. 0 is reserved for special characters. Change char_type.",
                                 comm);
         exit(1);
     }
