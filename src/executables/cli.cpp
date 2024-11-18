@@ -124,9 +124,9 @@ void configure_cli() {
                 pdcx_config.use_randomized_chunks_merging,
                 "Use randomized chunks in merging phase to distribute work.");
     cp.add_bytes('z',
-                "num_randomized_chunks",
-                pdcx_config.num_randomized_chunks,
-                "Number of chunks to use for randomized chunks in merging phase.");
+                 "num_randomized_chunks",
+                 pdcx_config.num_randomized_chunks,
+                 "Number of chunks to use for randomized chunks in merging phase.");
 
 
     // sorter configuration
@@ -303,9 +303,10 @@ void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& c
         max_alphabet_size - std::count(global_counts.begin(), global_counts.end(), 0);
 
     if (alphabet_size == max_alphabet_size) {
-        kamping::report_on_root("Can only process alphabets with not more than 255 distinct "
-                                "characters. 0 is reserved for special characters. Change char_type.",
-                                comm);
+        kamping::report_on_root(
+            "Can only process alphabets with not more than 255 distinct "
+            "characters. 0 is reserved for special characters. Change char_type.",
+            comm);
         exit(1);
     }
 
@@ -359,7 +360,8 @@ void compute_sa(kamping::Communicator<>& comm) {
     //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc13") {
     //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc21") {
+    // } else
+    // if (dcx_variant == "dc21") {
     //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc31") {
     //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);

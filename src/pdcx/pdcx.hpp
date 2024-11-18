@@ -568,30 +568,14 @@ public:
                                                         global_samples_splitters);
             }
 
-        } else if (config.use_string_sort) {
-            report_on_root("create merge samples", comm, recursion_depth, config.print_phases);
-            std::vector<MergeSamples> merge_samples =
-                phase4.construct_merge_samples(local_string,
-                                               local_ranks,
-                                               chars_before[process_rank],
-                                               chars_at_proc[process_rank]);
-            free_memory(std::move(local_ranks));
-            auto lcps = phase4.string_sort_merge_samples(merge_samples);
-
-            if (config.use_lcps_tie_breaking) {
-                KASSERT(check_lcp_values(merge_samples, lcps, comm, false));
-            }
-            phase4.tie_break_ranks(merge_samples, lcps);
-            local_SA = phase4.extract_SA(merge_samples);
         } else {
             std::vector<MergeSamples> merge_samples =
                 phase4.construct_merge_samples(local_string,
                                                local_ranks,
                                                chars_before[process_rank],
                                                chars_at_proc[process_rank]);
-
             free_memory(std::move(local_ranks));
-            phase4.atomic_sort_merge_samples(merge_samples);
+            phase4.sort_merge_samples(merge_samples);
             local_SA = phase4.extract_SA(merge_samples);
         }
 

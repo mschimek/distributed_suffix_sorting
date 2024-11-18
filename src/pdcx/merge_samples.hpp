@@ -391,12 +391,11 @@ struct MergeSamplePhase {
         uint64_t chars_before,
         uint64_t local_chars,
         std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
-
         auto& timer = measurements::timer();
         using SA = std::vector<index_type>;
 
         // randomized chunking
-        timer.synchronize_and_start("space_effient_sort_chunking_create_chunks");
+        timer.synchronize_and_start("phase_04_space_effient_sort_chunking_create_chunks");
         struct Chunk {
             index_type start_index;
             uint32_t target_pe;
@@ -488,14 +487,14 @@ struct MergeSamplePhase {
         timer.stop();
 
         // exchange linearized data
-        timer.synchronize_and_start("space_effient_sort_chunking_alltoall_chunks");
+        timer.synchronize_and_start("phase_04_space_effient_sort_chunking_alltoall_chunks");
         chunked_chars = mpi_util::alltoallv_combined(chunked_chars, send_cnt_chars, comm);
         chunked_ranks = mpi_util::alltoallv_combined(chunked_ranks, send_cnt_ranks, comm);
         chunk_global_index = mpi_util::alltoallv_combined(chunk_global_index, send_cnt_index, comm);
         chunk_sizes = mpi_util::alltoallv_combined(chunk_sizes, send_cnt_index, comm);
         timer.stop();
 
-        timer.synchronize_and_start("space_effient_sort_chunking_mapping");
+        timer.synchronize_and_start("phase_04_space_effient_sort_chunking_mapping");
         uint64_t received_chunks = chunk_global_index.size();
         KASSERT(chunked_chars.size() == received_chunks * chars_with_padding);
         KASSERT(chunked_ranks.size() == received_chunks * ranks_with_padding);
@@ -594,7 +593,7 @@ struct MergeSamplePhase {
             samples.clear();
         }
 
-        timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
+        timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
         SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
         timer.stop();
 
