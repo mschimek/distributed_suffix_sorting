@@ -66,6 +66,22 @@ bool cmp_index_substring(std::vector<char_type>& str,
     return false;
 };
 
+template <typename char_type, uint64_t X>
+bool cmp_index_substring(std::vector<char_type>& str,
+                         uint64_t local_index,
+                         std::array<char_type, X>& sub_str,
+                         uint64_t len) {
+    for (uint64_t j = 0; j < len; j++) {
+        KASSERT(local_index + j < str.size());
+        char_type c = str[local_index + j];
+        if (c != sub_str[j]) {
+            return c < sub_str[j];
+        }
+    }
+    return false;
+};
+
+
 
 template <typename char_type>
 bool cmp_substrings(std::vector<char_type>& arr, int a, int b) {

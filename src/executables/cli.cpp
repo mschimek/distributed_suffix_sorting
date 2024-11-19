@@ -154,6 +154,10 @@ void configure_cli() {
                 "use_string_sort",
                 pdcx_config.use_string_sort,
                 "Use string sorting instead of atomic sorting.");
+    cp.add_flag('K',
+                "use_string_sort_tie_breaking",
+                pdcx_config.use_string_sort_tie_breaking,
+                "Use string sorting with tie breaking in Phase 4.");
     cp.add_flag('L',
                 "use_loser_tree",
                 sample_sort_config.use_loser_tree,
@@ -349,19 +353,19 @@ void compute_sa(kamping::Communicator<>& comm) {
     compress_alphabet(local_string, comm);
     timer.stop();
 
+    // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC133Param>, char_type, index_type>(comm);
     // if (dcx_variant == "dc3") {
     //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    // } else
-    // if (dcx_variant == "dc7") {
+    // } else if (dcx_variant == "dc7") {
     //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc13") {
     //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    // } else
-    // if (dcx_variant == "dc21") {
+    // } else if (dcx_variant == "dc21") {
     //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc31") {
     //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);

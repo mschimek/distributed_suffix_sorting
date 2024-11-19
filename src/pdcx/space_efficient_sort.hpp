@@ -7,6 +7,7 @@
 #include "pdcx/config.hpp"
 #include "pdcx/sample_string.hpp"
 #include "sorters/sample_sort_common.hpp"
+#include "util/printing.hpp"
 
 namespace dsss::dcx {
 
@@ -56,7 +57,7 @@ struct SpaceEfficientSort {
         for (uint64_t i = 0; i < local_chars; i++) {
             uint8_t block_id = blocks - 1;
             for (int64_t j = 0; j < blocks - 1; j++) {
-                if (cmp_index_substring(local_string, i, global_splitters[j])) {
+                if (cmp_index_substring(local_string, i, global_splitters[j], DC::X - 1)) {
                     block_id = j;
                     break;
                 }

@@ -23,6 +23,7 @@ struct PDCXConfig {
     double discarding_threshold = 0.7;
     double min_imbalance = 0.25;
     bool use_string_sort = false;
+    bool use_string_sort_tie_breaking = false;
     bool use_lcps_tie_breaking = false;
     bool use_random_sampling_splitters = false;
     bool balance_blocks_space_efficient_sort = false;
@@ -48,6 +49,7 @@ struct PDCXConfig {
         std::cout << "buckets_merging=";
         kamping::print_vector(buckets_merging, ",");
         std::cout << V(use_string_sort) << "\n";
+        std::cout << V(use_string_sort_tie_breaking) << "\n";
         std::cout << V(use_lcps_tie_breaking) << "\n";
         std::cout << V(ams_levels) << "\n";
         std::cout << V(num_samples_splitters) << "\n";

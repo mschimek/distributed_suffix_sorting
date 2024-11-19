@@ -206,9 +206,6 @@ struct MergeSamplePhase {
 
     void tie_break_ranks(std::vector<MergeSamples>& merge_samples,
                          std::vector<LcpType>& lcps) const {
-        auto& timer = measurements::timer();
-        timer.synchronize_and_start("phase_04_string_tie_breaking");
-
         // assuming that chars are not split by sample sorter
         auto cmp_rank = [](const MergeSamples& a, const MergeSamples& b) {
             index_type i1 = a.index % DC::X;
@@ -266,36 +263,54 @@ struct MergeSamplePhase {
         double avg_len = total_segments == 0 ? 0 : (double)sum_segments / total_segments;
         get_stats_instance().avg_segment.push_back(avg_len);
         get_stats_instance().max_segment.push_back(max_segments);
-        timer.stop();
     }
 
     // sort merge samples using substrings and rank information
     void atomic_sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
-        auto& timer = measurements::timer();
-        timer.synchronize_and_start("phase_04_sort_merge_samples");
         atomic_sorter.sort(merge_samples, std::less<>{});
-        timer.stop();
     }
 
     std::vector<LcpType> string_sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
         bool output_lcps = config.use_lcps_tie_breaking;
-        auto& timer = measurements::timer();
-        timer.synchronize_and_start("phase_04_sort_merge_samples");
         std::vector<LcpType> lcps = mpi::sample_sort_strings(merge_samples,
                                                              comm,
                                                              string_sorter,
                                                              config.sample_sort_config,
                                                              output_lcps);
-        timer.stop();
         return lcps;
     }
 
-    void sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
-        if (config.use_string_sort) {
-            auto lcps = string_sort_merge_samples(merge_samples);
+    void string_sort_tie_break_merge_samples(std::vector<MergeSamples>& merge_samples) const {
+        std::vector<LcpType> lcps;
+        auto tie_break = [&](std::vector<MergeSamples>& merge_samples) {
             tie_break_ranks(merge_samples, lcps);
+        };
+        sample_sort_strings_tie_break(merge_samples,
+                                      comm,
+                                      string_sorter,
+                                      tie_break,
+                                      config.sample_sort_config);
+    }
+
+    void sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
+        auto& timer = measurements::timer();
+        if (config.use_string_sort && !config.use_string_sort_tie_breaking) {
+            timer.synchronize_and_start("phase_04_sort_merge_samples");
+            auto lcps = string_sort_merge_samples(merge_samples);
+            timer.stop();
+
+            timer.synchronize_and_start("phase_04_string_tie_breaking");
+            tie_break_ranks(merge_samples, lcps);
+            timer.stop();
+
+        } else if (config.use_string_sort && config.use_string_sort_tie_breaking) {
+            timer.synchronize_and_start("phase_04_sort_merge_samples");
+            string_sort_tie_break_merge_samples(merge_samples);
+            timer.stop();
         } else {
+            timer.synchronize_and_start("phase_04_sort_merge_samples");
             atomic_sort_merge_samples(merge_samples);
+            timer.stop();
         }
     }
 
