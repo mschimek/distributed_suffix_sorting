@@ -27,6 +27,7 @@ struct Statistics {
         sa_imbalance.clear();
         bucket_imbalance_samples.clear();
         bucket_imbalance_merging.clear();
+        bucket_imbalance_merging_received.clear();
         redistribute_chars.clear();
         redistribute_samples.clear();
         avg_segment.clear();
@@ -60,6 +61,8 @@ struct Statistics {
         print_vector(bucket_imbalance_samples, ",");
         std::cout << "bucket_imbalance_merging=";
         print_vector(bucket_imbalance_merging, ",");
+        std::cout << "bucket_imbalance_merging_received=";
+        print_vector(bucket_imbalance_merging_received, ",");
         std::cout << "redistribute_chars=";
         print_vector(redistribute_chars, ",");
         std::cout << "redistribute_samples=";
@@ -87,6 +90,7 @@ struct Statistics {
     std::vector<double> sa_imbalance;
     std::vector<double> bucket_imbalance_samples;
     std::vector<double> bucket_imbalance_merging;
+    std::vector<double> bucket_imbalance_merging_received;
     std::vector<bool> redistribute_chars;
     std::vector<bool> redistribute_samples;
     std::vector<double> avg_segment;

@@ -322,6 +322,13 @@ struct MergeSamplePhase {
         return local_SA;
     }
 
+    double get_imbalance_bucket(std::vector<uint64_t> &bucket_sizes, uint64_t total_chars) {
+        uint64_t num_buckets = bucket_sizes.size();
+        uint64_t largest_bucket = mpi_util::all_reduce_max(bucket_sizes, comm);
+        double avg_buckets = (double)total_chars / (num_buckets * comm.size());
+        double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
+        return bucket_imbalance;
+    }
 
     std::vector<index_type> space_effient_sort_SA(
         std::vector<char_type>& local_string,
@@ -352,14 +359,12 @@ struct MergeSamplePhase {
                                       all_buckets.begin(),
                                       all_buckets.end());
         */
+
         // log imbalance of buckets
-        uint64_t largest_bucket = mpi_util::all_reduce_max(bucket_sizes, comm);
         uint64_t total_chars = mpi_util::all_reduce_sum(local_chars, comm);
-        double avg_buckets = (double)total_chars / (num_buckets * comm.size());
-        double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
+        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, total_chars);
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
         report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance), comm);
-
 
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
@@ -392,6 +397,11 @@ struct MergeSamplePhase {
             sa_bucket_size.push_back(samples.size());
             samples.clear();
         }
+        // log imbalance of received suffixes
+        double bucket_imbalance_received = get_imbalance_bucket(sa_bucket_size, total_chars);
+        get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
+        report_on_root("--> Bucket Imbalance Received " + std::to_string(bucket_imbalance_received), comm);
+
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
         SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
@@ -550,9 +560,7 @@ struct MergeSamplePhase {
         KASSERT(mpi_util::all_reduce_sum(num_materialized_samples, comm) == total_chars);
 
         // log imbalance
-        uint64_t largest_bucket = mpi_util::max_value(bucket_sizes, comm);
-        double avg_bucket = (double)total_chars / (num_buckets * comm.size());
-        double bucket_imbalance = ((double)largest_bucket / avg_bucket) - 1.0;
+        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, total_chars);
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
         report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance), comm);
         timer.stop();
@@ -607,6 +615,12 @@ struct MergeSamplePhase {
             sa_bucket_size.push_back(samples.size());
             samples.clear();
         }
+
+        // log imbalance of received suffixes
+        double bucket_imbalance_received = get_imbalance_bucket(sa_bucket_size, total_chars);
+        get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
+        report_on_root("--> Randomized Bucket Imbalance Received " + std::to_string(bucket_imbalance_received), comm);
+
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
         SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);

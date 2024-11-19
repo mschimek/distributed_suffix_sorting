@@ -608,6 +608,8 @@ public:
             std::reverse(stats.sa_imbalance.begin(), stats.sa_imbalance.end());
             std::reverse(stats.bucket_imbalance_merging.begin(),
                          stats.bucket_imbalance_merging.end());
+            std::reverse(stats.bucket_imbalance_merging_received.begin(),
+                         stats.bucket_imbalance_merging_received.end());
             std::reverse(stats.avg_segment.begin(), stats.avg_segment.end());
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
             std::reverse(stats.bucket_sizes.begin(), stats.bucket_sizes.end());
