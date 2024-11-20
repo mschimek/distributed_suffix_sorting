@@ -621,7 +621,6 @@ struct MergeSamplePhase {
         get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
         report_on_root("--> Randomized Bucket Imbalance Received " + std::to_string(bucket_imbalance_received), comm);
 
-
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
         SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
         timer.stop();

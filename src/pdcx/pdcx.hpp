@@ -63,6 +63,7 @@ public:
         atomic_sorter.set_sorter(config.atomic_sorter);
         atomic_sorter.set_num_levels(config.ams_levels);
         atomic_sorter.set_sample_sort_config(config.sample_sort_config);
+        string_sorter.set_memory(config.memory_seq_string_sorter);
     }
 
     // maps the index i from a recursive dcx call back to the global index

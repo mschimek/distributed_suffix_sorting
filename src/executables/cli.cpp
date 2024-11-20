@@ -150,6 +150,11 @@ void configure_cli() {
                   "string_sorter",
                   string_sorter,
                   "String sorter to be used. [multi_key_qsort, radix_sort_ci2, radix_sort_ci3]");
+    cp.add_bytes('y',
+                 "memory_seq_string_sorter",
+                 pdcx_config.memory_seq_string_sorter,
+                 "Memory hint for sequential string sorter.");
+
     cp.add_flag('S',
                 "use_string_sort",
                 pdcx_config.use_string_sort,
@@ -365,11 +370,13 @@ void compute_sa(kamping::Communicator<>& comm) {
     //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc13") {
     //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc21") {
+    // } else
+    // if (dcx_variant == "dc21") {
     //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc31") {
     //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
-    // } else {
+    // }
+    //  else {
     //     std::cerr << "dcx variant " << dcx_variant
     //               << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
     // }

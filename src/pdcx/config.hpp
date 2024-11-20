@@ -17,6 +17,7 @@ struct PDCXConfig {
     std::vector<uint32_t> buckets_samples;
     std::vector<uint32_t> buckets_merging;
     uint64_t ams_levels = 1;
+    uint64_t memory_seq_string_sorter = 0;
     uint64_t num_samples_splitters = 100;
     uint64_t num_randomized_chunks = 100;
     uint64_t seed = 0;
@@ -52,6 +53,7 @@ struct PDCXConfig {
         std::cout << V(use_string_sort_tie_breaking) << "\n";
         std::cout << V(use_lcps_tie_breaking) << "\n";
         std::cout << V(ams_levels) << "\n";
+        std::cout << V(memory_seq_string_sorter) << "\n";
         std::cout << V(num_samples_splitters) << "\n";
         std::cout << V(use_random_sampling_splitters) << "\n";
         std::cout << V(balance_blocks_space_efficient_sort) << "\n";
