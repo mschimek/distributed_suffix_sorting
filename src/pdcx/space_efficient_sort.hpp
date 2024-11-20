@@ -29,7 +29,10 @@ struct SpaceEfficientSort {
             std::max<size_t>((config.num_samples_splitters + comm.size() - 1) / comm.size(),
                              blocks);
         std::vector<Splitter> local_splitters =
-            mpi::sample_random_splitters1<Splitter>(local_chars, nr_splitters, materialize_sample, comm);
+            mpi::sample_random_splitters1<Splitter>(local_chars,
+                                                    nr_splitters,
+                                                    materialize_sample,
+                                                    comm);
 
         auto cmp = [](Splitter const& a, Splitter const& b) {
             for (uint64_t i = 0; i < a.size(); i++) {
@@ -68,4 +71,13 @@ struct SpaceEfficientSort {
         return {bucket_sizes, sample_to_block};
     }
 };
+double get_imbalance_bucket(std::vector<uint64_t>& bucket_sizes,
+                            uint64_t total_chars,
+                            Communicator<>& comm) {
+    uint64_t num_buckets = bucket_sizes.size();
+    uint64_t largest_bucket = mpi_util::all_reduce_max(bucket_sizes, comm);
+    double avg_buckets = (double)total_chars / (num_buckets * comm.size());
+    double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
+    return bucket_imbalance;
+}
 } // namespace dsss::dcx

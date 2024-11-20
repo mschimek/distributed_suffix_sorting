@@ -49,7 +49,7 @@ bool all_reduce_and(T local_data, Communicator<>& comm) {
 }
 
 template <typename T>
-T ex_prefix_sum(T& local_data, Communicator<>& comm) {
+T ex_prefix_sum(T local_data, Communicator<>& comm) {
     auto local_sum = comm.exscan(send_buf(local_data), op(ops::plus<>{}));
     return local_sum.front();
 }

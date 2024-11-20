@@ -10,6 +10,16 @@
 #include "util/printing.hpp"
 namespace dsss::dcx {
 
+struct PDCXLengthInfo {
+    uint64_t local_sample_size = 0;
+    uint64_t total_sample_size = 0;
+    uint64_t local_chars = 0;
+    uint64_t total_chars = 0;
+    uint64_t largest_char = 0;
+    uint64_t chars_before = 0;
+    uint64_t recursion_depth = 0;
+};
+
 struct PDCXConfig {
     mpi::SampleSortConfig sample_sort_config = mpi::SampleSortConfig();
     mpi::AtomicSorters atomic_sorter = mpi::AtomicSorters::SampleSort;

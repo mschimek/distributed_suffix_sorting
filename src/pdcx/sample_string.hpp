@@ -76,16 +76,19 @@ struct SampleStringPhase {
 
     Communicator<>& comm;
     PDCXConfig& config;
+    PDCXLengthInfo& info;
     mpi::SortingWrapper& atomic_sorter;
     dsss::SeqStringSorterWrapper& string_sorter;
     uint64_t local_sample_size;
 
     SampleStringPhase(Communicator<>& _comm,
                       PDCXConfig& _config,
+                      PDCXLengthInfo& _info,
                       mpi::SortingWrapper& _atomic_sorter,
                       dsss::SeqStringSorterWrapper& _string_sorter)
         : comm(_comm),
           config(_config),
+          info(_info),
           atomic_sorter(_atomic_sorter),
           string_sorter(_string_sorter) {}
 
@@ -108,17 +111,16 @@ struct SampleStringPhase {
     }
 
     // sample substrings of length X at difference cover samples
-    std::vector<SampleString> compute_sample_strings(std::vector<char_type>& local_string,
-                                                     uint64_t chars_before) const {
+    std::vector<SampleString> compute_sample_strings(std::vector<char_type>& local_string) const {
         std::vector<SampleString> local_samples;
         uint64_t size_estimate = ((local_string.size() + X - 1) / X) * D;
         local_samples.reserve(size_estimate);
 
-        uint64_t offset = chars_before % X;
+        uint64_t offset = info.chars_before % X;
         for (uint64_t i = 0; i + X - 1 < local_string.size(); i++) {
             uint64_t m = (i + offset) % X;
             if (is_in_dc<DC>(m)) {
-                index_type index = index_type(chars_before + i);
+                index_type index = index_type(info.chars_before + i);
                 std::array<char_type, X + 1> letters = materialize_sample(local_string, i);
                 local_samples.push_back(SampleString(std::move(letters), index));
             }
@@ -131,40 +133,32 @@ struct SampleStringPhase {
 
     // sort samples using an atomic sorter
     void atomic_sort_samples(std::vector<SampleString>& local_samples) const {
-        auto& timer = measurements::timer();
-        timer.synchronize_and_start("phase_01_sort_local_samples");
         atomic_sorter.sort(local_samples, std::less<>{});
-        timer.stop();
-        local_samples.shrink_to_fit();
     }
 
     // sort samples using a string sorter
     void string_sort_samples(std::vector<SampleString>& local_samples) const {
-        auto& timer = measurements::timer();
-        timer.synchronize_and_start("phase_01_sort_local_samples");
         mpi::sample_sort_strings(local_samples, comm, string_sorter, config.sample_sort_config);
-        timer.stop();
-        local_samples.shrink_to_fit();
     }
 
-    uint64_t get_local_sample_size() const { return local_sample_size; }
-
-    // create and sort difference cover samples
-    // sideeffect: shifts characters from next PE to localstring
-    std::vector<SampleString> sorted_dc_samples(std::vector<char_type>& local_string,
-                                                uint64_t chars_before) {
-        shift_chars_left(local_string);
-        std::vector<SampleString> local_samples =
-            compute_sample_strings(local_string, chars_before);
-
-        // number of dc-samples in local string
-        local_sample_size = local_samples.size();
+    void sort_samples(std::vector<SampleString>& local_samples) const {
+        auto& timer = measurements::timer();
+        timer.synchronize_and_start("phase_01_sort_local_samples");
         if (config.use_string_sort) {
             string_sort_samples(local_samples);
         } else {
             atomic_sort_samples(local_samples);
         }
+        timer.stop();
+        local_samples.shrink_to_fit();
+    }
 
+    // create and sort difference cover samples
+    // sideeffect: shifts characters from next PE to localstring
+    std::vector<SampleString> sorted_dc_samples(std::vector<char_type>& local_string) {
+        shift_chars_left(local_string);
+        std::vector<SampleString> local_samples = compute_sample_strings(local_string);
+        sort_samples(local_samples);
         bool redist_samples = redistribute_if_imbalanced(local_samples, config.min_imbalance, comm);
         get_stats_instance().redistribute_samples.push_back(redist_samples);
         return local_samples;

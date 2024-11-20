@@ -104,16 +104,19 @@ struct MergeSamplePhase {
 
     Communicator<>& comm;
     PDCXConfig& config;
+    PDCXLengthInfo& info;
     mpi::SortingWrapper& atomic_sorter;
     dsss::SeqStringSorterWrapper& string_sorter;
     SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort;
 
     MergeSamplePhase(Communicator<>& _comm,
                      PDCXConfig& _config,
+                     PDCXLengthInfo& _info,
                      mpi::SortingWrapper& _atomic_sorter,
                      dsss::SeqStringSorterWrapper& _string_sorter)
         : comm(_comm),
           config(_config),
+          info(_info),
           atomic_sorter(_atomic_sorter),
           string_sorter(_string_sorter),
           space_efficient_sort(comm, config) {}
@@ -125,21 +128,19 @@ struct MergeSamplePhase {
     }
 
     // add dummy padding that is sorted at the end
-    void push_padding(std::vector<RankIndex>& local_ranks, index_type total_chars) const {
+    void push_padding(std::vector<RankIndex>& local_ranks) const {
         if (comm.rank() == comm.size() - 1) {
-            RankIndex padding(0, total_chars, false);
+            RankIndex padding(0, info.total_chars, false);
             std::fill_n(std::back_inserter(local_ranks), D, padding);
             local_ranks.shrink_to_fit();
         }
     }
 
-    uint64_t get_ranks_pos(std::vector<RankIndex>& local_ranks,
-                           int64_t local_index,
-                           int64_t chars_before) const {
+    uint64_t get_ranks_pos(std::vector<RankIndex>& local_ranks, int64_t local_index) const {
         int64_t block_nr =
             std::max(int64_t(0), (local_index / X) - 1); // block of one periodic sample
         int64_t rank_pos = block_nr * D;                 // estimate of position
-        while (local_index > (int64_t)local_ranks[rank_pos].index - chars_before) {
+        while (local_index > (int64_t)local_ranks[rank_pos].index - (int64_t)info.chars_before) {
             rank_pos++;
             KASSERT(rank_pos < (int64_t)local_ranks.size());
         }
@@ -148,7 +149,6 @@ struct MergeSamplePhase {
 
     MergeSamples materialize_merge_sample(std::vector<char_type>& local_string,
                                           std::vector<RankIndex>& local_ranks,
-                                          uint64_t chars_before,
                                           uint64_t char_pos,
                                           uint64_t rank_pos) const {
         KASSERT(char_pos + X - 2 < local_string.size());
@@ -163,42 +163,32 @@ struct MergeSamplePhase {
         for (uint32_t i = 0; i < D; i++) {
             ranks[i] = local_ranks[rank_pos + i].rank;
         }
-        uint64_t global_index = char_pos + chars_before;
+        uint64_t global_index = char_pos + info.chars_before;
         return MergeSamples(std::move(chars), std::move(ranks), global_index);
     }
     MergeSamples materialize_merge_sample_at(std::vector<char_type>& local_string,
                                              std::vector<RankIndex>& local_ranks,
-                                             uint64_t chars_before,
                                              uint64_t local_index) const {
-        uint64_t rank_pos = get_ranks_pos(local_ranks, local_index, chars_before);
-        return materialize_merge_sample(local_string,
-                                        local_ranks,
-                                        chars_before,
-                                        local_index,
-                                        rank_pos);
+        uint64_t rank_pos = get_ranks_pos(local_ranks, local_index);
+        return materialize_merge_sample(local_string, local_ranks, local_index, rank_pos);
     }
 
     // materialize all substrings of length X - 1 and corresponding D ranks
     std::vector<MergeSamples> construct_merge_samples(std::vector<char_type>& local_string,
-                                                      std::vector<RankIndex>& local_ranks,
-                                                      uint64_t chars_before,
-                                                      uint64_t chars_at_proc) const {
+                                                      std::vector<RankIndex>& local_ranks) const {
         uint64_t rank_pos = 0;
         std::vector<MergeSamples> merge_samples;
-        merge_samples.reserve(chars_at_proc);
+        merge_samples.reserve(info.local_chars);
 
         // for each index in local string
-        for (uint64_t local_index = 0; local_index < chars_at_proc; local_index++) {
+        for (uint64_t local_index = 0; local_index < info.local_chars; local_index++) {
             // find next index in difference cover
-            while (local_index > local_ranks[rank_pos].index - chars_before) {
+            while (local_index > local_ranks[rank_pos].index - info.chars_before) {
                 rank_pos++;
                 KASSERT(rank_pos < local_ranks.size());
             }
-            MergeSamples sample = materialize_merge_sample(local_string,
-                                                           local_ranks,
-                                                           chars_before,
-                                                           local_index,
-                                                           rank_pos);
+            MergeSamples sample =
+                materialize_merge_sample(local_string, local_ranks, local_index, rank_pos);
             merge_samples.push_back(sample);
         }
         return merge_samples;
@@ -322,19 +312,9 @@ struct MergeSamplePhase {
         return local_SA;
     }
 
-    double get_imbalance_bucket(std::vector<uint64_t> &bucket_sizes, uint64_t total_chars) {
-        uint64_t num_buckets = bucket_sizes.size();
-        uint64_t largest_bucket = mpi_util::all_reduce_max(bucket_sizes, comm);
-        double avg_buckets = (double)total_chars / (num_buckets * comm.size());
-        double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
-        return bucket_imbalance;
-    }
-
     std::vector<index_type> space_effient_sort_SA(
         std::vector<char_type>& local_string,
         std::vector<RankIndex>& local_ranks,
-        uint64_t chars_before,
-        uint64_t local_chars,
         std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
         auto& timer = measurements::timer();
 
@@ -343,7 +323,7 @@ struct MergeSamplePhase {
 
         auto [bucket_sizes, sample_to_bucket] =
             space_efficient_sort.compute_sample_to_block_mapping(local_string,
-                                                                 local_chars,
+                                                                 info.local_chars,
                                                                  global_splitters);
         std::vector<MergeSamples> samples;
         SA concat_sa_buckets;
@@ -361,10 +341,11 @@ struct MergeSamplePhase {
         */
 
         // log imbalance of buckets
-        uint64_t total_chars = mpi_util::all_reduce_sum(local_chars, comm);
-        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, total_chars);
+        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
-        report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance), comm);
+        report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance),
+                       comm,
+                       info.recursion_depth);
 
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
@@ -372,10 +353,10 @@ struct MergeSamplePhase {
 
             // collect samples falling into kth block
             samples.reserve(bucket_sizes[k]);
-            for (uint64_t idx = 0; idx < local_chars; idx++) {
+            for (uint64_t idx = 0; idx < info.local_chars; idx++) {
                 if (sample_to_bucket[idx] == k) {
                     MergeSamples sample =
-                        materialize_merge_sample_at(local_string, local_ranks, chars_before, idx);
+                        materialize_merge_sample_at(local_string, local_ranks, idx);
                     samples.push_back(sample);
                 }
             }
@@ -398,9 +379,12 @@ struct MergeSamplePhase {
             samples.clear();
         }
         // log imbalance of received suffixes
-        double bucket_imbalance_received = get_imbalance_bucket(sa_bucket_size, total_chars);
+        double bucket_imbalance_received =
+            get_imbalance_bucket(sa_bucket_size, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
-        report_on_root("--> Bucket Imbalance Received " + std::to_string(bucket_imbalance_received), comm);
+        report_on_root("--> Bucket Imbalance Received " + std::to_string(bucket_imbalance_received),
+                       comm,
+                       info.recursion_depth);
 
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
@@ -413,8 +397,6 @@ struct MergeSamplePhase {
     std::vector<index_type> space_effient_sort_chunking_SA(
         std::vector<char_type>& local_string,
         std::vector<RankIndex>& local_ranks,
-        uint64_t chars_before,
-        uint64_t local_chars,
         std::vector<typename SampleString::SampleStringLetters>& global_splitters) {
         auto& timer = measurements::timer();
         using SA = std::vector<index_type>;
@@ -429,9 +411,9 @@ struct MergeSamplePhase {
         std::vector<int64_t> send_cnt_ranks(comm.size(), 0);
         std::vector<int64_t> send_cnt_index(comm.size(), 0);
 
-        uint64_t total_chars = mpi_util::all_reduce_sum(local_chars, comm);
+        uint64_t total_chars = mpi_util::all_reduce_sum(info.local_chars, comm);
         uint64_t chunk_size = config.num_randomized_chunks;
-        uint64_t num_local_chunks = util::div_ceil(local_chars, chunk_size);
+        uint64_t num_local_chunks = util::div_ceil(info.local_chars, chunk_size);
 
         // add padding to be able to materialize last suffix in chunk
         uint64_t num_dc_samples = util::div_ceil(chunk_size, X) * D + 1;
@@ -460,7 +442,7 @@ struct MergeSamplePhase {
         // store global index of beginning of each chunk
         std::vector<index_type> chunk_global_index =
             extract_attribute<Chunk, index_type>(chunks, [&](Chunk& c) {
-                return index_type(chars_before + c.start_index);
+                return index_type(info.chars_before + c.start_index);
             });
 
         // linearize data
@@ -484,11 +466,11 @@ struct MergeSamplePhase {
             for (uint64_t i = 0; i < chars_with_padding - (limit - start); i++) {
                 chunked_chars.push_back(fill_char);
             }
-            uint32_t size = std::min(chunk_size, (local_chars - start));
+            uint32_t size = std::min(chunk_size, (info.local_chars - start));
             chunk_sizes.push_back(size);
 
             // ranks
-            uint64_t first_rank = get_ranks_pos(local_ranks, start, chars_before);
+            uint64_t first_rank = get_ranks_pos(local_ranks, start);
             limit = std::min(first_rank + ranks_with_padding, local_ranks.size());
             for (uint64_t i = first_rank; i < limit; i++) {
                 chunked_ranks.push_back(local_ranks[i]);
@@ -560,9 +542,11 @@ struct MergeSamplePhase {
         KASSERT(mpi_util::all_reduce_sum(num_materialized_samples, comm) == total_chars);
 
         // log imbalance
-        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, total_chars);
+        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, total_chars, comm);
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
-        report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance), comm);
+        report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
+                       comm,
+                       info.recursion_depth);
         timer.stop();
 
         std::vector<MergeSamples> samples;
@@ -595,7 +579,6 @@ struct MergeSamplePhase {
                         }
                         auto merge_sample = materialize_merge_sample(chunked_chars,
                                                                      chunked_ranks,
-                                                                     chars_before,
                                                                      char_pos,
                                                                      rank_pos);
 
@@ -617,9 +600,12 @@ struct MergeSamplePhase {
         }
 
         // log imbalance of received suffixes
-        double bucket_imbalance_received = get_imbalance_bucket(sa_bucket_size, total_chars);
+        double bucket_imbalance_received = get_imbalance_bucket(sa_bucket_size, total_chars, comm);
         get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
-        report_on_root("--> Randomized Bucket Imbalance Received " + std::to_string(bucket_imbalance_received), comm);
+        report_on_root("--> Randomized Bucket Imbalance Received "
+                           + std::to_string(bucket_imbalance_received),
+                       comm,
+                       info.recursion_depth);
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
         SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);

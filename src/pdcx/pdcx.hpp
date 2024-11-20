@@ -26,6 +26,7 @@
 #include "mpi/zip.hpp"
 #include "pdcx/compute_ranks.hpp"
 #include "pdcx/config.hpp"
+#include "pdcx/difference_cover.hpp"
 #include "pdcx/merge_samples.hpp"
 #include "pdcx/redistribute.hpp"
 #include "pdcx/sample_string.hpp"
@@ -102,26 +103,17 @@ public:
         remove_padding(local_string);
     }
 
-    // computes how many chars are at position with a remainder
-    std::array<uint64_t, DC::X> compute_num_pos_mod() const {
-        std::array<uint64_t, X> num_pos_mod;
-        num_pos_mod.fill(0);
-        for (uint64_t i = 0; i < X; i++) {
-            num_pos_mod[i] = (total_chars + X - 1 - i) / X;
-        }
-        return num_pos_mod;
-    }
-
     void dispatch_recursive_call(std::vector<RankIndex>& local_ranks, uint64_t last_rank) {
         auto map_back_func = [&](index_type sa_i) { return map_back(sa_i); };
-        if (total_chars <= 80u) {
+        // if (total_chars <= 80u) {
+        if (info.total_chars <= 80u) {
             // continue with sequential algorithm
             report_on_root("Sequential SA on local ranks",
                            comm,
                            recursion_depth,
                            config.print_phases);
             sequential_sa_on_local_ranks<char_type, index_type, DC>(local_ranks,
-                                                                    local_sample_size,
+                                                                    info.local_sample_size,
                                                                     map_back_func,
                                                                     comm);
         } else {
@@ -155,7 +147,7 @@ public:
 
         uint64_t after_discarding = num_ranks_after_discarding(local_ranks);
         uint64_t total_after_discarding = mpi_util::all_reduce_sum(after_discarding, comm);
-        double reduction = ((double)total_after_discarding / total_sample_size);
+        double reduction = ((double)total_after_discarding / info.total_sample_size);
         stats.discarding_reduction.push_back(reduction);
 
         bool use_discarding = reduction <= config.discarding_threshold;
@@ -174,7 +166,8 @@ public:
         timer.synchronize_and_start("phase_03_sort_ranks_index");
         atomic_sorter.sort(local_ranks, RankIndex::cmp_by_index);
         timer.stop();
-        local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
+        report_on_root("distribute after recursion", comm);
+        local_ranks = mpi_util::distribute_data_custom(local_ranks, info.local_sample_size, comm);
     }
 
     template <typename new_char_type>
@@ -183,13 +176,10 @@ public:
         std::vector<new_char_type> recursive_string =
             extract_attribute<RankIndex, new_char_type>(local_ranks, get_rank);
 
-        // TODO: is distirbute worth it?
-        // recursive_string =
-        //     mpi_util::distribute_data_custom(recursive_string, local_sample_size, comm);
-
         free_memory(std::move(local_ranks));
 
         // TODO: flexible selection of DC
+
         // create new instance of PDC3 with templates of new char type size
         PDCX<new_char_type, index_type, DC> rec_pdcx(config, comm);
 
@@ -342,7 +332,7 @@ public:
         int64_t samples_before = mpi_util::ex_prefix_sum(num_samples, comm);
         std::vector<Substring> local_splitters;
         for (uint64_t i = 0; i < blocks - 1; i++) {
-            int64_t global_index = (i + 1) * total_sample_size / blocks;
+            int64_t global_index = (i + 1) * info.total_sample_size / blocks;
             int64_t x = global_index - samples_before;
             if (x >= 0 && x < num_samples) {
                 local_splitters.push_back(local_samples[x].letters);
@@ -352,45 +342,38 @@ public:
         return global_splitters;
     }
 
-    std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
-        timer.synchronize_and_start("pdcx");
+    // computes how many chars are at position with a remainder
+    std::array<uint64_t, DC::X> compute_num_pos_mod(uint64_t total_chars) const {
+        std::array<uint64_t, X> num_pos_mod;
+        num_pos_mod.fill(0);
+        for (uint64_t i = 0; i < X; i++) {
+            num_pos_mod[i] = (total_chars + X - 1 - i) / X;
+        }
+        return num_pos_mod;
+    }
+    void compute_length_info(std::vector<char_type>& local_string) {
+        // compute length information
+        info.local_chars = local_string.size();
+        info.total_chars = mpi_util::all_reduce_sum(local_string.size(), comm);
+        info.largest_char = mpi_util::all_reduce_max(local_string, comm);
+        info.chars_before = mpi_util::ex_prefix_sum(local_string.size(), comm);
+        info.recursion_depth = recursion_depth;
 
-        const int process_rank = comm.rank();
+        const uint64_t rem = info.total_chars % X;
+        bool added_dummy = is_in_dc<DC>(rem);
 
-        //******* Start Phase 0: Preparation  ********
-        timer.synchronize_and_start("phase_00_preparation");
-
-        // set string sorting algorithm
-        // can use radix sort only on first level
-        dsss::SeqStringSorter string_algo =
-            recursion_depth == 0 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
-        string_sorter.set_sorter(string_algo);
-
-        bool redist_chars = redistribute_if_imbalanced(local_string, config.min_imbalance, comm);
-        stats.redistribute_chars.push_back(redist_chars);
-
-        // figure out lengths of the other strings
-        uint64_t local_string_size = local_string.size();
-        std::vector<uint64_t> chars_at_proc = comm.allgather(send_buf(local_string_size));
-        total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), uint64_t(0));
-        local_chars = chars_at_proc[process_rank];
-
-        std::string msg_level = "Recursion Level: " + std::to_string(recursion_depth)
-                                + ", Total Chars: " + std::to_string(total_chars);
-        report_on_root(msg_level, comm, recursion_depth, config.print_phases);
-        report_on_root("Phase 0: Preparation", comm, recursion_depth, config.print_phases);
-
-        // number of chars before processor i
-        std::vector<uint64_t> chars_before(comm.size());
-        std::exclusive_scan(chars_at_proc.begin(),
-                            chars_at_proc.end(),
-                            chars_before.begin(),
-                            uint64_t(0));
+        uint64_t local_sample_size = 0;
+        uint64_t offset = info.chars_before % X;
+        for (uint64_t i = 0; i < local_string.size(); i++) {
+            uint64_t m = (i + offset) % X;
+            local_sample_size += is_in_dc<DC>(m);
+        }
+        local_sample_size += added_dummy && (comm.rank() == comm.size() - 1);
+        info.local_sample_size = local_sample_size;
+        info.total_sample_size = mpi_util::all_reduce_sum(local_sample_size, comm);
 
         // number of positions with mod X = d
-        std::array<uint64_t, X> num_at_mod = compute_num_pos_mod();
-        const uint64_t rem = total_chars % X;
-        bool added_dummy = is_in_dc<DC>(rem);
+        std::array<uint64_t, X> num_at_mod = compute_num_pos_mod(info.total_chars);
         num_at_mod[rem] += added_dummy;
 
         // inclusive prefix sum to compute map back
@@ -399,8 +382,29 @@ public:
             uint d = DC::DC[i - 1];
             samples_before[i] = samples_before[i - 1] + num_at_mod[d];
         }
-        total_sample_size = samples_before.back();
+    }
+
+    std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
+        timer.synchronize_and_start("pdcx");
+
+        //******* Start Phase 0: Preparation  ********
+        timer.synchronize_and_start("phase_00_preparation");
+
+        bool redist_chars = redistribute_if_imbalanced(local_string, config.min_imbalance, comm);
+        stats.redistribute_chars.push_back(redist_chars);
+
+        compute_length_info(local_string);
         add_padding(local_string);
+
+        std::string msg_level = "Recursion Level: " + std::to_string(recursion_depth)
+                                + ", Total Chars: " + std::to_string(info.total_chars);
+        report_on_root(msg_level, comm, recursion_depth, config.print_phases);
+        report_on_root("Phase 0: Preparation", comm, recursion_depth, config.print_phases);
+
+        // configure string sorting algorithm, can use radix sort only on first level
+        dsss::SeqStringSorter string_algo =
+            recursion_depth == 0 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
+        string_sorter.set_sorter(string_algo);
 
         // configure space efficient sort
         uint64_t buckets_samples = config.buckets_samples_at_level(recursion_depth);
@@ -426,15 +430,15 @@ public:
         stats.algo = "DC" + std::to_string(X);
         stats.num_processors = comm.size();
         stats.max_depth = std::max(stats.max_depth, recursion_depth);
-        stats.string_sizes.push_back(total_chars);
-        stats.local_string_sizes.push_back(local_string.size());
+        stats.local_string_sizes.push_back(info.local_chars);
+        stats.string_sizes.push_back(info.total_chars);
         stats.char_type_used.push_back(8 * sizeof(char_type));
 
         timer.stop();
         //******* End Phase 0: Preparation  ********
 
         // solve sequentially on root to avoid corner cases with empty PEs
-        if (total_chars <= comm.size() * 2 * X) {
+        if (info.total_chars <= comm.size() * 2 * X) {
             report_on_root("Solve SA sequentially on root",
                            comm,
                            recursion_depth,
@@ -446,11 +450,11 @@ public:
             return local_SA;
         }
 
-
         std::vector<RankIndex> local_ranks;
         std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
         SampleStringPhase<char_type, index_type, DC> phase1(comm,
                                                             config,
+                                                            info,
                                                             atomic_sorter,
                                                             string_sorter);
         if (use_bucket_sorting_samples) {
@@ -461,14 +465,9 @@ public:
                            recursion_depth,
                            config.print_phases);
             timer.synchronize_and_start("phase_01_02_samples_ranks");
-            LexicographicRankPhase<char_type, index_type, DC> phase2(comm);
-            local_sample_size = 0;
-            local_ranks = phase2.create_ranks_space_efficient(phase1,
-                                                              local_string,
-                                                              local_chars,
-                                                              chars_before[comm.rank()],
-                                                              buckets_samples,
-                                                              local_sample_size);
+            LexicographicRankPhase<char_type, index_type, DC> phase2(comm, info);
+            local_ranks =
+                phase2.create_ranks_space_efficient(phase1, local_string, buckets_samples);
             timer.stop();
             //******* End Phase 1 + 2: Construct Samples +   Construct Ranks********
 
@@ -476,9 +475,7 @@ public:
             //******* Start Phase 1: Construct Samples  ********
             report_on_root("Phase 1: Sort Samples", comm, recursion_depth, config.print_phases);
             timer.synchronize_and_start("phase_01_samples");
-            std::vector<SampleString> local_samples =
-                phase1.sorted_dc_samples(local_string, chars_before[process_rank]);
-            local_sample_size = phase1.get_local_sample_size();
+            std::vector<SampleString> local_samples = phase1.sorted_dc_samples(local_string);
             timer.stop();
 
             // get splitters from sorted sample sequence
@@ -490,7 +487,7 @@ public:
             //******* Start Phase 2: Construct Ranks  ********
             report_on_root("Phase 2: Construct Ranks", comm, recursion_depth, config.print_phases);
             timer.synchronize_and_start("phase_02_ranks");
-            LexicographicRankPhase<char_type, index_type, DC> phase2(comm);
+            LexicographicRankPhase<char_type, index_type, DC> phase2(comm, info);
             local_ranks = phase2.create_lexicographic_ranks(local_samples);
             free_memory(std::move(local_samples));
             timer.stop();
@@ -505,14 +502,15 @@ public:
         index_type last_rank = local_ranks.empty() ? index_type(0) : local_ranks.back().rank;
         comm.bcast_single(send_recv_buf(last_rank), root(comm.size() - 1));
         stats.highest_ranks.push_back(last_rank);
-        bool chars_distinct = last_rank >= index_type(total_sample_size);
+        bool chars_distinct = last_rank >= index_type(info.total_sample_size);
 
         if (chars_distinct) {
             timer.synchronize_and_start("phase_03_sort_index_base");
             atomic_sorter.sort(local_ranks, RankIndex::cmp_by_index);
             timer.stop();
 
-            local_ranks = mpi_util::distribute_data_custom(local_ranks, local_sample_size, comm);
+            local_ranks =
+                mpi_util::distribute_data_custom(local_ranks, info.local_sample_size, comm);
             local_ranks.shrink_to_fit();
 
         } else {
@@ -527,10 +525,11 @@ public:
 
         MergeSamplePhase<char_type, index_type, DC> phase4(comm,
                                                            config,
+                                                           info,
                                                            atomic_sorter,
                                                            string_sorter);
         phase4.shift_ranks_left(local_ranks);
-        phase4.push_padding(local_ranks, total_chars);
+        phase4.push_padding(local_ranks);
 
         std::vector<index_type> local_SA;
         if (use_bucket_sorting_merging) {
@@ -541,7 +540,7 @@ public:
                     return phase1.materialize_sample(local_string, i);
                 };
                 global_samples_splitters =
-                    space_efficient_sort.random_sample_splitters(local_chars,
+                    space_efficient_sort.random_sample_splitters(info.local_chars,
                                                                  buckets_merging,
                                                                  materialize_sample);
                 timer.stop();
@@ -557,24 +556,17 @@ public:
                 // with chunking
                 local_SA = phase4.space_effient_sort_chunking_SA(local_string,
                                                                  local_ranks,
-                                                                 chars_before[comm.rank()],
-                                                                 local_chars,
                                                                  global_samples_splitters);
 
             } else {
                 local_SA = phase4.space_effient_sort_SA(local_string,
                                                         local_ranks,
-                                                        chars_before[comm.rank()],
-                                                        local_chars,
                                                         global_samples_splitters);
             }
 
         } else {
             std::vector<MergeSamples> merge_samples =
-                phase4.construct_merge_samples(local_string,
-                                               local_ranks,
-                                               chars_before[process_rank],
-                                               chars_at_proc[process_rank]);
+                phase4.construct_merge_samples(local_string, local_ranks);
             free_memory(std::move(local_ranks));
             phase4.sort_merge_samples(merge_samples);
             local_SA = phase4.extract_SA(merge_samples);
@@ -586,8 +578,9 @@ public:
 
 
         // logging
-        stats.string_imbalance.push_back(mpi_util::compute_max_imbalance(local_chars, comm));
-        stats.sample_imbalance.push_back(mpi_util::compute_max_imbalance(local_sample_size, comm));
+        stats.string_imbalance.push_back(mpi_util::compute_max_imbalance(info.local_chars, comm));
+        stats.sample_imbalance.push_back(
+            mpi_util::compute_max_imbalance(info.local_sample_size, comm));
         stats.sa_imbalance.push_back(mpi_util::compute_max_imbalance(local_SA.size(), comm));
 
         clean_up(local_string);
@@ -615,7 +608,7 @@ public:
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
             std::reverse(stats.bucket_sizes.begin(), stats.bucket_sizes.end());
         }
-        KASSERT(mpi_util::all_reduce_sum(local_SA.size(), comm) == total_chars);
+        KASSERT(mpi_util::all_reduce_sum(local_SA.size(), comm) == info.total_chars);
         KASSERT(check_suffixarray(local_SA, local_string, comm),
                 "Suffix array is not sorted on level " + std::to_string(recursion_depth));
         return local_SA;
@@ -623,7 +616,6 @@ public:
 
     void report_time() {
         comm.barrier();
-        // timer.aggregate_and_print(measurements::SimpleJsonPrinter<>{});
         timer.aggregate_and_print(measurements::FlatPrinter{});
         comm.barrier();
     }
@@ -647,13 +639,11 @@ public:
     constexpr static bool DBG = false;
     constexpr static bool use_recursion = true;
 
-    uint64_t local_sample_size;
-    uint64_t total_sample_size;
-    uint64_t local_chars;
-    uint64_t total_chars;
+    PDCXLengthInfo info;
+    PDCXConfig& config;
+
     std::array<index_type, DC::D + 1> samples_before;
 
-    PDCXConfig& config;
     mpi::SortingWrapper atomic_sorter;
     dsss::SeqStringSorterWrapper string_sorter;
 
