@@ -362,24 +362,35 @@ void compute_sa(kamping::Communicator<>& comm) {
     // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
-    run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC133Param>, char_type, index_type>(comm);
-    // if (dcx_variant == "dc3") {
-    //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc7") {
-    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc13") {
-    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    // } else
-    // if (dcx_variant == "dc21") {
-    //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc31") {
-    //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
-    // }
-    //  else {
-    //     std::cerr << "dcx variant " << dcx_variant
-    //               << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31]. \n";
-    // }
+    if (dcx_variant == "dc3") {
+        run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc7") {
+        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc13") {
+        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc21") {
+        run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc31") {
+        run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc39") {
+        run_pdcx<PDCX<char_type, index_type, DC39Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc57") {
+        run_pdcx<PDCX<char_type, index_type, DC57Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc73") {
+        run_pdcx<PDCX<char_type, index_type, DC73Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc91") {
+        run_pdcx<PDCX<char_type, index_type, DC91Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc95") {
+        run_pdcx<PDCX<char_type, index_type, DC95Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc133") {
+        run_pdcx<PDCX<char_type, index_type, DC133Param>, char_type, index_type>(comm);
+    } else {
+        std::cerr << "dcx variant " << dcx_variant
+                  << " not supported. Must be in [dc3, dc7, dc13, dc21, dc31, dc39, dc57, dc73, "
+                     "dc91, dc95, dc133]. \n";
+    }
 
     algo_timer.stop();
     algo_timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
