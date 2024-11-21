@@ -142,6 +142,7 @@ struct LexicographicRankPhase {
         const uint32_t X = DC::X;
 
         auto& timer = measurements::timer();
+        phase1.add_padding(local_string, DC::X);
         phase1.shift_chars_left(local_string);
 
         PDCXConfig config = phase1.config;

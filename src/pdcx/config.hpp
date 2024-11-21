@@ -14,6 +14,7 @@ struct PDCXLengthInfo {
     uint64_t local_sample_size = 0;
     uint64_t total_sample_size = 0;
     uint64_t local_chars = 0;
+    uint64_t local_chars_with_dummy = 0;
     uint64_t total_chars = 0;
     uint64_t largest_char = 0;
     uint64_t chars_before = 0;
@@ -39,6 +40,8 @@ struct PDCXConfig {
     bool use_random_sampling_splitters = false;
     bool balance_blocks_space_efficient_sort = false;
     bool use_randomized_chunks_merging = false;
+    bool use_char_packing_samples = false;
+    bool use_char_packing_merging = false;
     bool print_phases = true;
 
 
@@ -62,6 +65,8 @@ struct PDCXConfig {
         std::cout << V(use_string_sort) << "\n";
         std::cout << V(use_string_sort_tie_breaking) << "\n";
         std::cout << V(use_lcps_tie_breaking) << "\n";
+        std::cout << V(use_char_packing_samples) << "\n";
+        std::cout << V(use_char_packing_merging) << "\n";
         std::cout << V(ams_levels) << "\n";
         std::cout << V(memory_seq_string_sorter) << "\n";
         std::cout << V(num_samples_splitters) << "\n";

@@ -16,6 +16,7 @@
 #include "sorters/sample_sort_strings.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "util/printing.hpp"
 
 namespace dsss::dcx {
 
@@ -50,7 +51,7 @@ struct DCSampleString {
                 return letters[i] < other.letters[i];
             }
         }
-        return index < other.index;
+        return false;
     }
 
     std::string to_string() const {
@@ -79,7 +80,12 @@ struct SampleStringPhase {
     PDCXLengthInfo& info;
     mpi::SortingWrapper& atomic_sorter;
     dsss::SeqStringSorterWrapper& string_sorter;
-    uint64_t local_sample_size;
+
+    // packing
+    const uint64_t char_bits = sizeof(char_type) * 8;
+    const uint64_t packed_char_bits = std::ceil(std::log2(info.largest_char));
+    const uint64_t chars_per_entry = char_bits / packed_char_bits;
+
 
     SampleStringPhase(Communicator<>& _comm,
                       PDCXConfig& _config,
@@ -93,9 +99,20 @@ struct SampleStringPhase {
           string_sorter(_string_sorter) {}
 
 
+    // add padding to local string
+    void add_padding(std::vector<char_type>& local_data, uint64_t padding_length) {
+        char_type padding = char_type(0);
+        if (comm.rank() == comm.size() - 1) {
+            std::fill_n(std::back_inserter(local_data), padding_length, padding);
+        }
+    }
+
+
     // shift characters left to compute overlapping samples
-    void shift_chars_left(std::vector<char_type>& local_string) const {
-        mpi_util::shift_entries_left(local_string, X - 1, comm);
+    void shift_chars_left(std::vector<char_type>& local_string, uint64_t packing_ratio = 1) const {
+        // if we can pack 2 chars into one type, we need more 2x padding
+        uint64_t count = packing_ratio * X - 1;
+        mpi_util::shift_entries_left(local_string, count, comm);
         local_string.shrink_to_fit();
     }
 
@@ -110,14 +127,33 @@ struct SampleStringPhase {
         return letters;
     }
 
+    SampleString::SampleStringLetters
+    materialize_packed_sample(std::vector<char_type>& local_string,
+                              uint64_t i,
+                              uint64_t packed_char_bits,
+                              uint64_t chars_per_entry) const {
+        std::array<char_type, X + 1> letters;
+        letters.fill(0);
+        uint64_t char_pos = i;
+        for (uint64_t k = 0; k < X; k++) {
+            for (uint64_t j = 0; j < chars_per_entry; j++) {
+                KASSERT(char_pos < local_string.size());
+                letters[k] = (letters[k] << packed_char_bits) | (local_string[char_pos]);
+                char_pos++;
+            }
+        }
+        letters.back() = 0; // 0-terminated string
+        return letters;
+    }
+
     // sample substrings of length X at difference cover samples
-    std::vector<SampleString> compute_sample_strings(std::vector<char_type>& local_string) const {
+    std::vector<SampleString> compute_sample_strings(std::vector<char_type>& local_string,
+                                                     auto materialize_sample) const {
         std::vector<SampleString> local_samples;
-        uint64_t size_estimate = ((local_string.size() + X - 1) / X) * D;
-        local_samples.reserve(size_estimate);
+        local_samples.reserve(info.local_sample_size);
 
         uint64_t offset = info.chars_before % X;
-        for (uint64_t i = 0; i + X - 1 < local_string.size(); i++) {
+        for (uint64_t i = 0; i < info.local_chars_with_dummy; i++) {
             uint64_t m = (i + offset) % X;
             if (is_in_dc<DC>(m)) {
                 index_type index = index_type(info.chars_before + i);
@@ -125,6 +161,7 @@ struct SampleStringPhase {
                 local_samples.push_back(SampleString(std::move(letters), index));
             }
         }
+        KASSERT(local_samples.size() == info.local_sample_size);
         // last process adds a dummy sample if remainder of some differrence cover element aligns
         // with the string length
 
@@ -155,10 +192,44 @@ struct SampleStringPhase {
 
     // create and sort difference cover samples
     // sideeffect: shifts characters from next PE to localstring
-    std::vector<SampleString> sorted_dc_samples(std::vector<char_type>& local_string) {
-        shift_chars_left(local_string);
-        std::vector<SampleString> local_samples = compute_sample_strings(local_string);
+    std::vector<SampleString> sorted_dc_samples(std::vector<char_type>& local_string,
+                                                bool use_packing = false) {
+        // packing information
+        const uint64_t char_bits = 8 * sizeof(char_type);
+        const uint64_t packed_char_bits =
+            std::ceil(std::log2(info.largest_char + 1)); // + 1 for padding
+        const uint64_t chars_per_entry = char_bits / packed_char_bits;
+        const uint64_t char_packing_ratio = use_packing ? chars_per_entry : 1;
+        if (info.recursion_depth == 0) {
+            get_stats_instance().packed_chars_samples.push_back(char_packing_ratio);
+        }
+
+        // add padding to local string
+        const uint64_t padding_length = char_packing_ratio * X;
+        add_padding(local_string, padding_length);
+
+        // shift necessary chars from right PE
+        shift_chars_left(local_string, char_packing_ratio);
+
+        // materialize samples
+        std::vector<SampleString> local_samples;
+        if (use_packing) {
+            local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
+                return materialize_packed_sample(local_string,
+                                                 i,
+                                                 packed_char_bits,
+                                                 chars_per_entry);
+            });
+        } else {
+            local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
+                return materialize_sample(local_string, i);
+            });
+        }
+
+        // sort samples
         sort_samples(local_samples);
+        KASSERT(check_sorted(local_samples, std::less<>{}, comm));
+
         bool redist_samples = redistribute_if_imbalanced(local_samples, config.min_imbalance, comm);
         get_stats_instance().redistribute_samples.push_back(redist_samples);
         return local_samples;

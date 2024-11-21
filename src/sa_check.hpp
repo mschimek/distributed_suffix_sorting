@@ -1,11 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
 
 #include "kamping/communicator.hpp"
+#include "kamping/named_parameters.hpp"
 #include "mpi/distribute.hpp"
 #include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
@@ -256,6 +258,13 @@ template <typename T>
 bool check_sorted(std::vector<T>& v, auto less, kamping::Communicator<>& comm) {
     using namespace kamping;
 
+    uint64_t total_size = mpi_util::all_reduce_sum(v.size(), comm);
+    if(total_size <= 10000) {
+        auto w = comm.allgatherv(send_buf(v));
+        bool ok = std::is_sorted(w.begin(), w.end(), less);
+        return ok;
+    }
+
     if (v.size() == 0) {
         std::cout << "Warning: empty vector in sorted check" << std::endl;
     }
@@ -267,7 +276,7 @@ bool check_sorted(std::vector<T>& v, auto less, kamping::Communicator<>& comm) {
     for (int64_t i = 0; i < (int64_t)v.size() - 1; i++) {
         ok &= !less(v[i + 1], v[i]);
         if (!ok) {
-            std::cout << comm.rank() << " --> " << i << " " << v[i].to_string() << " "
+            std::cout << "[PE " << comm.rank() << "] " << i << " " << v[i].to_string() << " "
                       << v[i + 1].to_string() << std::endl;
             break;
         }
@@ -275,7 +284,7 @@ bool check_sorted(std::vector<T>& v, auto less, kamping::Communicator<>& comm) {
     if (ok && comm.rank() < comm.size() - 1) {
         ok &= !less(next, v.back());
         if (!ok) {
-            std::cout << comm.rank() << " --> overlapping" << v.back().to_string() << " "
+            std::cout << "[PE " << comm.rank() << "] --> overlapping" << v.back().to_string() << " "
                       << next.to_string() << std::endl;
         }
     }

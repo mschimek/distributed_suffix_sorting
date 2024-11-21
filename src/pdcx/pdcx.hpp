@@ -64,7 +64,8 @@ public:
         atomic_sorter.set_sorter(config.atomic_sorter);
         atomic_sorter.set_num_levels(config.ams_levels);
         atomic_sorter.set_sample_sort_config(config.sample_sort_config);
-        string_sorter.set_memory(config.memory_seq_string_sorter);
+        string_sorter_samples.set_memory(config.memory_seq_string_sorter);
+        string_sorter_merging.set_memory(config.memory_seq_string_sorter);
     }
 
     // maps the index i from a recursive dcx call back to the global index
@@ -81,24 +82,17 @@ public:
         return 0;
     }
 
-    void add_padding(std::vector<char_type>& local_data) {
-        char_type padding = char_type(0);
-        if (comm.rank() == comm.size() - 1) {
-            std::fill_n(std::back_inserter(local_data), DC::X, padding);
-        }
-    }
-
     void remove_padding(std::vector<char_type>& local_data) {
         if (comm.rank() == comm.size() - 1) {
             KASSERT(local_data.size() >= DC::X);
-            local_data.resize(local_data.size() - DC::X);
+            local_data.resize(info.local_chars);
         }
     }
 
     // revert changes made to local string by left shift
     void clean_up(std::vector<char_type>& local_string) {
         if (comm.rank() < comm.size() - 1) {
-            local_string.resize(local_string.size() - DC::X + 1);
+            local_string.resize(info.local_chars);
         }
         remove_padding(local_string);
     }
@@ -351,8 +345,9 @@ public:
         }
         return num_pos_mod;
     }
-    void compute_length_info(std::vector<char_type>& local_string) {
+    PDCXLengthInfo compute_length_info(std::vector<char_type>& local_string) {
         // compute length information
+        PDCXLengthInfo info;
         info.local_chars = local_string.size();
         info.total_chars = mpi_util::all_reduce_sum(local_string.size(), comm);
         info.largest_char = mpi_util::all_reduce_max(local_string, comm);
@@ -361,6 +356,7 @@ public:
 
         const uint64_t rem = info.total_chars % X;
         bool added_dummy = is_in_dc<DC>(rem);
+        bool added_dummy_to_pe = added_dummy && (comm.rank() == comm.size() - 1);
 
         uint64_t local_sample_size = 0;
         uint64_t offset = info.chars_before % X;
@@ -368,9 +364,10 @@ public:
             uint64_t m = (i + offset) % X;
             local_sample_size += is_in_dc<DC>(m);
         }
-        local_sample_size += added_dummy && (comm.rank() == comm.size() - 1);
+        local_sample_size += added_dummy_to_pe;
         info.local_sample_size = local_sample_size;
         info.total_sample_size = mpi_util::all_reduce_sum(local_sample_size, comm);
+        info.local_chars_with_dummy = info.local_chars + added_dummy_to_pe;
 
         // number of positions with mod X = d
         std::array<uint64_t, X> num_at_mod = compute_num_pos_mod(info.total_chars);
@@ -382,6 +379,7 @@ public:
             uint d = DC::DC[i - 1];
             samples_before[i] = samples_before[i - 1] + num_at_mod[d];
         }
+        return info;
     }
 
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
@@ -393,18 +391,28 @@ public:
         bool redist_chars = redistribute_if_imbalanced(local_string, config.min_imbalance, comm);
         stats.redistribute_chars.push_back(redist_chars);
 
-        compute_length_info(local_string);
-        add_padding(local_string);
+        info = compute_length_info(local_string);
 
         std::string msg_level = "Recursion Level: " + std::to_string(recursion_depth)
                                 + ", Total Chars: " + std::to_string(info.total_chars);
         report_on_root(msg_level, comm, recursion_depth, config.print_phases);
         report_on_root("Phase 0: Preparation", comm, recursion_depth, config.print_phases);
 
-        // configure string sorting algorithm, can use radix sort only on first level
+        // configure packing
+        bool use_packed_samples = config.use_char_packing_samples && recursion_depth == 0;
+        // bool use_packed_merging = config.use_char_packing_merging && recursion_depth == 0;
+
+
+        // configure string sorting algorithm, can use radix sort only for small chars
         dsss::SeqStringSorter string_algo =
-            recursion_depth == 0 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
-        string_sorter.set_sorter(string_algo);
+            info.largest_char < 256 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
+        string_sorter_samples.set_sorter(string_algo);
+        string_sorter_merging.set_sorter(string_algo);
+        
+        // when we use packing, character values get to large for radix sort
+        if (use_packed_samples && sizeof(char_type) > 1) {
+            string_sorter_samples.set_sorter(dsss::SeqStringSorter::MultiKeyQSort);
+        }
 
         // configure space efficient sort
         uint64_t buckets_samples = config.buckets_samples_at_level(recursion_depth);
@@ -443,7 +451,6 @@ public:
                            comm,
                            recursion_depth,
                            config.print_phases);
-            remove_padding(local_string);
             std::vector<index_type> local_SA =
                 compute_sa_on_root<char_type, index_type>(local_string, comm);
             timer.stop(); // pdcx
@@ -456,7 +463,8 @@ public:
                                                             config,
                                                             info,
                                                             atomic_sorter,
-                                                            string_sorter);
+                                                            string_sorter_samples);
+        // adds a padding of zeros to local string
         if (use_bucket_sorting_samples) {
             //******* Start Phase 1 + 2: Construct Samples +   Construct Ranks********
             report_on_root("Phase 1 + 2: Sort Samples + Compute Ranks with "
@@ -475,8 +483,12 @@ public:
             //******* Start Phase 1: Construct Samples  ********
             report_on_root("Phase 1: Sort Samples", comm, recursion_depth, config.print_phases);
             timer.synchronize_and_start("phase_01_samples");
-            std::vector<SampleString> local_samples = phase1.sorted_dc_samples(local_string);
+            std::vector<SampleString> local_samples =
+                phase1.sorted_dc_samples(local_string, use_packed_samples);
             timer.stop();
+
+            // we would have to unpack the splitters again --> for now switch to random samples
+            config.use_random_sampling_splitters = use_packed_samples;
 
             // get splitters from sorted sample sequence
             if (use_bucket_sorting_merging && !config.use_random_sampling_splitters) {
@@ -527,7 +539,7 @@ public:
                                                            config,
                                                            info,
                                                            atomic_sorter,
-                                                           string_sorter);
+                                                           string_sorter_merging);
         phase4.shift_ranks_left(local_ranks);
         phase4.push_padding(local_ranks);
 
@@ -576,7 +588,6 @@ public:
         timer.stop();
         //******* End Phase 4: Merge Suffixes  ********
 
-
         // logging
         stats.string_imbalance.push_back(mpi_util::compute_max_imbalance(info.local_chars, comm));
         stats.sample_imbalance.push_back(
@@ -608,6 +619,7 @@ public:
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
             std::reverse(stats.bucket_sizes.begin(), stats.bucket_sizes.end());
         }
+        KASSERT(local_string.size() == info.local_chars);
         KASSERT(mpi_util::all_reduce_sum(local_SA.size(), comm) == info.total_chars);
         KASSERT(check_suffixarray(local_SA, local_string, comm),
                 "Suffix array is not sorted on level " + std::to_string(recursion_depth));
@@ -645,7 +657,8 @@ public:
     std::array<index_type, DC::D + 1> samples_before;
 
     mpi::SortingWrapper atomic_sorter;
-    dsss::SeqStringSorterWrapper string_sorter;
+    dsss::SeqStringSorterWrapper string_sorter_samples;
+    dsss::SeqStringSorterWrapper string_sorter_merging;
 
     Communicator<>& comm;
     measurements::Timer<Communicator<>>& timer;

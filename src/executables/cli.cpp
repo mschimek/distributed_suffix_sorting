@@ -9,6 +9,7 @@
 #include "kamping/measurements/printer.hpp"
 #include "kamping/named_parameters.hpp"
 #include "mpi/io.hpp"
+#include "mpi/reduce.hpp"
 #include "options.hpp"
 #include "pdcx/config.hpp"
 #include "pdcx/difference_cover.hpp"
@@ -26,6 +27,8 @@
 using namespace dsss;
 
 using char_type = uint8_t;
+// using char_type = uint16_t;
+// using char_type = uint32_t;
 using index_type = uint40;
 
 size_t string_size = {0};
@@ -127,6 +130,16 @@ void configure_cli() {
                  "num_randomized_chunks",
                  pdcx_config.num_randomized_chunks,
                  "Number of chunks to use for randomized chunks in merging phase.");
+    cp.add_flag(
+        'g',
+        "use_char_packing_samples",
+        pdcx_config.use_char_packing_samples,
+        "Pack multiple characters in the same datatype for phase 1 (samples) on the first level.");
+    cp.add_flag(
+        'G',
+        "use_char_packing_merging",
+        pdcx_config.use_char_packing_merging,
+        "Pack multiple characters in the same datatype for phase 4 (merging) on the first level.");
 
 
     // sorter configuration
@@ -286,11 +299,7 @@ void read_input(kamping::Communicator<>& comm) {
         local_string =
             random::generate_random_data<char_type>(string_size, alphabet_size, local_seed);
     } else {
-        if (string_size > 0) {
-            local_string = mpi::read_and_distribute_string(input_path, comm, string_size);
-        } else {
-            local_string = mpi::read_and_distribute_string(input_path, comm);
-        }
+        local_string = mpi::read_and_distribute_string<char_type>(input_path, comm, string_size);
     }
     timer.stop();
     timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
@@ -299,10 +308,20 @@ void read_input(kamping::Communicator<>& comm) {
 }
 
 void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& comm) {
-    uint64_t max_alphabet_size = 1 << (sizeof(char_type) * 8);
+    uint64_t max_alphabet_size = 1000;
+
+    // should not happen, because we read characters as bytes
+    uint64_t max_char = mpi_util::all_reduce_max(input, comm);
+    if (max_char > max_alphabet_size) {
+        kamping::report_on_root(
+            "Can only process alphabets with not more than 255 distinct "
+            "characters. 0 is reserved for special characters. Change char_type.",
+            comm);
+        exit(1);
+    }
 
     // determine character frequencies
-    std::vector<uint64_t> local_counts(max_alphabet_size, 0);
+    std::vector<uint64_t> local_counts(max_char + 1, 0);
     for (auto c: input) {
         local_counts[c]++;
     }
@@ -359,13 +378,13 @@ void compute_sa(kamping::Communicator<>& comm) {
     timer.stop();
 
     // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
-    
+
     // run_pdcx<PDCX<char_type, index_type, DC133Param>, char_type, index_type>(comm);
-    
+
     // if (dcx_variant == "dc3") {
     //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc7") {

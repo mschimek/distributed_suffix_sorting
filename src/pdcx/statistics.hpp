@@ -34,6 +34,8 @@ struct Statistics {
         avg_segment.clear();
         max_segment.clear();
         bucket_sizes.clear();
+        packed_chars_samples.clear();
+        packed_chars_merging.clear();
     }
 
     void print() const {
@@ -76,6 +78,10 @@ struct Statistics {
         print_vector(max_segment, ",");
         std::cout << "bucket_sizes=";
         print_vector(bucket_sizes, ",");
+        std::cout << "packed_chars_samples=";
+        print_vector(packed_chars_samples, ",");
+        std::cout << "packed_chars_merging=";
+        print_vector(packed_chars_merging, ",");
         std::cout << std::endl;
     }
 
@@ -100,6 +106,8 @@ struct Statistics {
     std::vector<double> avg_segment;
     std::vector<uint64_t> max_segment;
     std::vector<uint64_t> bucket_sizes;
+    std::vector<uint64_t> packed_chars_samples;
+    std::vector<uint64_t> packed_chars_merging;
 };
 
 // singleton instance
