@@ -81,11 +81,16 @@ struct SampleStringPhase {
     mpi::SortingWrapper& atomic_sorter;
     dsss::SeqStringSorterWrapper& string_sorter;
 
-    // packing
-    const uint64_t char_bits = sizeof(char_type) * 8;
-    const uint64_t packed_char_bits = std::ceil(std::log2(info.largest_char));
-    const uint64_t chars_per_entry = char_bits / packed_char_bits;
-
+    struct PackingInformation {
+        PackingInformation(uint64_t largest_char) {
+            char_bits = 8 * sizeof(char_type);
+            packed_char_bits = std::ceil(std::log2(largest_char + 1)); // + 1 for padding
+            char_packing_ratio = char_bits / packed_char_bits;
+        }
+        uint64_t char_bits;
+        uint64_t packed_char_bits;
+        uint64_t char_packing_ratio;
+    };
 
     SampleStringPhase(Communicator<>& _comm,
                       PDCXConfig& _config,
@@ -127,18 +132,15 @@ struct SampleStringPhase {
         return letters;
     }
 
-    SampleString::SampleStringLetters
-    materialize_packed_sample(std::vector<char_type>& local_string,
-                              uint64_t i,
-                              uint64_t packed_char_bits,
-                              uint64_t chars_per_entry) const {
+    SampleString::SampleStringLetters materialize_packed_sample(
+        std::vector<char_type>& local_string, uint64_t i, PackingInformation& packing) const {
         std::array<char_type, X + 1> letters;
         letters.fill(0);
         uint64_t char_pos = i;
         for (uint64_t k = 0; k < X; k++) {
-            for (uint64_t j = 0; j < chars_per_entry; j++) {
+            for (uint64_t j = 0; j < packing.char_packing_ratio; j++) {
                 KASSERT(char_pos < local_string.size());
-                letters[k] = (letters[k] << packed_char_bits) | (local_string[char_pos]);
+                letters[k] = (letters[k] << packing.packed_char_bits) | (local_string[char_pos]);
                 char_pos++;
             }
         }
@@ -190,35 +192,34 @@ struct SampleStringPhase {
         local_samples.shrink_to_fit();
     }
 
-    // create and sort difference cover samples
-    // sideeffect: shifts characters from next PE to localstring
-    std::vector<SampleString> sorted_dc_samples(std::vector<char_type>& local_string,
-                                                bool use_packing = false) {
-        // packing information
-        const uint64_t char_bits = 8 * sizeof(char_type);
-        const uint64_t packed_char_bits =
-            std::ceil(std::log2(info.largest_char + 1)); // + 1 for padding
-        const uint64_t chars_per_entry = char_bits / packed_char_bits;
-        const uint64_t char_packing_ratio = use_packing ? chars_per_entry : 1;
-        if (info.recursion_depth == 0) {
-            get_stats_instance().packed_chars_samples.push_back(char_packing_ratio);
-        }
-
+    void make_padding_and_shifts(std::vector<char_type>& local_string,
+                                 uint64_t char_packing_ratio = 1) {
         // add padding to local string
         const uint64_t padding_length = char_packing_ratio * X;
         add_padding(local_string, padding_length);
 
         // shift necessary chars from right PE
         shift_chars_left(local_string, char_packing_ratio);
+    }
+
+    // create and sort difference cover samples
+    // sideeffect: shifts characters from next PE to localstring
+    std::vector<SampleString> sorted_dc_samples(std::vector<char_type>& local_string,
+                                                bool use_packing = false) {
+        // packing information
+        PackingInformation packing(info.largest_char);
+        const uint64_t char_packing_ratio = use_packing ? packing.char_packing_ratio : 1;
+        if (info.recursion_depth == 0) {
+            get_stats_instance().packed_chars_samples.push_back(char_packing_ratio);
+        }
+
+        make_padding_and_shifts(local_string, char_packing_ratio);
 
         // materialize samples
         std::vector<SampleString> local_samples;
         if (use_packing) {
             local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
-                return materialize_packed_sample(local_string,
-                                                 i,
-                                                 packed_char_bits,
-                                                 chars_per_entry);
+                return materialize_packed_sample(local_string, i, packing);
             });
         } else {
             local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {

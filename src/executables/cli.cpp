@@ -308,7 +308,7 @@ void read_input(kamping::Communicator<>& comm) {
 }
 
 void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& comm) {
-    uint64_t max_alphabet_size = 1000;
+    uint64_t max_alphabet_size = 256;
 
     // should not happen, because we read characters as bytes
     uint64_t max_char = mpi_util::all_reduce_max(input, comm);
@@ -328,9 +328,9 @@ void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& c
     std::vector<uint64_t> global_counts =
         comm.allreduce(kamping::send_buf(local_counts), kamping::op(kamping::ops::plus<>{}));
     uint64_t alphabet_size =
-        max_alphabet_size - std::count(global_counts.begin(), global_counts.end(), 0);
+        local_counts.size() - std::count(global_counts.begin(), global_counts.end(), 0);
 
-    if (alphabet_size == max_alphabet_size) {
+    if (alphabet_size == local_counts.size()) {
         kamping::report_on_root(
             "Can only process alphabets with not more than 255 distinct "
             "characters. 0 is reserved for special characters. Change char_type.",

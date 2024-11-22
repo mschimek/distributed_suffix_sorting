@@ -399,7 +399,7 @@ public:
         report_on_root("Phase 0: Preparation", comm, recursion_depth, config.print_phases);
 
         // configure packing
-        bool use_packed_samples = config.use_char_packing_samples && recursion_depth == 0;
+        const bool use_packed_samples = config.use_char_packing_samples && recursion_depth == 0;
         // bool use_packed_merging = config.use_char_packing_merging && recursion_depth == 0;
 
 
@@ -408,7 +408,7 @@ public:
             info.largest_char < 256 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
         string_sorter_samples.set_sorter(string_algo);
         string_sorter_merging.set_sorter(string_algo);
-        
+
         // when we use packing, character values get to large for radix sort
         if (use_packed_samples && sizeof(char_type) > 1) {
             string_sorter_samples.set_sorter(dsss::SeqStringSorter::MultiKeyQSort);
@@ -417,8 +417,8 @@ public:
         // configure space efficient sort
         uint64_t buckets_samples = config.buckets_samples_at_level(recursion_depth);
         uint64_t buckets_merging = config.buckets_merging_at_level(recursion_depth);
-        bool use_bucket_sorting_samples = buckets_samples > 1;
-        bool use_bucket_sorting_merging = buckets_merging > 1;
+        const bool use_bucket_sorting_samples = buckets_samples > 1;
+        const bool use_bucket_sorting_merging = buckets_merging > 1;
         if (use_bucket_sorting_samples && buckets_samples > comm.size()) {
             buckets_samples = comm.size();
             report_on_root("Warning: #buckets_samples > #PEs, setting blocks to #PEs.",
@@ -474,8 +474,10 @@ public:
                            config.print_phases);
             timer.synchronize_and_start("phase_01_02_samples_ranks");
             LexicographicRankPhase<char_type, index_type, DC> phase2(comm, info);
-            local_ranks =
-                phase2.create_ranks_space_efficient(phase1, local_string, buckets_samples);
+            local_ranks = phase2.create_ranks_space_efficient(phase1,
+                                                              local_string,
+                                                              buckets_samples,
+                                                              use_packed_samples);
             timer.stop();
             //******* End Phase 1 + 2: Construct Samples +   Construct Ranks********
 

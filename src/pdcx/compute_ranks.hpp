@@ -136,14 +136,23 @@ struct LexicographicRankPhase {
     std::vector<RankIndex>
     create_ranks_space_efficient(SampleStringPhase<char_type, index_type, DC> phase1,
                                  std::vector<char_type>& local_string,
-                                 uint64_t num_buckets) {
+                                 const uint64_t num_buckets,
+                                 const bool use_packing = false) {
         using SpaceEfficient = SpaceEfficientSort<char_type, index_type, DC>;
         using Splitter = typename SpaceEfficient::Splitter;
+        using PackingInformation = SampleStringPhase<char_type, index_type, DC>::PackingInformation;
         const uint32_t X = DC::X;
 
         auto& timer = measurements::timer();
-        phase1.add_padding(local_string, DC::X);
-        phase1.shift_chars_left(local_string);
+
+        // prepare local string
+        PackingInformation packing(info.largest_char + 1);
+        const uint64_t char_packing_ratio = use_packing ? packing.char_packing_ratio : 1;
+        phase1.make_padding_and_shifts(local_string, char_packing_ratio);
+        if (info.recursion_depth == 0) {
+            get_stats_instance().packed_chars_samples.push_back(char_packing_ratio);
+        }
+
 
         PDCXConfig config = phase1.config;
         SpaceEfficient space_efficient(comm, config);
@@ -151,8 +160,15 @@ struct LexicographicRankPhase {
         auto materialize_sample = [&](uint64_t i) {
             return phase1.materialize_sample(local_string, i);
         };
+        auto materialize_packed_sample = [&](uint64_t i) {
+            return phase1.materialize_packed_sample(local_string, i, packing);
+        };
+
+        // determine bucket splitters
         std::vector<Splitter> bucket_splitter =
-            space_efficient.random_sample_splitters(info.local_chars, num_buckets, materialize_sample);
+            space_efficient.random_sample_splitters(info.local_chars,
+                                                    num_buckets,
+                                                    materialize_sample);
 
         // assign dc-substrings to blocks
         std::vector<uint64_t> bucket_sizes(num_buckets, 0);
@@ -160,10 +176,9 @@ struct LexicographicRankPhase {
         KASSERT(num_buckets <= 255ull);
 
         uint64_t offset = info.chars_before % X;
-        uint64_t local_chars_with_dummy = local_string.size() - X + 1;
         uint64_t _local_sample_size = 0;
         // add dummy sample for last PE
-        for (uint64_t i = 0; i < local_chars_with_dummy; i++) {
+        for (uint64_t i = 0; i < info.local_chars_with_dummy; i++) {
             uint64_t m = (i + offset) % X;
             if (is_in_dc<DC>(m)) {
                 _local_sample_size++;
@@ -192,14 +207,15 @@ struct LexicographicRankPhase {
         SampleString prev_sample;
         // sorting in each round one blocks of materialized samples
         for (uint64_t k = 0; k < num_buckets; k++) {
-            timer.synchronize_and_start("phase_01_02_space_efficient_soPrt_collect_buckets");
+            timer.synchronize_and_start("phase_01_02_space_efficient_sort_collect_buckets");
 
             // collect samples falling into kth block
             samples.reserve(bucket_sizes[k]);
-            for (uint64_t idx = 0; idx < local_chars_with_dummy; idx++) {
+            for (uint64_t idx = 0; idx < info.local_chars_with_dummy; idx++) {
                 if (sample_to_bucket[idx] == k) {
                     index_type index = index_type(info.chars_before + idx);
-                    Splitter letters = materialize_sample(idx);
+                    Splitter letters =
+                        use_packing ? materialize_packed_sample(idx) : materialize_sample(idx);
                     samples.push_back(SampleString(std::move(letters), index));
                 }
             }
@@ -242,7 +258,8 @@ struct LexicographicRankPhase {
         }
         KASSERT(mpi_util::all_reduce_sum(concat_rank_buckets.size(), comm)
                 == info.total_sample_size);
-        double bucket_imbalance_received = get_imbalance_bucket(received_size, info.total_sample_size, comm);
+        double bucket_imbalance_received =
+            get_imbalance_bucket(received_size, info.total_sample_size, comm);
         get_stats_instance().bucket_imbalance_samples_received.push_back(bucket_imbalance_received);
 
         timer.synchronize_and_start("phase_01_02_space_efficient_sort_alltoall");
