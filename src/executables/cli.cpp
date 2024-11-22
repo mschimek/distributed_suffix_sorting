@@ -26,9 +26,9 @@
 
 using namespace dsss;
 
-using char_type = uint8_t;
+// using char_type = uint8_t;
 // using char_type = uint16_t;
-// using char_type = uint32_t;
+using char_type = uint32_t;
 using index_type = uint40;
 
 size_t string_size = {0};

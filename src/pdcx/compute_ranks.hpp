@@ -15,6 +15,7 @@
 #include "mpi/shift.hpp"
 #include "pdcx/config.hpp"
 #include "pdcx/difference_cover.hpp"
+#include "pdcx/packing.hpp"
 #include "pdcx/redistribute.hpp"
 #include "pdcx/sample_string.hpp"
 #include "pdcx/space_efficient_sort.hpp"
@@ -140,20 +141,11 @@ struct LexicographicRankPhase {
                                  const bool use_packing = false) {
         using SpaceEfficient = SpaceEfficientSort<char_type, index_type, DC>;
         using Splitter = typename SpaceEfficient::Splitter;
-        using PackingInformation = SampleStringPhase<char_type, index_type, DC>::PackingInformation;
         const uint32_t X = DC::X;
 
         auto& timer = measurements::timer();
 
-        // prepare local string
-        PackingInformation packing(info.largest_char + 1);
-        const uint64_t char_packing_ratio = use_packing ? packing.char_packing_ratio : 1;
-        phase1.make_padding_and_shifts(local_string, char_packing_ratio);
-        if (info.recursion_depth == 0) {
-            get_stats_instance().packed_chars_samples.push_back(char_packing_ratio);
-        }
-
-
+        CharPacking<char_type, X + 1> packing(info.largest_char);
         PDCXConfig config = phase1.config;
         SpaceEfficient space_efficient(comm, config);
 
@@ -161,7 +153,7 @@ struct LexicographicRankPhase {
             return phase1.materialize_sample(local_string, i);
         };
         auto materialize_packed_sample = [&](uint64_t i) {
-            return phase1.materialize_packed_sample(local_string, i, packing);
+            return packing.materialize_packed_sample(local_string, i);
         };
 
         // determine bucket splitters

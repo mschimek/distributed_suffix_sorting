@@ -1,6 +1,7 @@
 target_sources(dss_base
     PUBLIC
         pdcx.hpp
+        packing.hpp
         difference_cover.hpp
         sample_string.hpp
         compute_ranks.hpp

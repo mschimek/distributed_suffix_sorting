@@ -400,7 +400,7 @@ public:
 
         // configure packing
         const bool use_packed_samples = config.use_char_packing_samples && recursion_depth == 0;
-        // bool use_packed_merging = config.use_char_packing_merging && recursion_depth == 0;
+        const bool use_packed_merging = config.use_char_packing_merging && recursion_depth == 0;
 
 
         // configure string sorting algorithm, can use radix sort only for small chars
@@ -412,6 +412,9 @@ public:
         // when we use packing, character values get to large for radix sort
         if (use_packed_samples && sizeof(char_type) > 1) {
             string_sorter_samples.set_sorter(dsss::SeqStringSorter::MultiKeyQSort);
+        }
+        if (use_packed_merging && sizeof(char_type) > 1) {
+            string_sorter_merging.set_sorter(dsss::SeqStringSorter::MultiKeyQSort);
         }
 
         // configure space efficient sort
@@ -464,7 +467,21 @@ public:
                                                             info,
                                                             atomic_sorter,
                                                             string_sorter_samples);
-        // adds a padding of zeros to local string
+        // add a padding of zeros to local string taking into account char packing
+        CharPacking<char_type, X> packing(info.largest_char + 1);
+        const uint64_t char_packing_ratio_samples =
+            use_packed_samples ? packing.char_packing_ratio : 1;
+        const uint64_t char_packing_ratio_merging =
+            use_packed_merging ? packing.char_packing_ratio : 1;
+        const uint64_t char_packing_ratio =
+            std::max(char_packing_ratio_samples, char_packing_ratio_merging);
+        if (info.recursion_depth == 0) {
+            get_stats_instance().packed_chars_samples.push_back(char_packing_ratio_samples);
+            get_stats_instance().packed_chars_merging.push_back(char_packing_ratio_merging);
+        }
+        phase1.make_padding_and_shifts(local_string, char_packing_ratio);
+
+
         if (use_bucket_sorting_samples) {
             //******* Start Phase 1 + 2: Construct Samples +   Construct Ranks********
             report_on_root("Phase 1 + 2: Sort Samples + Compute Ranks with "
@@ -570,17 +587,19 @@ public:
                 // with chunking
                 local_SA = phase4.space_effient_sort_chunking_SA(local_string,
                                                                  local_ranks,
-                                                                 global_samples_splitters);
+                                                                 global_samples_splitters,
+                                                                 use_packed_merging);
 
             } else {
                 local_SA = phase4.space_effient_sort_SA(local_string,
                                                         local_ranks,
-                                                        global_samples_splitters);
+                                                        global_samples_splitters,
+                                                        use_packed_merging);
             }
 
         } else {
             std::vector<MergeSamples> merge_samples =
-                phase4.construct_merge_samples(local_string, local_ranks);
+                phase4.construct_merge_samples(local_string, local_ranks, use_packed_merging);
             free_memory(std::move(local_ranks));
             phase4.sort_merge_samples(merge_samples);
             local_SA = phase4.extract_SA(merge_samples);
