@@ -549,13 +549,9 @@ public:
             if (config.use_random_sampling_splitters || global_samples_splitters.empty()) {
                 SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort(comm, config);
                 timer.synchronize_and_start("phase_04_random_sample_splitters");
-                auto materialize_sample = [&](uint64_t i) {
-                    return phase1.materialize_sample(local_string, i);
-                };
                 global_samples_splitters =
                     space_efficient_sort.random_sample_splitters(info.local_chars,
-                                                                 buckets_merging,
-                                                                 materialize_sample);
+                                                                 buckets_merging, local_string);
                 timer.stop();
             }
 

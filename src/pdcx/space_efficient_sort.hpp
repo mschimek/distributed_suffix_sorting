@@ -25,16 +25,28 @@ struct SpaceEfficientSort {
 
     SpaceEfficientSort(Communicator<>& _comm, PDCXConfig& _config) : comm(_comm), config(_config) {}
 
+    std::array<char_type, DC::X + 1> materialize_splitter(std::vector<char_type>& local_string,
+                                                          uint64_t i) const {
+        std::array<char_type, DC::X + 1> chars;
+        std::copy(local_string.begin() + i, local_string.begin() + i + DC::X, chars.begin());
+        chars.back() = 0;
+        return chars;
+    }
+
     // compute splitters for partition into blocks
-    std::vector<Splitter>
-    random_sample_splitters(uint64_t local_chars, uint64_t blocks, auto materialize_sample) {
+    std::vector<Splitter> random_sample_splitters(uint64_t local_chars,
+                                                  uint64_t blocks,
+                                                  std::vector<char_type>& local_string) {
         size_t nr_splitters =
             std::max<size_t>((config.num_samples_splitters + comm.size() - 1) / comm.size(),
                              blocks);
+        auto _materialize_splitter = [&](uint64_t i) {
+            return materialize_splitter(local_string, i);
+        };
         std::vector<Splitter> local_splitters =
             mpi::sample_random_splitters1<Splitter>(local_chars,
                                                     nr_splitters,
-                                                    materialize_sample,
+                                                    _materialize_splitter,
                                                     comm);
 
         auto cmp = [](Splitter const& a, Splitter const& b) {

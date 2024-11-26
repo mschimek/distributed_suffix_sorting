@@ -89,7 +89,7 @@ struct LexicographicRankPhase {
         for (uint64_t i = 0; i < num_ranks; i++) {
             KASSERT(i + 1 < local_samples.size());
             local_ranks.emplace_back(index_type(prev_rank), local_samples[i].index, false);
-            uint64_t changed = local_samples[i].letters != local_samples[i + 1].letters ? 1 : 0;
+            uint64_t changed = local_samples[i].chars != local_samples[i + 1].chars ? 1 : 0;
             prev_rank += changed;
         }
 
@@ -145,22 +145,20 @@ struct LexicographicRankPhase {
 
         auto& timer = measurements::timer();
 
-        CharPacking<char_type, X + 1> packing(info.largest_char);
+        // CharPacking<char_type, X + 1> packing(info.largest_char);
         PDCXConfig config = phase1.config;
         SpaceEfficient space_efficient(comm, config);
 
         auto materialize_sample = [&](uint64_t i) {
             return phase1.materialize_sample(local_string, i);
         };
-        auto materialize_packed_sample = [&](uint64_t i) {
-            return packing.materialize_packed_sample(local_string, i);
-        };
+        // auto materialize_packed_sample = [&](uint64_t i) {
+        //     return packing.materialize_packed_sample(local_string, i);
+        // };
 
         // determine bucket splitters
         std::vector<Splitter> bucket_splitter =
-            space_efficient.random_sample_splitters(info.local_chars,
-                                                    num_buckets,
-                                                    materialize_sample);
+            space_efficient.random_sample_splitters(info.local_chars, num_buckets, local_string);
 
         // assign dc-substrings to blocks
         std::vector<uint64_t> bucket_sizes(num_buckets, 0);
@@ -206,9 +204,10 @@ struct LexicographicRankPhase {
             for (uint64_t idx = 0; idx < info.local_chars_with_dummy; idx++) {
                 if (sample_to_bucket[idx] == k) {
                     index_type index = index_type(info.chars_before + idx);
-                    Splitter letters =
-                        use_packing ? materialize_packed_sample(idx) : materialize_sample(idx);
-                    samples.push_back(SampleString(std::move(letters), index));
+                    // Splitter letters =
+                    //     use_packing ? materialize_packed_sample(idx) : materialize_sample(idx);
+                    auto chars = materialize_sample(idx);
+                    samples.push_back(SampleString(std::move(chars), index));
                 }
             }
             timer.stop();
@@ -228,7 +227,7 @@ struct LexicographicRankPhase {
                     // last PE compared samples with Padding --> change is always 1
                     // if there was no change revert to 0
                     concat_rank_buckets.back().rank -=
-                        prev_sample.letters == first_sample.letters ? 1 : 0;
+                        prev_sample.chars == first_sample.chars ? 1 : 0;
                 }
             }
             // skip padding sample
@@ -241,7 +240,7 @@ struct LexicographicRankPhase {
             // only store changes
             uint64_t last_changed = 0;
             for (uint64_t i = 0; i < num_ranks; i++) {
-                last_changed = samples[i].letters != samples[i + 1].letters ? 1 : 0;
+                last_changed = samples[i].chars != samples[i + 1].chars ? 1 : 0;
                 concat_rank_buckets.emplace_back(index_type(last_changed), samples[i].index, false);
             }
 

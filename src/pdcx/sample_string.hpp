@@ -17,6 +17,7 @@
 #include "sorters/sample_sort_strings.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "strings/char_container.hpp"
 #include "util/printing.hpp"
 
 namespace dsss::dcx {
@@ -26,54 +27,51 @@ using namespace kamping;
 //******* Phase 1: Construct Samples  ********
 
 // substring sampled by a difference cover sample
-template <typename char_type, typename index_type, typename DC>
+template <typename char_type,
+          typename index_type,
+          typename DC,
+          typename CharContainer = CharArray<char_type, DC::X + 1>>
 struct DCSampleString {
     // for string sorter
     using CharType = char_type;
-    const CharType* cbegin_chars() const { return letters.data(); }
-    const CharType* cend_chars() const { return letters.data() + DC::X + 1; }
+    const CharType* cbegin_chars() const { return chars.cbegin_chars(); }
+    const CharType* cend_chars() const { return chars.cend_chars(); }
     std::string get_string() { return to_string(); }
 
     // X chars and one 0-character
     using SampleStringLetters = std::array<char_type, DC::X + 1>;
 
+    DCSampleString() : chars(CharContainer()), index(0) {}
 
-    DCSampleString() {
-        letters.fill(0);
-        index = 0;
-    }
-    DCSampleString(SampleStringLetters&& _letters, index_type _index)
-        : letters(_letters),
-          index(_index) {}
+    DCSampleString(CharContainer&& _chars, index_type _index) : chars(_chars), index(_index) {}
 
-    bool operator<(const DCSampleString& other) const {
-        for (uint i = 0; i < DC::X; i++) {
-            if (letters[i] != other.letters[i]) {
-                return letters[i] < other.letters[i];
-            }
-        }
-        return false;
-    }
+    bool operator<(const DCSampleString& other) const { return chars < other.chars; }
 
     std::string to_string() const {
         std::stringstream ss;
-        ss << "(" << (uint64_t)letters[0];
-        for (uint i = 1; i < DC::X; i++) {
-            ss << " " << (uint64_t)letters[i];
-        }
+        ss << "(" << chars.to_string();
         ss << ") " << index;
         return ss.str();
     }
 
-    std::array<char_type, DC::X + 1> get_array_letters() const { return letters; }
+    std::array<char_type, DC::X + 1> get_array_letters() const {
+        std::array<char_type, DC::X + 1> array;
+        for (uint32_t i = 0; i < array.size(); i++) {
+            array[i] = chars.at(i);
+        }
+        return array;
+    }
 
-    SampleStringLetters letters;
+    CharContainer chars;
     index_type index;
 };
 
-template <typename char_type, typename index_type, typename DC>
+template <typename char_type,
+          typename index_type,
+          typename DC,
+          typename CharContainer = CharArray<char_type, DC::X + 1>>
 struct SampleStringPhase {
-    using SampleString = DCSampleString<char_type, index_type, DC>;
+    using SampleString = DCSampleString<char_type, index_type, DC, CharContainer>;
 
     static constexpr uint32_t X = DC::X;
     static constexpr uint32_t D = DC::D;
@@ -114,14 +112,16 @@ struct SampleStringPhase {
     }
 
     // materialize a difference cover sample
-    SampleString::SampleStringLetters materialize_sample(std::vector<char_type>& local_string,
-                                                         uint64_t i) const {
-        std::array<char_type, X + 1> letters;
-        for (uint k = 0; k < X; k++) {
-            letters[k] = local_string[i + k];
-        }
-        letters.back() = 0; // 0-terminated string
-        return letters;
+    CharContainer materialize_sample(std::vector<char_type>& local_string, uint64_t i) const {
+        return CharContainer(local_string.begin() + i, local_string.begin() + i + X);
+    }
+
+    std::array<char_type, X + 1> materialize_splitter(std::vector<char_type>& local_string,
+                                                      uint64_t i) const {
+        std::array<char_type, X + 1> chars;
+        std::copy(local_string.begin() + i, local_string.begin() + i + X, chars.begin());
+        chars.back() = 0;
+        return chars;
     }
 
     // sample substrings of length X at difference cover samples
@@ -135,8 +135,8 @@ struct SampleStringPhase {
             uint64_t m = (i + offset) % X;
             if (is_in_dc<DC>(m)) {
                 index_type index = index_type(info.chars_before + i);
-                std::array<char_type, X + 1> letters = materialize_sample(local_string, i);
-                local_samples.push_back(SampleString(std::move(letters), index));
+                CharContainer chars = materialize_sample(local_string, i);
+                local_samples.push_back(SampleString(std::move(chars), index));
             }
         }
         KASSERT(local_samples.size() == info.local_sample_size);
@@ -187,15 +187,20 @@ struct SampleStringPhase {
 
         // materialize samples
         std::vector<SampleString> local_samples;
-        if (use_packing) {
-            local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
-                return packing.materialize_packed_sample(local_string, i);
-            });
-        } else {
-            local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
-                return materialize_sample(local_string, i);
-            });
-        }
+        // if (use_packing) {
+        //     local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i)
+        //     {
+        //         return packing.materialize_packed_sample(local_string, i);
+        //     });
+        // } else {
+        //     local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i)
+        //     {
+        //         return materialize_sample(local_string, i);
+        //     });
+        // }
+        local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
+            return materialize_sample(local_string, i);
+        });
 
         // sort samples
         sort_samples(local_samples);
