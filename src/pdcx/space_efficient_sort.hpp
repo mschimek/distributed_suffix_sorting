@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "kamping/communicator.hpp"
+#include "mpi/reduce.hpp"
 #include "pdcx/config.hpp"
 #include "pdcx/sample_string.hpp"
 #include "sorters/sample_sort_common.hpp"
@@ -15,7 +16,9 @@ using namespace kamping;
 
 template <typename char_type, typename index_type, typename DC>
 struct SpaceEfficientSort {
-    using Splitter = typename DCSampleString<char_type, index_type, DC>::SampleStringLetters;
+    // X chars and one 0-character
+    using Splitter = std::array<char_type, DC::X + 1>;
+    using SampleString = DCSampleString<char_type, index_type, DC>;
 
     Communicator<>& comm;
     PDCXConfig& config;
@@ -46,6 +49,25 @@ struct SpaceEfficientSort {
 
         return mpi::sample_uniform_splitters(all_splitters, blocks - 1, comm);
     }
+
+    // compute even distributed splitters from sorted local samples
+    std::vector<Splitter> get_uniform_splitters(std::vector<SampleString>& local_samples,
+                                                uint64_t blocks) {
+        int64_t num_samples = local_samples.size();
+        int64_t samples_before = mpi_util::ex_prefix_sum(num_samples, comm);
+        int64_t total_sample_size = mpi_util::all_reduce_sum(num_samples, comm);
+        std::vector<Splitter> local_splitters;
+        for (uint64_t i = 0; i < blocks - 1; i++) {
+            int64_t global_index = (i + 1) * total_sample_size / blocks;
+            int64_t x = global_index - samples_before;
+            if (x >= 0 && x < num_samples) {
+                local_splitters.push_back(local_samples[x].get_array_letters());
+            }
+        }
+        std::vector<Splitter> global_splitters = comm.allgatherv(send_buf(local_splitters));
+        return global_splitters;
+    }
+
 
     std::pair<std::vector<uint64_t>, std::vector<uint8_t>>
     compute_sample_to_block_mapping(std::vector<char_type>& local_string,

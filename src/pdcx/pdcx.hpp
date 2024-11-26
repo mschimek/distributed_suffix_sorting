@@ -318,24 +318,6 @@ public:
             mpi_util::zip_with_index<RankRankIndex, RankIndex>(rri, index_local_ranks, comm);
     }
 
-    // compute even distributed splitters from sorted local samples
-    std::vector<typename SampleString::SampleStringLetters>
-    get_sample_splitters(std::vector<SampleString>& local_samples, uint64_t blocks) {
-        using Substring = typename SampleString::SampleStringLetters;
-        int64_t num_samples = local_samples.size();
-        int64_t samples_before = mpi_util::ex_prefix_sum(num_samples, comm);
-        std::vector<Substring> local_splitters;
-        for (uint64_t i = 0; i < blocks - 1; i++) {
-            int64_t global_index = (i + 1) * info.total_sample_size / blocks;
-            int64_t x = global_index - samples_before;
-            if (x >= 0 && x < num_samples) {
-                local_splitters.push_back(local_samples[x].letters);
-            }
-        }
-        std::vector<Substring> global_splitters = comm.allgatherv(send_buf(local_splitters));
-        return global_splitters;
-    }
-
     // computes how many chars are at position with a remainder
     std::array<uint64_t, DC::X> compute_num_pos_mod(uint64_t total_chars) const {
         std::array<uint64_t, X> num_pos_mod;
@@ -402,7 +384,6 @@ public:
         const bool use_packed_samples = config.use_char_packing_samples && recursion_depth == 0;
         const bool use_packed_merging = config.use_char_packing_merging && recursion_depth == 0;
 
-
         // configure string sorting algorithm, can use radix sort only for small chars
         dsss::SeqStringSorter string_algo =
             info.largest_char < 256 ? config.string_sorter : dsss::SeqStringSorter::MultiKeyQSort;
@@ -418,6 +399,7 @@ public:
         }
 
         // configure space efficient sort
+        SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort(comm, config);
         uint64_t buckets_samples = config.buckets_samples_at_level(recursion_depth);
         uint64_t buckets_merging = config.buckets_merging_at_level(recursion_depth);
         const bool use_bucket_sorting_samples = buckets_samples > 1;
@@ -511,7 +493,7 @@ public:
 
             // get splitters from sorted sample sequence
             if (use_bucket_sorting_merging && !config.use_random_sampling_splitters) {
-                global_samples_splitters = get_sample_splitters(local_samples, buckets_merging);
+                global_samples_splitters = space_efficient_sort.get_uniform_splitters(local_samples, buckets_merging);
             }
             //******* End Phase 1: Construct Samples  ********
 

@@ -380,7 +380,7 @@ void compute_sa(kamping::Communicator<>& comm) {
 
     // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    // run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
 
@@ -389,15 +389,15 @@ void compute_sa(kamping::Communicator<>& comm) {
     // if (dcx_variant == "dc3") {
     // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     // } else
-    if (dcx_variant == "dc7") {
-        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc13") {
-        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc21") {
-        run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
-    } else if (dcx_variant == "dc31") {
-        run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
-    }
+    // if (dcx_variant == "dc7") {
+    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc13") {
+    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc21") {
+    //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc31") {
+    //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    // }
     //  else
     // if (dcx_variant == "dc39") {
     //     run_pdcx<PDCX<char_type, index_type, DC39Param>, char_type, index_type>(comm);

@@ -65,6 +65,8 @@ struct DCSampleString {
         return ss.str();
     }
 
+    std::array<char_type, DC::X + 1> get_array_letters() const { return letters; }
+
     SampleStringLetters letters;
     index_type index;
 };
