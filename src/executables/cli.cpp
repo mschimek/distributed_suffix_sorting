@@ -18,6 +18,7 @@
 #include "sorters/sample_sort_config.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "util/memory.hpp"
 #include "util/printing.hpp"
 #include "util/random.hpp"
 #include "util/uint_types.hpp"
@@ -26,9 +27,9 @@
 
 using namespace dsss;
 
-// using char_type = uint8_t;
+using char_type = uint8_t;
 // using char_type = uint16_t;
-using char_type = uint32_t;
+// using char_type = uint32_t;
 using index_type = uint40;
 
 size_t string_size = {0};
@@ -378,7 +379,7 @@ void compute_sa(kamping::Communicator<>& comm) {
     timer.stop();
 
     // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
@@ -386,16 +387,18 @@ void compute_sa(kamping::Communicator<>& comm) {
     // run_pdcx<PDCX<char_type, index_type, DC133Param>, char_type, index_type>(comm);
 
     // if (dcx_variant == "dc3") {
-    //     run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc7") {
-    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc13") {
-    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc21") {
-    //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc31") {
-    //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     // } else
+    if (dcx_variant == "dc7") {
+        run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc13") {
+        run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc21") {
+        run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc31") {
+        run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
+    }
+    //  else
     // if (dcx_variant == "dc39") {
     //     run_pdcx<PDCX<char_type, index_type, DC39Param>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc57") {
@@ -455,6 +458,21 @@ void check_sa(kamping::Communicator<>& comm) {
     }
 }
 
+void report_memory_usage(kamping::Communicator<>& comm) {
+    kamping::report_on_root("Memory Usage:", comm);
+    uint64_t max_mem = dsss::get_max_mem_bytes();
+    uint64_t max_rss = mpi_util::all_reduce_max(max_mem, comm);
+    double blowup = (double)max_rss / local_string.size();
+    kamping::report_on_root("max_rss_pe=" + std::to_string(max_rss), comm);
+    kamping::report_on_root("blowup_pe=" + std::to_string(blowup), comm);
+    auto all_mem = comm.gather(kamping::send_buf(max_mem));
+    if (comm.rank() == 0) {
+        std::cout << "max_mem_pe=";
+        kamping::print_vector(all_mem, ",");
+        std::cout << std::endl;
+    }
+}
+
 int main(int32_t argc, char const* argv[]) {
     kamping::Environment e;
     kamping::Communicator comm;
@@ -468,9 +486,11 @@ int main(int32_t argc, char const* argv[]) {
     parse_enums_and_lists(comm);
     report_arguments(comm);
     read_input(comm);
+
     compute_sa(comm);
+    report_memory_usage(comm);
+
     check_sa(comm);
     write_sa(comm);
-
     return 0;
 }
