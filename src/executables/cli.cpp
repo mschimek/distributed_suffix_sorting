@@ -18,6 +18,7 @@
 #include "sorters/sample_sort_config.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "strings/char_container.hpp"
 #include "util/memory.hpp"
 #include "util/printing.hpp"
 #include "util/random.hpp"
@@ -378,9 +379,65 @@ void compute_sa(kamping::Communicator<>& comm) {
     compress_alphabet(local_string, comm);
     timer.stop();
 
+    // if (input_alphabet_size >= 8) {
+    //     report_on_root("CharContainer not suitable for alphabet size >= 8", comm);
+    //     exit(1);
+    // }
+    // with packing ratio = 2
+    // 2 * 21 * 3 = 126 bits
+
+    // using DCXParam = DC21Param;
+    // using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
+    // pdcx_config.packing_ratio = 2;
+
+    // using DCXParam = DC31Param;
+    // using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint32_t>;
+
+    // using DCXParam = DC13Param;
+    // using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
+
+    using DCXParam = DC21Param;
+    using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
+
+    run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+             char_type,
+             index_type>(comm);
+
+    // if (dcx_variant == "dc7") {
+    //     using DCXParam = DC7Param;
+    //     using CharContainer = PackedInteger<char_type, 8, uint64_t>;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer>, char_type,
+    //     index_type>(comm);
+    // } else if(dcx_variant == "dc13") {
+    //     using DCXParam = DC13Param;
+    //     using CharContainer = DoublePackedInteger<char_type, 8, uint64_t, uint64_t>;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer>, char_type,
+    //     index_type>(comm);
+    // }
+    // else {
+    //     using DCXParam = DC21Param;
+    //     using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer>, char_type,
+    //     index_type>(comm);
+    // }
+
+
+    // run_pdcx<PDCX<char_type, index_type, DC31Param, DoublePackedInteger<char_type, 3>,
+    // DoublePackedInteger<char_type, 3>>, char_type, index_type>(comm); run_pdcx<PDCX<char_type,
+    // index_type, DC21Param, PackedInteger<char_type, 3>, PackedInteger<char_type, 3>>, char_type,
+    // index_type>(comm);
+
+    // if(input_alphabet_size >= 5) {
+    //     report_on_root("CharContainer not suitable for alphabet size >= 5", comm);
+    //     exit(1);
+    // }
+    // run_pdcx<PDCX<char_type, index_type, DC31Param, PackedIntegerPadding<char_type, 2>,
+    // PackedIntegerPadding<char_type, 2>>, char_type, index_type>(comm);
+
+
     // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
+    // run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
     // run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
 

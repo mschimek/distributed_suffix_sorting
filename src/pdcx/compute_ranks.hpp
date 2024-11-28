@@ -55,9 +55,9 @@ struct DCRankIndex {
     }
 };
 
-template <typename char_type, typename index_type, typename DC>
+template <typename char_type, typename index_type, typename DC, typename SampleString>
 struct LexicographicRankPhase {
-    using SampleString = DCSampleString<char_type, index_type, DC>;
+    // using SampleString = DCSampleString<char_type, index_type, DC>;
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
 
     Communicator<>& comm;

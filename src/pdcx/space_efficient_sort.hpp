@@ -18,7 +18,7 @@ template <typename char_type, typename index_type, typename DC>
 struct SpaceEfficientSort {
     // X chars and one 0-character
     using Splitter = std::array<char_type, DC::X + 1>;
-    using SampleString = DCSampleString<char_type, index_type, DC>;
+    // using SampleString = DCSampleString<char_type, index_type, DC>;
 
     Communicator<>& comm;
     PDCXConfig& config;
@@ -63,6 +63,7 @@ struct SpaceEfficientSort {
     }
 
     // compute even distributed splitters from sorted local samples
+    template<typename SampleString>
     std::vector<Splitter> get_uniform_splitters(std::vector<SampleString>& local_samples,
                                                 uint64_t blocks) {
         int64_t num_samples = local_samples.size();

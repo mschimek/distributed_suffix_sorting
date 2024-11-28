@@ -74,11 +74,16 @@ struct DCMergeSamples {
         auto [d, r1, r2] = DC::cmpDepthRanks[i1][i2];
 
         // compare first d chars
-        for (int k = 0; k < d; k++) {
-            if (chars.at(k) != b.chars.at(k)) {
-                return chars.at(k) < b.chars.at(k);
-            }
-        }
+        // TODO: only temporary
+        // for (int k = 0; k < d; k++) {
+        //     if (chars.at(k) != b.chars.at(k)) {
+        //         return chars.at(k) < b.chars.at(k);
+        //     }
+        // }
+
+        // assuming chars is packed
+        if (chars != b.chars)
+            return (chars < b.chars);
 
         // tie breaking using ranks
         return ranks[r1] < b.ranks[r2];
@@ -97,7 +102,7 @@ template <typename char_type,
 struct MergeSamplePhase {
     using SampleString = DCSampleString<char_type, index_type, DC>;
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
-    using MergeSamples = DCMergeSamples<char_type, index_type, DC>;
+    using MergeSamples = DCMergeSamples<char_type, index_type, DC, CharContainer>;
     using LcpType = SeqStringSorterWrapper::LcpType;
 
     static constexpr uint32_t X = DC::X;
@@ -149,10 +154,14 @@ struct MergeSamplePhase {
     }
 
     CharContainer materialize_characters(std::vector<char_type>& local_string,
-                                                    uint64_t char_pos) const {
+                                         uint64_t char_pos,
+                                         uint64_t char_packing_ratio = 1) const {
         KASSERT(char_pos + X - 2 < local_string.size());
+        // TODO only temporary
         return CharContainer(local_string.begin() + char_pos,
-                             local_string.begin() + char_pos + X - 1);
+                             local_string.begin() + char_pos + char_packing_ratio * X - 1);
+        // return CharContainer(local_string.begin() + char_pos,
+        //                      local_string.begin() + char_pos + X - 1);
     }
 
     std::array<index_type, D> materialize_ranks(std::vector<RankIndex>& local_ranks,
@@ -196,13 +205,14 @@ struct MergeSamplePhase {
         merge_samples.reserve(info.local_chars);
 
         CharPacking<char_type, X> packing(info.largest_char + 1);
+        uint64_t char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
             // if (use_packing) {
             //     return packing.materialize_packed_sample(local_string, char_pos);
             // } else {
             //     return materialize_characters(local_string, char_pos);
             // }
-            return materialize_characters(local_string, char_pos);
+            return materialize_characters(local_string, char_pos, char_packing_ratio);
         };
 
         // for each index in local string
@@ -352,13 +362,14 @@ struct MergeSamplePhase {
 
         CharPacking<char_type, X> packing(info.largest_char);
 
+        uint64_t char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
             // if (use_packing) {
             //     return packing.materialize_packed_sample(local_string, char_pos);
             // } else {
             //     return materialize_characters(local_string, char_pos);
             // }
-            return materialize_characters(local_string, char_pos);
+            return materialize_characters(local_string, char_pos, char_packing_ratio);
         };
 
         auto [bucket_sizes, sample_to_bucket] =
@@ -449,6 +460,7 @@ struct MergeSamplePhase {
 
         CharPacking<char_type, X> packing(info.largest_char);
 
+        uint64_t char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
             // if (use_packing) {
             //     return packing.materialize_packed_sample(local_string, char_pos);
@@ -456,7 +468,7 @@ struct MergeSamplePhase {
             // } else {
             //     return materialize_characters(local_string, char_pos);
             // }
-            return materialize_characters(local_string, char_pos);
+            return materialize_characters(local_string, char_pos, char_packing_ratio);
         };
 
         struct Chunk {
@@ -473,7 +485,10 @@ struct MergeSamplePhase {
 
         // add padding to be able to materialize last suffix in chunk
         uint64_t num_dc_samples = util::div_ceil(chunk_size, X) * D + 1;
-        uint64_t chars_with_padding = chunk_size + packing.char_packing_ratio * (X - 1) - 1;
+        // TODO only temp
+        // uint64_t chars_with_padding = chunk_size + packing.char_packing_ratio * (X - 1) - 1;
+        // uint64_t chars_with_padding = chunk_size + packing.char_packing_ratio * X  - 1;
+        uint64_t chars_with_padding = chunk_size + char_packing_ratio * X - 1;
         uint64_t ranks_with_padding = num_dc_samples + D - 1;
 
         std::mt19937 rng(config.seed + comm.rank());

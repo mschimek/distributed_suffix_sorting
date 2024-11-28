@@ -32,6 +32,7 @@ struct PDCXConfig {
     uint64_t num_samples_splitters = 100;
     uint64_t num_randomized_chunks = 100;
     uint64_t seed = 0;
+    uint64_t packing_ratio = 1;
     double discarding_threshold = 0.7;
     double min_imbalance = 0.25;
     bool use_string_sort = false;
@@ -74,6 +75,7 @@ struct PDCXConfig {
         std::cout << V(balance_blocks_space_efficient_sort) << "\n";
         std::cout << V(use_randomized_chunks_merging) << "\n";
         std::cout << V(num_randomized_chunks) << "\n";
+        std::cout << V(packing_ratio) << "\n";
         std::cout << std::endl;
 
         sample_sort_config.print_config();

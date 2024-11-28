@@ -37,6 +37,7 @@
 #include "sorters/sample_sort_common.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
+#include "strings/char_container.hpp"
 #include "util/memory.hpp"
 #include "util/printing.hpp"
 #include "util/string_util.hpp"
@@ -47,11 +48,19 @@ namespace dsss::dcx {
 using namespace kamping;
 
 
-template <typename char_type, typename index_type, typename DC>
+template <typename char_type,
+          typename index_type,
+          typename DC,
+          typename CharContainerSamples = CharArray<char_type, DC::X + 1>,
+          typename CharContainerMerging = CharArray<char_type, DC::X>>
 class PDCX {
-    using SampleString = DCSampleString<char_type, index_type, DC>;
+    using SampleString = DCSampleString<char_type, index_type, DC, CharContainerSamples>;
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
-    using MergeSamples = DCMergeSamples<char_type, index_type, DC>;
+    using MergeSamples = DCMergeSamples<char_type, index_type, DC, CharContainerMerging>;
+
+    using SamplePhase = SampleStringPhase<char_type, index_type, DC, CharContainerSamples>;
+    using RankPhase = LexicographicRankPhase<char_type, index_type, DC, SampleString>;
+    using MergePhase = MergeSamplePhase<char_type, index_type, DC, CharContainerMerging>;
 
 public:
     PDCX(PDCXConfig& _config, Communicator<>& _comm)
@@ -444,17 +453,14 @@ public:
 
         std::vector<RankIndex> local_ranks;
         std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
-        SampleStringPhase<char_type, index_type, DC> phase1(comm,
-                                                            config,
-                                                            info,
-                                                            atomic_sorter,
-                                                            string_sorter_samples);
+        SamplePhase phase1(comm, config, info, atomic_sorter, string_sorter_samples);
         // add a padding of zeros to local string taking into account char packing
-        CharPacking<char_type, X> packing(info.largest_char + 1);
+        // CharPacking<char_type, X> packing(info.largest_char + 1);
+        config.packing_ratio = 2;
         const uint64_t char_packing_ratio_samples =
-            use_packed_samples ? packing.char_packing_ratio : 1;
+            use_packed_samples ? config.packing_ratio : 1;
         const uint64_t char_packing_ratio_merging =
-            use_packed_merging ? packing.char_packing_ratio : 1;
+            use_packed_merging ? config.packing_ratio : 1;
         const uint64_t char_packing_ratio =
             std::max(char_packing_ratio_samples, char_packing_ratio_merging);
         if (info.recursion_depth == 0) {
@@ -463,9 +469,11 @@ public:
         }
         phase1.make_padding_and_shifts(local_string, char_packing_ratio);
 
-
         if (use_bucket_sorting_samples) {
             //******* Start Phase 1 + 2: Construct Samples +   Construct Ranks********
+            report_on_root("space efficient sample + rank phase currently disabled.", comm);
+            exit(1);
+            /* disabled for now
             report_on_root("Phase 1 + 2: Sort Samples + Compute Ranks with "
                                + std::to_string(buckets_samples) + " buckets.",
                            comm,
@@ -478,6 +486,7 @@ public:
                                                               buckets_samples,
                                                               use_packed_samples);
             timer.stop();
+            */
             //******* End Phase 1 + 2: Construct Samples +   Construct Ranks********
 
         } else {
@@ -493,14 +502,15 @@ public:
 
             // get splitters from sorted sample sequence
             if (use_bucket_sorting_merging && !config.use_random_sampling_splitters) {
-                global_samples_splitters = space_efficient_sort.get_uniform_splitters(local_samples, buckets_merging);
+                global_samples_splitters =
+                    space_efficient_sort.get_uniform_splitters(local_samples, buckets_merging);
             }
             //******* End Phase 1: Construct Samples  ********
 
             //******* Start Phase 2: Construct Ranks  ********
             report_on_root("Phase 2: Construct Ranks", comm, recursion_depth, config.print_phases);
             timer.synchronize_and_start("phase_02_ranks");
-            LexicographicRankPhase<char_type, index_type, DC> phase2(comm, info);
+            RankPhase phase2(comm, info);
             local_ranks = phase2.create_lexicographic_ranks(local_samples);
             free_memory(std::move(local_samples));
             timer.stop();
@@ -536,11 +546,7 @@ public:
         report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_04_merge");
 
-        MergeSamplePhase<char_type, index_type, DC> phase4(comm,
-                                                           config,
-                                                           info,
-                                                           atomic_sorter,
-                                                           string_sorter_merging);
+        MergePhase phase4(comm, config, info, atomic_sorter, string_sorter_merging);
         phase4.shift_ranks_left(local_ranks);
         phase4.push_padding(local_ranks);
 
@@ -551,7 +557,8 @@ public:
                 timer.synchronize_and_start("phase_04_random_sample_splitters");
                 global_samples_splitters =
                     space_efficient_sort.random_sample_splitters(info.local_chars,
-                                                                 buckets_merging, local_string);
+                                                                 buckets_merging,
+                                                                 local_string);
                 timer.stop();
             }
 

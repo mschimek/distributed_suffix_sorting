@@ -56,9 +56,10 @@ struct DCSampleString {
 
     std::array<char_type, DC::X + 1> get_array_letters() const {
         std::array<char_type, DC::X + 1> array;
-        for (uint32_t i = 0; i < array.size(); i++) {
+        for (uint32_t i = 0; i < DC::X; i++) {
             array[i] = chars.at(i);
         }
+        array.back() = 0;
         return array;
     }
 
@@ -112,8 +113,8 @@ struct SampleStringPhase {
     }
 
     // materialize a difference cover sample
-    CharContainer materialize_sample(std::vector<char_type>& local_string, uint64_t i) const {
-        return CharContainer(local_string.begin() + i, local_string.begin() + i + X);
+    CharContainer materialize_sample(std::vector<char_type>& local_string, uint64_t i, uint64_t packing_ratio = 1) const {
+        return CharContainer(local_string.begin() + i, local_string.begin() + i + X * packing_ratio);
     }
 
     std::array<char_type, X + 1> materialize_splitter(std::vector<char_type>& local_string,
@@ -183,7 +184,7 @@ struct SampleStringPhase {
     std::vector<SampleString> sorted_dc_samples(std::vector<char_type>& local_string,
                                                 bool use_packing = false) {
         // packing information
-        CharPacking<char_type, X + 1> packing(info.largest_char);
+        // CharPacking<char_type, X + 1> packing(info.largest_char);
 
         // materialize samples
         std::vector<SampleString> local_samples;
@@ -198,8 +199,9 @@ struct SampleStringPhase {
         //         return materialize_sample(local_string, i);
         //     });
         // }
+        uint64_t packing_ratio = use_packing? config.packing_ratio : 1;
         local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
-            return materialize_sample(local_string, i);
+            return materialize_sample(local_string, i, packing_ratio);
         });
 
         // sort samples
