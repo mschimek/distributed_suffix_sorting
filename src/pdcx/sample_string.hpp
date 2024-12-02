@@ -105,15 +105,15 @@ struct SampleStringPhase {
 
 
     // shift characters left to compute overlapping samples
-    void shift_chars_left(std::vector<char_type>& local_string, uint64_t packing_ratio = 1) const {
+    void shift_chars_left(std::vector<char_type>& local_string, double packing_ratio = 1) const {
         // if we can pack 2 chars into one type, we need more 2x padding
-        uint64_t count = packing_ratio * X - 1;
+        double count = packing_ratio * X - 1;
         mpi_util::shift_entries_left(local_string, count, comm);
         local_string.shrink_to_fit();
     }
 
     // materialize a difference cover sample
-    CharContainer materialize_sample(std::vector<char_type>& local_string, uint64_t i, uint64_t packing_ratio = 1) const {
+    CharContainer materialize_sample(std::vector<char_type>& local_string, uint64_t i, double packing_ratio = 1) const {
         return CharContainer(local_string.begin() + i, local_string.begin() + i + X * packing_ratio);
     }
 
@@ -170,7 +170,7 @@ struct SampleStringPhase {
     }
 
     void make_padding_and_shifts(std::vector<char_type>& local_string,
-                                 uint64_t char_packing_ratio = 1) {
+                                 double char_packing_ratio = 1) {
         // add padding to local string
         const uint64_t padding_length = char_packing_ratio * X;
         add_padding(local_string, padding_length);
@@ -199,7 +199,7 @@ struct SampleStringPhase {
         //         return materialize_sample(local_string, i);
         //     });
         // }
-        uint64_t packing_ratio = use_packing? config.packing_ratio : 1;
+        double packing_ratio = use_packing? config.packing_ratio : 1;
         local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
             return materialize_sample(local_string, i, packing_ratio);
         });

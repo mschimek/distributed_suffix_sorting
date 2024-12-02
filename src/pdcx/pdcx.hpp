@@ -456,12 +456,12 @@ public:
         SamplePhase phase1(comm, config, info, atomic_sorter, string_sorter_samples);
         // add a padding of zeros to local string taking into account char packing
         // CharPacking<char_type, X> packing(info.largest_char + 1);
-        config.packing_ratio = 2;
-        const uint64_t char_packing_ratio_samples =
+        // config.packing_ratio = 2;
+        const double char_packing_ratio_samples =
             use_packed_samples ? config.packing_ratio : 1;
-        const uint64_t char_packing_ratio_merging =
+        const double char_packing_ratio_merging =
             use_packed_merging ? config.packing_ratio : 1;
-        const uint64_t char_packing_ratio =
+        const double char_packing_ratio =
             std::max(char_packing_ratio_samples, char_packing_ratio_merging);
         if (info.recursion_depth == 0) {
             get_stats_instance().packed_chars_samples.push_back(char_packing_ratio_samples);

@@ -142,6 +142,10 @@ void configure_cli() {
         "use_char_packing_merging",
         pdcx_config.use_char_packing_merging,
         "Pack multiple characters in the same datatype for phase 4 (merging) on the first level.");
+    cp.add_bytes('O',
+                 "container_variant",
+                 pdcx_config.container_variant,
+                 "4 Container Variants for DNA with 4 bits, 0,1,2,3.");
 
 
     // sorter configuration
@@ -379,16 +383,111 @@ void compute_sa(kamping::Communicator<>& comm) {
     compress_alphabet(local_string, comm);
     timer.stop();
 
-    // if (input_alphabet_size >= 8) {
-    //     report_on_root("CharContainer not suitable for alphabet size >= 8", comm);
-    //     exit(1);
-    // }
+    if (input_alphabet_size >= 8) {
+        report_on_root("CharContainer not suitable for alphabet size >= 8", comm);
+        exit(1);
+    }
+
     // with packing ratio = 2
     // 2 * 21 * 3 = 126 bits
-
     // using DCXParam = DC21Param;
     // using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
     // pdcx_config.packing_ratio = 2;
+
+    ///// 3 bits, 21 chars per 64 bit
+    using CharContainer0 = DoublePackedInteger<char_type, 3, uint64_t, uint32_t>;
+    using CharContainer1 = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
+    using CharContainer2 = TriplePackedInteger<char_type, 3, uint64_t, uint64_t, uint32_t>;
+    using CharContainer3 = TriplePackedInteger<char_type, 3, uint64_t, uint64_t, uint64_t>;
+
+    double dcx = dcx_variant == "dc21" ? 21 : 31;
+    // TODO correct char sizes for 3 bits
+    double chars[4] = {24, 32, 40, 48};
+    pdcx_config.packing_ratio = chars[pdcx_config.container_variant] / dcx;
+    report_on_root("packed_chars=" + std::to_string(chars[pdcx_config.container_variant]), comm);
+
+    if (dcx_variant == "dc21") {
+        using DCXParam = DC21Param;
+        if (pdcx_config.container_variant == 0) {
+            using CharContainer = CharContainer0;
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+
+        } else if (pdcx_config.container_variant == 1) {
+            using CharContainer = CharContainer1;
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+
+        } else if (pdcx_config.container_variant == 2) {
+            using CharContainer = CharContainer2;
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+        } else {
+            using CharContainer = CharContainer3;
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+        }
+    } else if (dcx_variant == "dc31") {
+        using DCXParam = DC31Param;
+        if (pdcx_config.container_variant == 0) {
+            report_on_root("unsupported conatiner variant for dc31", comm);
+            exit(1);
+            // using CharContainer = CharContainer0;
+            // run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+            //          char_type,
+            //          index_type>(comm);
+        } else if (pdcx_config.container_variant == 1) {
+            using CharContainer = CharContainer1;
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+
+        } else if (pdcx_config.container_variant == 2) {
+            using CharContainer = CharContainer2;
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+        } else {
+            using CharContainer = CharContainer3;
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+        }
+    } else {
+        report_on_root("unsupported dcx variant, dc21 or dc31", comm);
+        exit(1);
+    }
+
+    ///// 3 bits
+
+
+    ///// 4 bits, 4 options
+    // 64 + 32
+    // 64 + 64
+    // 64 + 64 + 32
+    // 64 + 64 + 64
+
+
+    // 4 bits per char, 16 chars per 64 bit integer
+    // using DCXParam = DC21Param;
+    // using CharContainer = DoublePackedInteger<char_type, 4, uint64_t, uint64_t>;
+    // pdcx_config.packing_ratio = (2 * 16) / 21;
+
+    // using DCXParam = DC21Param;
+    // using CharContainer = TriplePackedInteger<char_type, 4, uint64_t, uint64_t, uint64_t>;
+    // pdcx_config.packing_ratio = (3 * 16) / 21;
+
+    // using DCXParam = DC31Param;
+    // using CharContainer = DoublePackedInteger<char_type, 4, uint64_t, uint64_t>;
+    // pdcx_config.packing_ratio = (2 * 16) / 31;
+
+    // using DCXParam = DC31Param;
+    // using CharContainer = TriplePackedInteger<char_type, 4, uint64_t, uint64_t, uint64_t>;
+    // pdcx_config.packing_ratio = (3 * 16) / 31;
 
     // using DCXParam = DC31Param;
     // using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint32_t>;
@@ -396,12 +495,77 @@ void compute_sa(kamping::Communicator<>& comm) {
     // using DCXParam = DC13Param;
     // using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
 
-    using DCXParam = DC21Param;
-    using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
+    // using DCXParam = DC21Param;
+    // using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
 
-    run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
-             char_type,
-             index_type>(comm);
+    // using CharContainer0 = DoublePackedInteger<char_type, 4, uint64_t, uint32_t>;
+    // using CharContainer1 = DoublePackedInteger<char_type, 4, uint64_t, uint64_t>;
+    // using CharContainer2 = TriplePackedInteger<char_type, 4, uint64_t, uint64_t, uint32_t>;
+    // using CharContainer3 = TriplePackedInteger<char_type, 4, uint64_t, uint64_t, uint64_t>;
+
+    // double dcx = dcx_variant == "dc21" ? 21 : 31;
+    // double chars[4] = {24, 32, 40, 48};
+    // pdcx_config.packing_ratio = chars[pdcx_config.container_variant] / dcx;
+    // report_on_root("packed_chars=" + std::to_string(chars[pdcx_config.container_variant]), comm);
+
+    // if (dcx_variant == "dc21") {
+    //     using DCXParam = DC21Param;
+    //     if (pdcx_config.container_variant == 0) {
+    //         using CharContainer = CharContainer0;
+    //         run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+    //                  char_type,
+    //                  index_type>(comm);
+
+    //     } else if (pdcx_config.container_variant == 1) {
+    //         using CharContainer = CharContainer1;
+    //         run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+    //                  char_type,
+    //                  index_type>(comm);
+
+    //     } else if (pdcx_config.container_variant == 2) {
+    //         using CharContainer = CharContainer2;
+    //         run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+    //                  char_type,
+    //                  index_type>(comm);
+    //     } else {
+    //         using CharContainer = CharContainer3;
+    //         run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+    //                  char_type,
+    //                  index_type>(comm);
+    //     }
+    // }
+    // else if (dcx_variant == "dc31") {
+    //     using DCXParam = DC31Param;
+    //     if (pdcx_config.container_variant == 0) {
+    //         report_on_root("unsupported container type for dc31", comm);
+    //         exit(1);
+    //     } else if (pdcx_config.container_variant == 1) {
+    //         using CharContainer = CharContainer1;
+    //         run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+    //                  char_type,
+    //                  index_type>(comm);
+
+    //     } else if (pdcx_config.container_variant == 2) {
+    //         using CharContainer = CharContainer2;
+    //         run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+    //                  char_type,
+    //                  index_type>(comm);
+    //     } else {
+    //         using CharContainer = CharContainer3;
+    //         run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+    //                  char_type,
+    //                  index_type>(comm);
+    //     }
+    // } else {
+    //     report_on_root("unsupported dcx variant, dc21 or dc31", comm);
+    //     exit(1);
+    // }
+
+    // run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+    //          char_type,
+    //          index_type>(comm);
+
+    ///////// 4 bits
 
     // if (dcx_variant == "dc7") {
     //     using DCXParam = DC7Param;

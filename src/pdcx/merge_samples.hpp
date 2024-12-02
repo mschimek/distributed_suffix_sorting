@@ -155,7 +155,7 @@ struct MergeSamplePhase {
 
     CharContainer materialize_characters(std::vector<char_type>& local_string,
                                          uint64_t char_pos,
-                                         uint64_t char_packing_ratio = 1) const {
+                                         double char_packing_ratio = 1) const {
         KASSERT(char_pos + X - 2 < local_string.size());
         // TODO only temporary
         return CharContainer(local_string.begin() + char_pos,
@@ -205,7 +205,7 @@ struct MergeSamplePhase {
         merge_samples.reserve(info.local_chars);
 
         CharPacking<char_type, X> packing(info.largest_char + 1);
-        uint64_t char_packing_ratio = use_packing ? config.packing_ratio : 1;
+        double char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
             // if (use_packing) {
             //     return packing.materialize_packed_sample(local_string, char_pos);
@@ -362,7 +362,7 @@ struct MergeSamplePhase {
 
         CharPacking<char_type, X> packing(info.largest_char);
 
-        uint64_t char_packing_ratio = use_packing ? config.packing_ratio : 1;
+        double char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
             // if (use_packing) {
             //     return packing.materialize_packed_sample(local_string, char_pos);
@@ -460,7 +460,7 @@ struct MergeSamplePhase {
 
         CharPacking<char_type, X> packing(info.largest_char);
 
-        uint64_t char_packing_ratio = use_packing ? config.packing_ratio : 1;
+        double char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
             // if (use_packing) {
             //     return packing.materialize_packed_sample(local_string, char_pos);

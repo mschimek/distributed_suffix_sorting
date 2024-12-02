@@ -106,8 +106,8 @@ struct Statistics {
     std::vector<double> avg_segment;
     std::vector<uint64_t> max_segment;
     std::vector<uint64_t> bucket_sizes;
-    std::vector<uint64_t> packed_chars_samples;
-    std::vector<uint64_t> packed_chars_merging;
+    std::vector<double> packed_chars_samples;
+    std::vector<double> packed_chars_merging;
 };
 
 // singleton instance
