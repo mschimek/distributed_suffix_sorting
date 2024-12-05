@@ -382,3 +382,47 @@ struct TriplePackedInteger {
     IntType2 chars2;
     IntType3 chars3;
 };
+
+// only 8 bit
+template <typename char_type>
+struct QuadruplePackedInteger {
+    QuadruplePackedInteger() : chars1(), chars2() {}
+
+    template <typename CharIterator>
+    QuadruplePackedInteger(CharIterator begin, CharIterator end) : chars1(begin, begin + 16), chars2(begin + 16, end) {}
+
+    char_type at(uint64_t i) const {
+        if(i < 16) {
+            return chars1.at(i);
+        } else {
+            return chars2.at(i - 16);
+        }
+    }
+
+    bool operator<(const QuadruplePackedInteger& other) const {
+        if (chars1 != other.chars1) {
+            return chars1 < other.chars1;
+        } else {
+            return chars2 < other.chars2;
+        }
+    }
+    bool operator==(const QuadruplePackedInteger& other) const {
+        return chars1 == other.chars1 && chars2 == other.chars2;
+    }
+    bool operator!=(const QuadruplePackedInteger& other) const {
+        return chars1 != other.chars1 || chars2 != other.chars2;
+    }
+
+    // dummy method, do not use!
+    const char_type* cbegin_chars() const {
+        std::cout << "iterator not supported for PackedInteger\n";
+        exit(1);
+        return (const char_type*)&chars1;
+    }
+    const char_type* cend_chars() const { return (const char_type*)&chars1; }
+
+    std::string to_string() const { return chars1.to_string() + "-" + chars2.to_string(); }
+
+    DoublePackedInteger<char_type, 8, uint64_t, uint64_t> chars1;
+    DoublePackedInteger<char_type, 8, uint64_t, uint64_t> chars2;
+};
