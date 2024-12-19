@@ -383,39 +383,30 @@ void compute_sa(kamping::Communicator<>& comm) {
     compress_alphabet(local_string, comm);
     timer.stop();
 
+    using DCXParam = DC21Param;
+    double dcx = 21;
     if (input_alphabet_size <= 7) {
         // 3 bit variant
-        /*
-        using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint32_t>;
-        using DCXParam = DC21Param;
-        double packed_chars = 31;
-        pdcx_config.packing_ratio = packed_chars / 21;
-        */
         using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
-        using DCXParam = DC21Param;
-        double packed_chars = 32; // 42 crashes
-        pdcx_config.packing_ratio = packed_chars / 21;
+        double packed_chars = 2 * 21;
+        pdcx_config.packing_ratio = packed_chars / dcx;
         report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
         report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
         report_on_root("using_3bit_packing=1", comm);
-        run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer>, char_type, index_type>(comm);
-
-
-        //     using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
-        //     using DCXParam = DC21Param;
-        //     double packed_chars = 42; // some bug?, before 32 worked
+        run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                 char_type,
+                 index_type>(comm);
     } else {
         // 8-bit variant
-        /*
-        */
-        using DCXParam = DC21Param;
         using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
-        double packed_chars = 24;
-        pdcx_config.packing_ratio = packed_chars / 21;
+        double packed_chars = 3 * 8;
+        pdcx_config.packing_ratio = packed_chars / dcx;
         report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
         report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
         report_on_root("using_3bit_packing=0", comm);
-        run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer>, char_type, index_type>(comm);
+        run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                 char_type,
+                 index_type>(comm);
     }
 
     // if (dcx_variant == "dc3") {
@@ -488,8 +479,23 @@ void report_memory_usage(kamping::Communicator<>& comm) {
 }
 
 int main(int32_t argc, char const* argv[]) {
+
+    uint64_t max_mem_start = dsss::get_max_mem_bytes();
     kamping::Environment e;
     kamping::Communicator comm;
+    uint64_t max_mem_init = dsss::get_max_mem_bytes();
+
+    auto all_mem_start = comm.allgather(kamping::send_buf(max_mem_start));
+    auto all_mem_init = comm.allgather(kamping::send_buf(max_mem_init));
+
+
+    if (comm.rank() == 0) {
+        std::cout << "max_mem_start=";
+        kamping::print_vector(all_mem_start, ",");
+        std::cout << "max_mem_init=";
+        kamping::print_vector(all_mem_init, ",");
+        std::cout << std::endl;
+    }
 
     options::report_compile_flags(comm);
 
@@ -499,7 +505,22 @@ int main(int32_t argc, char const* argv[]) {
     }
     parse_enums_and_lists(comm);
     report_arguments(comm);
+
+    uint64_t max_mem_before_input = dsss::get_max_mem_bytes();
+    auto all_mem_before_input = comm.allgather(kamping::send_buf(max_mem_before_input));
+    if (comm.rank() == 0) {
+        std::cout << "max_mem_before_input=";
+        kamping::print_vector(all_mem_before_input, ",");
+    }
+
     read_input(comm);
+
+    uint64_t max_mem_after_input = dsss::get_max_mem_bytes();
+    auto all_mem_after_input = comm.allgather(kamping::send_buf(max_mem_after_input));
+    if (comm.rank() == 0) {
+        std::cout << "max_mem_after_input=";
+        kamping::print_vector(all_mem_before_input, ",");
+    }
 
     compute_sa(comm);
     report_memory_usage(comm);

@@ -564,6 +564,13 @@ struct MergeSamplePhase {
         free_memory(local_ranks);
         timer.stop();
 
+        // if (info.recursion_depth == 0) {
+        //     uint64_t max_mem = dsss::get_max_mem_bytes();
+        //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
+        //     auto pt = &get_stats_instance().phase_04_before_alltoall_chunks;
+        //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
+        // }
+
         // exchange linearized data
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_alltoall_chunks");
         chunked_chars = mpi_util::alltoallv_combined(chunked_chars, send_cnt_chars, comm);
@@ -620,8 +627,21 @@ struct MergeSamplePhase {
                        info.recursion_depth);
         timer.stop();
 
+
+        // if (info.recursion_depth == 0) {
+        //     uint64_t max_mem = dsss::get_max_mem_bytes();
+        //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
+        //     auto pt = &get_stats_instance().phase_04_after_alltoall_chunks;
+        //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
+        // }
+
         std::vector<MergeSamples> samples;
         SA concat_sa_buckets;
+
+        // TODO size estimate, in best case, need only one reallocation at the end
+        uint64_t estimated_size = (info.total_chars / comm.size()) * 1.03;
+        concat_sa_buckets.reserve(estimated_size);
+        
         std::vector<uint64_t> sa_bucket_size;
         sa_bucket_size.reserve(num_buckets);
 
@@ -661,15 +681,57 @@ struct MergeSamplePhase {
                 }
             }
             timer.stop();
+
+            // TODO log max rss
+            // if (info.recursion_depth == 0) {
+            //     uint64_t max_mem = dsss::get_max_mem_bytes();
+            //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
+            //     auto pt = &get_stats_instance().max_mem_pe_chunking_before_sort;
+            //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
+            // }
+
             sort_merge_samples(samples);
+
+            // TODO log max rss
+            // if (info.recursion_depth == 0) {
+            //     uint64_t max_mem = dsss::get_max_mem_bytes();
+            //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
+            //     auto pt = &get_stats_instance().max_mem_pe_chunking_after_sort;
+            //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
+            // }
+
+            // reserve exact size, in case estimation was to low
+            uint64_t new_size = concat_sa_buckets.size() + samples.size();
+            if(new_size > concat_sa_buckets.capacity()) {
+                concat_sa_buckets.reserve(new_size);
+            }
 
             // extract SA of block
             for (auto& sample: samples) {
                 concat_sa_buckets.push_back(sample.index);
             }
+
+            // if (info.recursion_depth == 0) {
+            //     uint64_t max_mem = dsss::get_max_mem_bytes();
+            //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
+            //     auto pt = &get_stats_instance().max_mem_pe_chunking_after_concat;
+            //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
+            // }
+
             sa_bucket_size.push_back(samples.size());
             samples.clear();
         }
+
+        // ensure memory of samples is freed
+        free_memory(samples);
+
+        // more vectors freed
+        free_memory(chunks);
+        free_memory(sample_to_bucket);
+        free_memory(chunked_chars);
+        free_memory(chunked_ranks);
+        free_memory(chunk_global_index);
+        free_memory(chunk_sizes);
 
         // log imbalance of received suffixes
         double bucket_imbalance_received = get_imbalance_bucket(sa_bucket_size, total_chars, comm);
@@ -679,9 +741,22 @@ struct MergeSamplePhase {
                        comm,
                        info.recursion_depth);
 
+        if (info.recursion_depth == 0) {
+            get_stats_instance().phase_04_sa_size = comm.allgather(kamping::send_buf(concat_sa_buckets.size()));
+            get_stats_instance().phase_04_sa_capacity = comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
+        }
+
+
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
         SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
         timer.stop();
+
+        // if (info.recursion_depth == 0) {
+        //     uint64_t max_mem = dsss::get_max_mem_bytes();
+        //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
+        //     auto pt = &get_stats_instance().max_mem_pe_chunking_after_alltoal;
+        //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
+        // }
 
         return local_SA;
     }

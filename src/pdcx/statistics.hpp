@@ -82,6 +82,30 @@ struct Statistics {
         print_vector(packed_chars_samples, ",");
         std::cout << "packed_chars_merging=";
         print_vector(packed_chars_merging, ",");
+        std::cout << "max_mem_pe_phase_01=";
+        print_vector(max_mem_pe_phase_01, ",");
+        std::cout << "max_mem_pe_phase_02=";
+        print_vector(max_mem_pe_phase_02, ",");
+        std::cout << "max_mem_pe_phase_03=";
+        print_vector(max_mem_pe_phase_03, ",");
+        std::cout << "max_mem_pe_phase_04=";
+        print_vector(max_mem_pe_phase_04, ",");
+        std::cout << "max_mem_pe_chunking_before_sort=";
+        print_vector(max_mem_pe_chunking_before_sort, ",");
+        std::cout << "max_mem_pe_chunking_after_sort=";
+        print_vector(max_mem_pe_chunking_after_sort, ",");
+        std::cout << "max_mem_pe_chunking_after_concat=";
+        print_vector(max_mem_pe_chunking_after_concat, ",");
+        std::cout << "max_mem_pe_chunking_after_alltoal=";
+        print_vector(max_mem_pe_chunking_after_alltoal, ",");
+        std::cout << "phase_04_sa_size=";
+        print_vector(phase_04_sa_size, ",");
+        std::cout << "phase_04_sa_capacity=";
+        print_vector(phase_04_sa_capacity, ",");
+        std::cout << "phase_04_before_alltoall_chunks=";
+        print_vector(phase_04_before_alltoall_chunks, ",");
+        std::cout << "phase_04_after_alltoall_chunks=";
+        print_vector(phase_04_after_alltoall_chunks, ",");
         std::cout << std::endl;
     }
 
@@ -108,6 +132,19 @@ struct Statistics {
     std::vector<uint64_t> bucket_sizes;
     std::vector<double> packed_chars_samples;
     std::vector<double> packed_chars_merging;
+    std::vector<uint64_t> max_mem_pe_phase_01;
+    std::vector<uint64_t> max_mem_pe_phase_02;
+    std::vector<uint64_t> max_mem_pe_phase_03;
+    std::vector<uint64_t> max_mem_pe_phase_04;
+    std::vector<uint64_t> max_mem_pe_chunking_before_sort;
+    std::vector<uint64_t> max_mem_pe_chunking_after_sort;
+    std::vector<uint64_t> max_mem_pe_chunking_after_concat;
+    std::vector<uint64_t> max_mem_pe_chunking_after_alltoal;
+    std::vector<uint64_t> phase_04_sa_size;
+    std::vector<uint64_t> phase_04_sa_capacity;
+    std::vector<uint64_t> phase_04_before_alltoall_chunks;
+    std::vector<uint64_t> phase_04_after_alltoall_chunks;
+    
 };
 
 // singleton instance

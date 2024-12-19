@@ -43,6 +43,7 @@
 #include "util/string_util.hpp"
 #include "util/uint_types.hpp"
 
+
 namespace dsss::dcx {
 
 using namespace kamping;
@@ -105,6 +106,7 @@ public:
         }
         remove_padding(local_string);
     }
+
 
     void dispatch_recursive_call(std::vector<RankIndex>& local_ranks, uint64_t last_rank) {
         auto map_back_func = [&](index_type sa_i) { return map_back(sa_i); };
@@ -374,6 +376,13 @@ public:
     }
 
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
+        uint64_t max_mem_pdcx_start = dsss::get_max_mem_bytes();
+        auto all_max_mem_pdcx_start = comm.allgather(kamping::send_buf(max_mem_pdcx_start));
+        if (recursion_depth == 0 && comm.rank() == 0) {
+            std::cout << "max_mem_pdcx_start=";
+            kamping::print_vector(all_max_mem_pdcx_start, ",");
+        }
+
         timer.synchronize_and_start("pdcx");
 
         //******* Start Phase 0: Preparation  ********
@@ -457,10 +466,8 @@ public:
         // add a padding of zeros to local string taking into account char packing
         // CharPacking<char_type, X> packing(info.largest_char + 1);
         // config.packing_ratio = 2;
-        const double char_packing_ratio_samples =
-            use_packed_samples ? config.packing_ratio : 1;
-        const double char_packing_ratio_merging =
-            use_packed_merging ? config.packing_ratio : 1;
+        const double char_packing_ratio_samples = use_packed_samples ? config.packing_ratio : 1;
+        const double char_packing_ratio_merging = use_packed_merging ? config.packing_ratio : 1;
         const double char_packing_ratio =
             std::max(char_packing_ratio_samples, char_packing_ratio_merging);
         if (info.recursion_depth == 0) {
@@ -505,6 +512,11 @@ public:
                 global_samples_splitters =
                     space_efficient_sort.get_uniform_splitters(local_samples, buckets_merging);
             }
+            if (recursion_depth == 0) {
+                uint64_t max_mem = dsss::get_max_mem_bytes();
+                get_stats_instance().max_mem_pe_phase_01 =
+                    comm.allgather(kamping::send_buf(max_mem));
+            }
             //******* End Phase 1: Construct Samples  ********
 
             //******* Start Phase 2: Construct Ranks  ********
@@ -514,6 +526,12 @@ public:
             local_ranks = phase2.create_lexicographic_ranks(local_samples);
             free_memory(std::move(local_samples));
             timer.stop();
+            if (recursion_depth == 0) {
+                uint64_t max_mem = dsss::get_max_mem_bytes();
+                get_stats_instance().max_mem_pe_phase_02 =
+                    comm.allgather(kamping::send_buf(max_mem));
+            }
+
             //******* End Phase 2: Construct Ranks  ********
         }
 
@@ -540,6 +558,11 @@ public:
             dispatch_recursive_call(local_ranks, last_rank);
         }
         timer.stop();
+        if (recursion_depth == 0) {
+            uint64_t max_mem = dsss::get_max_mem_bytes();
+            get_stats_instance().max_mem_pe_phase_03 = comm.allgather(kamping::send_buf(max_mem));
+        }
+
         //******* End Phase 3: Recursive Call  ********
 
         //******* Start Phase 4: Merge Suffixes  ********
@@ -568,7 +591,9 @@ public:
                            recursion_depth,
                            config.print_phases);
 
-            if (recursion_depth == 0 && config.use_randomized_chunks_merging) {
+            // TODO: activated chunking on all levels
+            // if (recursion_depth == 0 && config.use_randomized_chunks_merging) {
+            if (config.use_randomized_chunks_merging) {
                 // with chunking
                 local_SA = phase4.space_effient_sort_chunking_SA(local_string,
                                                                  local_ranks,
@@ -592,6 +617,11 @@ public:
 
         redistribute_if_imbalanced(local_SA, config.min_imbalance, comm);
         timer.stop();
+        if (recursion_depth == 0) {
+            uint64_t max_mem = dsss::get_max_mem_bytes();
+            get_stats_instance().max_mem_pe_phase_04 = comm.allgather(kamping::send_buf(max_mem));
+        }
+
         //******* End Phase 4: Merge Suffixes  ********
 
         // logging

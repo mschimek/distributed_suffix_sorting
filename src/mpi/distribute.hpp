@@ -11,6 +11,7 @@
 #include "kamping/communicator.hpp"
 #include "mpi/alltoall.hpp"
 #include "mpi/reduce.hpp"
+#include "util/printing.hpp"
 
 namespace dsss::mpi_util {
 
@@ -102,10 +103,9 @@ std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
     std::vector<uint64_t> sum_kth_block =
         comm.allreduce(send_buf(block_size), op(ops::plus<>{}));
 
-
     // sort block indices by decreasing size
     std::vector<int64_t> idx_blocks(num_blocks);
-    std::iota(idx_blocks.begin(), idx_blocks.end(), 0);
+    std::iota(idx_blocks.begin(), idx_blocks.end(), int64_t(0));
     std::sort(idx_blocks.begin(), idx_blocks.end(), [&](int64_t a, int64_t b) {
         return sum_kth_block[a] > sum_kth_block[b];
     });
@@ -131,13 +131,13 @@ std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
         }
         target_size[pe_range[k + 1] - 1] += sum_kth_block[k] % num_pe_per_block[k];
     }
-
+    
     std::vector<int64_t> pred_target_size(comm.size(), 0);
     for (int64_t k = 0; k < num_blocks; k++) {
         std::exclusive_scan(target_size.begin() + pe_range[k],
                             target_size.begin() + pe_range[k + 1],
                             pred_target_size.begin() + pe_range[k],
-                            0);
+                            int64_t(0));
     }
 
     std::vector<int64_t> send_cnts(comm.size(), 0);
