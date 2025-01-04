@@ -113,8 +113,11 @@ struct SampleStringPhase {
     }
 
     // materialize a difference cover sample
-    CharContainer materialize_sample(std::vector<char_type>& local_string, uint64_t i, double packing_ratio = 1) const {
-        return CharContainer(local_string.begin() + i, local_string.begin() + i + X * packing_ratio);
+    CharContainer materialize_sample(std::vector<char_type>& local_string,
+                                     uint64_t i,
+                                     double packing_ratio = 1) const {
+        return CharContainer(local_string.begin() + i,
+                             local_string.begin() + i + X * packing_ratio);
     }
 
     std::array<char_type, X + 1> materialize_splitter(std::vector<char_type>& local_string,
@@ -183,23 +186,9 @@ struct SampleStringPhase {
     // sideeffect: shifts characters from next PE to localstring
     std::vector<SampleString> sorted_dc_samples(std::vector<char_type>& local_string,
                                                 bool use_packing = false) {
-        // packing information
-        // CharPacking<char_type, X + 1> packing(info.largest_char);
-
         // materialize samples
         std::vector<SampleString> local_samples;
-        // if (use_packing) {
-        //     local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i)
-        //     {
-        //         return packing.materialize_packed_sample(local_string, i);
-        //     });
-        // } else {
-        //     local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i)
-        //     {
-        //         return materialize_sample(local_string, i);
-        //     });
-        // }
-        double packing_ratio = use_packing? config.packing_ratio : 1;
+        double packing_ratio = use_packing ? config.packing_ratio : 1;
         local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
             return materialize_sample(local_string, i, packing_ratio);
         });

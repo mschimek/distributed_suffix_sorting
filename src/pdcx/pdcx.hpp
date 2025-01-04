@@ -463,9 +463,8 @@ public:
         std::vector<RankIndex> local_ranks;
         std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
         SamplePhase phase1(comm, config, info, atomic_sorter, string_sorter_samples);
+
         // add a padding of zeros to local string taking into account char packing
-        // CharPacking<char_type, X> packing(info.largest_char + 1);
-        // config.packing_ratio = 2;
         const double char_packing_ratio_samples = use_packed_samples ? config.packing_ratio : 1;
         const double char_packing_ratio_merging = use_packed_merging ? config.packing_ratio : 1;
         const double char_packing_ratio =
@@ -480,6 +479,7 @@ public:
             //******* Start Phase 1 + 2: Construct Samples +   Construct Ranks********
             report_on_root("space efficient sample + rank phase currently disabled.", comm);
             exit(1);
+            // TODO
             /* disabled for now
             report_on_root("Phase 1 + 2: Sort Samples + Compute Ranks with "
                                + std::to_string(buckets_samples) + " buckets.",
@@ -591,8 +591,6 @@ public:
                            recursion_depth,
                            config.print_phases);
 
-            // TODO: activated chunking on all levels
-            // if (recursion_depth == 0 && config.use_randomized_chunks_merging) {
             if (config.use_randomized_chunks_merging) {
                 // with chunking
                 local_SA = phase4.space_effient_sort_chunking_SA(local_string,

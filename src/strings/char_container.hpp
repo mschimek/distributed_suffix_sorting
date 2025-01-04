@@ -38,6 +38,7 @@ struct CharArray {
         return ss.str();
     }
 
+    static constexpr bool IS_PACKED = false;
     std::array<char_type, N> chars;
 };
 
@@ -84,6 +85,7 @@ struct PackedInteger {
 
     std::string to_string() const { return std::to_string(chars); }
 
+    static constexpr bool IS_PACKED = true;
     IntType chars;
 };
 
@@ -171,6 +173,7 @@ struct PackedIntegerPadding {
         return std::to_string(chars) + "-" + std::to_string(padding_len);
     }
 
+    static constexpr bool IS_PACKED = true;
     IntType chars;
     uint8_t padding_len;
 };
@@ -262,6 +265,7 @@ struct DoublePackedInteger {
 
     std::string to_string() const { return std::to_string(chars1) + "-" + std::to_string(chars2); }
 
+    static constexpr bool IS_PACKED = true;
     IntType1 chars1;
     IntType2 chars2;
 };
@@ -378,6 +382,7 @@ struct TriplePackedInteger {
 
     std::string to_string() const { return std::to_string(chars1) + "-" + std::to_string(chars2); }
 
+    static constexpr bool IS_PACKED = true;
     IntType1 chars1;
     IntType2 chars2;
     IntType3 chars3;
@@ -423,6 +428,7 @@ struct QuadruplePackedInteger {
 
     std::string to_string() const { return chars1.to_string() + "-" + chars2.to_string(); }
 
+    static constexpr bool IS_PACKED = true;
     DoublePackedInteger<char_type, 8, uint64_t, uint64_t> chars1;
     DoublePackedInteger<char_type, 8, uint64_t, uint64_t> chars2;
 };

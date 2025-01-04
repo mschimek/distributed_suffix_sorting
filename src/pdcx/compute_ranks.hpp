@@ -57,7 +57,6 @@ struct DCRankIndex {
 
 template <typename char_type, typename index_type, typename DC, typename SampleString>
 struct LexicographicRankPhase {
-    // using SampleString = DCSampleString<char_type, index_type, DC>;
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
 
     Communicator<>& comm;
@@ -152,9 +151,6 @@ struct LexicographicRankPhase {
         auto materialize_sample = [&](uint64_t i) {
             return phase1.materialize_sample(local_string, i);
         };
-        // auto materialize_packed_sample = [&](uint64_t i) {
-        //     return packing.materialize_packed_sample(local_string, i);
-        // };
 
         // determine bucket splitters
         std::vector<Splitter> bucket_splitter =
@@ -204,8 +200,6 @@ struct LexicographicRankPhase {
             for (uint64_t idx = 0; idx < info.local_chars_with_dummy; idx++) {
                 if (sample_to_bucket[idx] == k) {
                     index_type index = index_type(info.chars_before + idx);
-                    // Splitter letters =
-                    //     use_packing ? materialize_packed_sample(idx) : materialize_sample(idx);
                     auto chars = materialize_sample(idx);
                     samples.push_back(SampleString(std::move(chars), index));
                 }

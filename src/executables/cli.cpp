@@ -370,6 +370,61 @@ void run_pdcx(kamping::Communicator<>& comm) {
     algo.report_stats();
 }
 
+template <bool small_alphabet = true>
+void run_packed_dcx_variant(kamping::Communicator<>& comm) {
+    using namespace dcx;
+    using DCXParam = DC21Param;
+    double dcx = 21;
+    if constexpr (!small_alphabet) {
+        // 8-bit variant
+        using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
+        double packed_chars = 3 * 8;
+        pdcx_config.packing_ratio = packed_chars / dcx;
+        report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
+        report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
+        report_on_root("bits_per_char=8", comm);
+        run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                 char_type,
+                 index_type>(comm);
+    } else {
+        if (input_alphabet_size <= 7) {
+            // 3 bit variant (<= 7 chars) 21 chars per 64 bit
+            using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
+            double packed_chars = 2 * 21;
+            pdcx_config.packing_ratio = packed_chars / dcx;
+            report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
+            report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
+            report_on_root("bits_per_char=3", comm);
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+        }
+        // 5 bit variant (<= 32 chars), 12 chars per 64 bit
+        else if (input_alphabet_size <= 32) {
+            using CharContainer = DoublePackedInteger<char_type, 5, uint64_t, uint64_t>;
+            double packed_chars = 2 * 12;
+            pdcx_config.packing_ratio = packed_chars / dcx;
+            report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
+            report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
+            report_on_root("bits_per_char=5", comm);
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+        } else {
+            // 8-bit variant
+            using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
+            double packed_chars = 3 * 8;
+            pdcx_config.packing_ratio = packed_chars / dcx;
+            report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
+            report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
+            report_on_root("bits_per_char=8", comm);
+            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
+                     char_type,
+                     index_type>(comm);
+        }
+    }
+}
+
 void compute_sa(kamping::Communicator<>& comm) {
     using namespace dcx;
 
@@ -383,31 +438,22 @@ void compute_sa(kamping::Communicator<>& comm) {
     compress_alphabet(local_string, comm);
     timer.stop();
 
-    using DCXParam = DC21Param;
-    double dcx = 21;
-    if (input_alphabet_size <= 7) {
-        // 3 bit variant
-        using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
-        double packed_chars = 2 * 21;
-        pdcx_config.packing_ratio = packed_chars / dcx;
-        report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
-        report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
-        report_on_root("using_3bit_packing=1", comm);
-        run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
-                 char_type,
-                 index_type>(comm);
+
+    if (pdcx_config.use_char_packing_merging || pdcx_config.use_char_packing_samples) {
+        /*** better variant with packed integers  ***/
+        
+        // string sorter is not supported with packed integers
+        pdcx_config.use_string_sort = false;
+        static constexpr bool small_alphabet = true;
+        // static constexpr bool small_alphabet = false;
+        run_packed_dcx_variant<small_alphabet>(comm);
+
     } else {
-        // 8-bit variant
-        using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
-        double packed_chars = 3 * 8;
-        pdcx_config.packing_ratio = packed_chars / dcx;
-        report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
-        report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
-        report_on_root("using_3bit_packing=0", comm);
-        run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
-                 char_type,
-                 index_type>(comm);
+        /*** standard variant with atomic sorting or string sorting  ***/
+        using DCXParam = DC21Param;
+        run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     }
+
 
     // if (dcx_variant == "dc3") {
     // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
@@ -479,7 +525,6 @@ void report_memory_usage(kamping::Communicator<>& comm) {
 }
 
 int main(int32_t argc, char const* argv[]) {
-
     uint64_t max_mem_start = dsss::get_max_mem_bytes();
     kamping::Environment e;
     kamping::Communicator comm;

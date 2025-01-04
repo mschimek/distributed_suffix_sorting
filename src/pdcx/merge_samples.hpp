@@ -73,17 +73,18 @@ struct DCMergeSamples {
         index_type i2 = b.index % DC::X;
         auto [d, r1, r2] = DC::cmpDepthRanks[i1][i2];
 
-        // compare first d chars
-        // TODO: only temporary
-        // for (int k = 0; k < d; k++) {
-        //     if (chars.at(k) != b.chars.at(k)) {
-        //         return chars.at(k) < b.chars.at(k);
-        //     }
-        // }
-
-        // assuming chars is packed
-        if (chars != b.chars)
-            return (chars < b.chars);
+        if constexpr (CharContainer::IS_PACKED) {
+            // compare multiple characters at once with packed integers
+            if (chars != b.chars)
+                return (chars < b.chars);
+        } else {
+            // compare first d chars
+            for (int k = 0; k < d; k++) {
+                if (chars.at(k) != b.chars.at(k)) {
+                    return chars.at(k) < b.chars.at(k);
+                }
+            }
+        }
 
         // tie breaking using ranks
         return ranks[r1] < b.ranks[r2];
@@ -157,11 +158,8 @@ struct MergeSamplePhase {
                                          uint64_t char_pos,
                                          double char_packing_ratio = 1) const {
         KASSERT(char_pos + X - 2 < local_string.size());
-        // TODO only temporary
         return CharContainer(local_string.begin() + char_pos,
                              local_string.begin() + char_pos + char_packing_ratio * X - 1);
-        // return CharContainer(local_string.begin() + char_pos,
-        //                      local_string.begin() + char_pos + X - 1);
     }
 
     std::array<index_type, D> materialize_ranks(std::vector<RankIndex>& local_ranks,
@@ -207,11 +205,6 @@ struct MergeSamplePhase {
         CharPacking<char_type, X> packing(info.largest_char + 1);
         double char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
-            // if (use_packing) {
-            //     return packing.materialize_packed_sample(local_string, char_pos);
-            // } else {
-            //     return materialize_characters(local_string, char_pos);
-            // }
             return materialize_characters(local_string, char_pos, char_packing_ratio);
         };
 
@@ -245,27 +238,12 @@ struct MergeSamplePhase {
         int64_t local_max_segment = 0;
         int64_t local_sum_segment = 0;
         int64_t local_num_segment = 0;
-        if (config.use_lcps_tie_breaking) {
-            KASSERT(lcps.size() == merge_samples.size());
-        }
 
         // sort each segement with the same chars by rank
         int64_t start = 0;
         int64_t end = 0;
         for (int64_t i = 0; i < (int64_t)merge_samples.size() - 1; i++) {
-            bool segment_ended;
-            if (config.use_lcps_tie_breaking) {
-                // for some reason LCPs can be larger than X - 1?
-                // segment_ended = lcps[i + 1] != DC::X - 1;
-                segment_ended = lcps[i + 1] < DC::X - 1;
-                KASSERT(segment_ended == (merge_samples[i].chars != merge_samples[i + 1].chars),
-                        std::to_string(lcps[i + 1]) + " " + std::to_string(DC::X - 1) + " "
-                            + merge_samples[i].to_string() + " "
-                            + merge_samples[i + 1].to_string());
-
-            } else {
-                segment_ended = merge_samples[i].chars != merge_samples[i + 1].chars;
-            }
+            bool segment_ended = merge_samples[i].chars != merge_samples[i + 1].chars;
             if (segment_ended) {
                 local_num_segment++;
                 end = i + 1;
@@ -364,11 +342,6 @@ struct MergeSamplePhase {
 
         double char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
-            // if (use_packing) {
-            //     return packing.materialize_packed_sample(local_string, char_pos);
-            // } else {
-            //     return materialize_characters(local_string, char_pos);
-            // }
             return materialize_characters(local_string, char_pos, char_packing_ratio);
         };
 
@@ -380,16 +353,6 @@ struct MergeSamplePhase {
         SA concat_sa_buckets;
         std::vector<uint64_t> sa_bucket_size;
         sa_bucket_size.reserve(num_buckets);
-
-        /*
-            // log all bucket sizes
-            auto all_buckets = comm.gatherv(kamping::send_buf(bucket_sizes));
-            // phase 4 stats are logged in deepest level first
-            std::reverse(all_buckets.begin(), all_buckets.end());
-            stats.bucket_sizes.insert(stats.bucket_sizes.end(),
-                                      all_buckets.begin(),
-                                      all_buckets.end());
-        */
 
         // log imbalance of buckets
         double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
@@ -462,12 +425,6 @@ struct MergeSamplePhase {
 
         double char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
-            // if (use_packing) {
-            //     return packing.materialize_packed_sample(local_string, char_pos);
-
-            // } else {
-            //     return materialize_characters(local_string, char_pos);
-            // }
             return materialize_characters(local_string, char_pos, char_packing_ratio);
         };
 
@@ -485,9 +442,6 @@ struct MergeSamplePhase {
 
         // add padding to be able to materialize last suffix in chunk
         uint64_t num_dc_samples = util::div_ceil(chunk_size, X) * D + 1;
-        // TODO only temp
-        // uint64_t chars_with_padding = chunk_size + packing.char_packing_ratio * (X - 1) - 1;
-        // uint64_t chars_with_padding = chunk_size + packing.char_packing_ratio * X  - 1;
         uint64_t chars_with_padding = chunk_size + char_packing_ratio * X - 1;
         uint64_t ranks_with_padding = num_dc_samples + D - 1;
 
@@ -564,13 +518,6 @@ struct MergeSamplePhase {
         free_memory(local_ranks);
         timer.stop();
 
-        // if (info.recursion_depth == 0) {
-        //     uint64_t max_mem = dsss::get_max_mem_bytes();
-        //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
-        //     auto pt = &get_stats_instance().phase_04_before_alltoall_chunks;
-        //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
-        // }
-
         // exchange linearized data
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_alltoall_chunks");
         chunked_chars = mpi_util::alltoallv_combined(chunked_chars, send_cnt_chars, comm);
@@ -578,6 +525,7 @@ struct MergeSamplePhase {
         chunk_global_index = mpi_util::alltoallv_combined(chunk_global_index, send_cnt_index, comm);
         chunk_sizes = mpi_util::alltoallv_combined(chunk_sizes, send_cnt_index, comm);
         timer.stop();
+
 
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_mapping");
         uint64_t received_chunks = chunk_global_index.size();
@@ -627,21 +575,13 @@ struct MergeSamplePhase {
                        info.recursion_depth);
         timer.stop();
 
-
-        // if (info.recursion_depth == 0) {
-        //     uint64_t max_mem = dsss::get_max_mem_bytes();
-        //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
-        //     auto pt = &get_stats_instance().phase_04_after_alltoall_chunks;
-        //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
-        // }
-
         std::vector<MergeSamples> samples;
         SA concat_sa_buckets;
 
-        // TODO size estimate, in best case, need only one reallocation at the end
+        // size estimate, in best case, need only one reallocation at the end
         uint64_t estimated_size = (info.total_chars / comm.size()) * 1.03;
         concat_sa_buckets.reserve(estimated_size);
-        
+
         std::vector<uint64_t> sa_bucket_size;
         sa_bucket_size.reserve(num_buckets);
 
@@ -682,27 +622,15 @@ struct MergeSamplePhase {
             }
             timer.stop();
 
-            // TODO log max rss
-            // if (info.recursion_depth == 0) {
-            //     uint64_t max_mem = dsss::get_max_mem_bytes();
-            //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
-            //     auto pt = &get_stats_instance().max_mem_pe_chunking_before_sort;
-            //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
-            // }
-
             sort_merge_samples(samples);
 
-            // TODO log max rss
-            // if (info.recursion_depth == 0) {
-            //     uint64_t max_mem = dsss::get_max_mem_bytes();
-            //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
-            //     auto pt = &get_stats_instance().max_mem_pe_chunking_after_sort;
-            //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
-            // }
+            timer.start("phase_04_space_effient_sort_wait_after_sort");
+            comm.barrier();
+            timer.stop();
 
             // reserve exact size, in case estimation was to low
             uint64_t new_size = concat_sa_buckets.size() + samples.size();
-            if(new_size > concat_sa_buckets.capacity()) {
+            if (new_size > concat_sa_buckets.capacity()) {
                 concat_sa_buckets.reserve(new_size);
             }
 
@@ -710,13 +638,6 @@ struct MergeSamplePhase {
             for (auto& sample: samples) {
                 concat_sa_buckets.push_back(sample.index);
             }
-
-            // if (info.recursion_depth == 0) {
-            //     uint64_t max_mem = dsss::get_max_mem_bytes();
-            //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
-            //     auto pt = &get_stats_instance().max_mem_pe_chunking_after_concat;
-            //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
-            // }
 
             sa_bucket_size.push_back(samples.size());
             samples.clear();
@@ -742,21 +663,22 @@ struct MergeSamplePhase {
                        info.recursion_depth);
 
         if (info.recursion_depth == 0) {
-            get_stats_instance().phase_04_sa_size = comm.allgather(kamping::send_buf(concat_sa_buckets.size()));
-            get_stats_instance().phase_04_sa_capacity = comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
+            get_stats_instance().phase_04_sa_size =
+                comm.allgather(kamping::send_buf(concat_sa_buckets.size()));
+            get_stats_instance().phase_04_sa_capacity =
+                comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
         }
-
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
         SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
         timer.stop();
 
-        // if (info.recursion_depth == 0) {
-        //     uint64_t max_mem = dsss::get_max_mem_bytes();
-        //     auto all_mem = comm.allgather(kamping::send_buf(max_mem));
-        //     auto pt = &get_stats_instance().max_mem_pe_chunking_after_alltoal;
-        //     pt->insert(pt->end(), all_mem.begin(), all_mem.end());
-        // }
+        print_concatenated(bucket_sizes,
+                           comm,
+                           "bucket_sizes_" + std::to_string(info.recursion_depth));
+        print_concatenated(sa_bucket_size,
+                           comm,
+                           "sa_bucket_size_" + std::to_string(info.recursion_depth));
 
         return local_SA;
     }
