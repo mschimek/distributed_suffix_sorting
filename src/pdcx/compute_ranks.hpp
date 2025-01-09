@@ -127,14 +127,18 @@ struct LexicographicRankPhase {
     // sideeffect: shifts one sample from next PE to local_string
     std::vector<RankIndex>
     create_lexicographic_ranks(std::vector<SampleString>& local_samples) const {
+        DBG("shift samples");
         shift_samples_left(local_samples);
+        DBG("compute ranks");
         std::vector<RankIndex> local_ranks = compute_lexicographic_ranks(local_samples);
+        DBG("flag unique ranks");
         flag_unique_ranks(local_ranks);
         return local_ranks;
     }
 
     std::vector<RankIndex>
-    create_ranks_space_efficient(SampleStringPhase<char_type, index_type, DC> phase1,
+    // create_ranks_space_efficient(SampleStringPhase<char_type, index_type, DC> phase1,
+    create_ranks_space_efficient(auto &phase1,
                                  std::vector<char_type>& local_string,
                                  const uint64_t num_buckets,
                                  const bool use_packing = false) {

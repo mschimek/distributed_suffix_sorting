@@ -23,6 +23,7 @@
 #include "kamping/named_parameter_types.hpp"
 #include "kamping/named_parameters.hpp"
 #include "mpi/big_type.hpp"
+#include "util/printing.hpp"
 
 namespace dsss::mpi_util {
 
@@ -42,6 +43,8 @@ auto alltoallv_native(SendBuf&& send_buffer,
 
     std::vector<int> send_counts_int{send_counts.begin(), send_counts.end()};
     std::vector<int> recv_counts_int{recv_counts.begin(), recv_counts.end()};
+    DBG("call alltoallv native");
+
     return comm.alltoallv(kamping::send_buf(send_buffer),
                           kamping::send_counts(send_counts_int),
                           kamping::recv_counts(recv_counts_int));
@@ -52,6 +55,8 @@ auto alltoallv_direct(SendBuf&& send_buf,
                       std::span<int64_t> send_counts,
                       std::span<int64_t> recv_counts,
                       Communicator<>& comm) {
+    DBG("call alltoallv native start");
+
     using DataType = std::remove_reference_t<SendBuf>::value_type;
     std::vector<size_t> send_displs(comm.size()), recv_displs(comm.size());
     std::exclusive_scan(send_counts.begin(), send_counts.end(), send_displs.begin(), size_t{0});
@@ -61,6 +66,8 @@ auto alltoallv_direct(SendBuf&& send_buf,
     std::vector<DataType> receive_data(recv_total);
     std::vector<MPI_Request> requests;
     requests.reserve(2 * comm.size());
+
+    DBG("call irecv");
 
     for (int i = 0; i < comm.size_signed(); ++i) {
         int source = (comm.rank_signed() + (comm.size_signed() - i)) % comm.size_signed();
@@ -75,6 +82,8 @@ auto alltoallv_direct(SendBuf&& send_buf,
                       &requests.emplace_back(MPI_REQUEST_NULL));
         }
     }
+    DBG("call isend");
+
     for (int i = 0; i < comm.size_signed(); ++i) {
         int target = (comm.rank_signed() + i) % comm.size_signed();
         if (send_counts[target] > 0) {
@@ -89,6 +98,8 @@ auto alltoallv_direct(SendBuf&& send_buf,
         }
     }
     MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+    DBG("waitall");
+
     return receive_data;
 }
 
@@ -97,14 +108,20 @@ auto alltoallv_combined(SendBuf&& send_buffer,
                         std::span<int64_t> send_counts,
                         std::span<int64_t> recv_counts,
                         Communicator<>& comm) {
+    DBG("accumlate counts");
     int64_t const send_total = std::accumulate(send_counts.begin(), send_counts.end(), int64_t{0});
     int64_t const recv_total = std::accumulate(recv_counts.begin(), recv_counts.end(), int64_t{0});
     int64_t const local_max = std::max<int64_t>(send_total, recv_total);
     int64_t const global_max = comm.allreduce_single(send_buf(local_max), op(ops::max<>{}));
 
+    DBG("local max: " + std::to_string(local_max) + ", global max: " + std::to_string(global_max));
     if (global_max < std::numeric_limits<int>::max()) {
+        DBG("using native alltoall");
         return alltoallv_native(send_buffer, send_counts, recv_counts, comm);
     } else {
+        // TODO remove
+        DBG("using direct alltoall");
+        // report_on_root("--> using direct alltoall, global_max: " + std::to_string(global_max), comm);
         return alltoallv_direct(send_buffer, send_counts, recv_counts, comm);
     }
 }
@@ -113,7 +130,9 @@ template <typename SendBuf>
 auto alltoallv_combined(SendBuf&& send_buffer,
                         std::span<int64_t> send_counts,
                         Communicator<>& comm) {
+    DBG("get recv counts");
     auto recv_counts = comm.alltoall(send_buf(send_counts));
+    DBG("call alltoallv combined");
     return alltoallv_combined(std::forward<SendBuf>(send_buffer), send_counts, recv_counts, comm);
 }
 

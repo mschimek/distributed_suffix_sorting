@@ -372,6 +372,7 @@ void run_pdcx(kamping::Communicator<>& comm) {
 
 template <bool small_alphabet = true>
 void run_packed_dcx_variant(kamping::Communicator<>& comm) {
+    
     using namespace dcx;
     using DCXParam = DC21Param;
     double dcx = 21;
@@ -423,6 +424,7 @@ void run_packed_dcx_variant(kamping::Communicator<>& comm) {
                      index_type>(comm);
         }
     }
+    
 }
 
 void compute_sa(kamping::Communicator<>& comm) {
@@ -441,11 +443,12 @@ void compute_sa(kamping::Communicator<>& comm) {
 
     if (pdcx_config.use_char_packing_merging || pdcx_config.use_char_packing_samples) {
         /*** better variant with packed integers  ***/
-        
+
         // string sorter is not supported with packed integers
         pdcx_config.use_string_sort = false;
         static constexpr bool small_alphabet = true;
         // static constexpr bool small_alphabet = false;
+
         run_packed_dcx_variant<small_alphabet>(comm);
 
     } else {

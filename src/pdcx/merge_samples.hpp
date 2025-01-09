@@ -448,6 +448,8 @@ struct MergeSamplePhase {
         std::mt19937 rng(config.seed + comm.rank());
         std::uniform_int_distribution<uint32_t> dist(0, comm.size() - 1);
 
+        DBG("create chunks");
+
         // create chunks in evenly spaced intervals
         std::vector<Chunk> chunks;
         chunks.reserve(num_local_chunks);
@@ -481,6 +483,7 @@ struct MergeSamplePhase {
         char_type fill_char = char_type(0);
         uint64_t padding_rank = total_chars + 1;
 
+        DBG("fill chunks");
         for (auto& chunk: chunks) {
             // chars
             uint64_t start = chunk.start_index;
@@ -518,6 +521,8 @@ struct MergeSamplePhase {
         free_memory(local_ranks);
         timer.stop();
 
+        DBG("alltoall chunks");
+
         // exchange linearized data
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_alltoall_chunks");
         chunked_chars = mpi_util::alltoallv_combined(chunked_chars, send_cnt_chars, comm);
@@ -537,6 +542,8 @@ struct MergeSamplePhase {
         int64_t num_buckets = global_splitters.size() + 1;
         std::vector<uint64_t> bucket_sizes(num_buckets, 0);
         std::vector<uint8_t> sample_to_bucket(chunked_chars.size(), num_buckets);
+
+        DBG("compute bucket mapping");
 
         uint64_t num_materialized_samples = 0;
         for (uint64_t i = 0; i < received_chunks; i++) {
@@ -622,6 +629,8 @@ struct MergeSamplePhase {
             }
             timer.stop();
 
+
+            DBG("sort merge samples " + std::to_string(k));
             sort_merge_samples(samples);
 
             timer.start("phase_04_space_effient_sort_wait_after_sort");
@@ -669,16 +678,18 @@ struct MergeSamplePhase {
                 comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
         }
 
+        DBG("transpose blocks");
+
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
         SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
         timer.stop();
 
-        print_concatenated(bucket_sizes,
-                           comm,
-                           "bucket_sizes_" + std::to_string(info.recursion_depth));
-        print_concatenated(sa_bucket_size,
-                           comm,
-                           "sa_bucket_size_" + std::to_string(info.recursion_depth));
+        // print_concatenated(bucket_sizes,
+        //                    comm,
+        //                    "bucket_sizes_" + std::to_string(info.recursion_depth));
+        // print_concatenated(sa_bucket_size,
+        //                    comm,
+        //                    "sa_bucket_size_" + std::to_string(info.recursion_depth));
 
         return local_SA;
     }

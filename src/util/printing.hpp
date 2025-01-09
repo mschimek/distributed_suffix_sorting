@@ -21,6 +21,10 @@
 
 #define V(x) std::string(#x "=") << (x) << " " //"x=...
 
+#define DEBUG true
+// #define DEBUG false
+#define DBG(x) if constexpr(DEBUG) report_on_root(x, comm)
+
 
 namespace kamping {
 /// @brief Print all elements in a container, prefixed with the rank of the current PE.
@@ -125,6 +129,12 @@ void print_concatenated_string(std::vector<T> const& local_data,
     print_concatenated_string(local_str, comm, msg);
 }
 
+template <typename T>
+void print_concatenated_size(std::vector<T> const& local_data,
+                               Communicator<> const& comm,
+                               std::string msg = "") {
+    print_concatenated_string(std::to_string(local_data.size()), comm, msg);
+}
 
 // template <typename Container, typename T>
 void print_vector(auto& vec, std::string sep = " ") {
