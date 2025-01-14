@@ -477,23 +477,18 @@ public:
 
         if (use_bucket_sorting_samples) {
             //******* Start Phase 1 + 2: Construct Samples +   Construct Ranks********
-            report_on_root("space efficient sample + rank phase currently disabled.", comm);
-            exit(1);
-            // TODO
-            /* disabled for now
             report_on_root("Phase 1 + 2: Sort Samples + Compute Ranks with "
                                + std::to_string(buckets_samples) + " buckets.",
                            comm,
                            recursion_depth,
                            config.print_phases);
             timer.synchronize_and_start("phase_01_02_samples_ranks");
-            LexicographicRankPhase<char_type, index_type, DC> phase2(comm, info);
+            RankPhase phase2(comm, info);
             local_ranks = phase2.create_ranks_space_efficient(phase1,
                                                               local_string,
                                                               buckets_samples,
                                                               use_packed_samples);
             timer.stop();
-            */
             //******* End Phase 1 + 2: Construct Samples +   Construct Ranks********
 
         } else {

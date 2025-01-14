@@ -134,7 +134,7 @@ struct LexicographicRankPhase {
     }
 
     std::vector<RankIndex>
-    create_ranks_space_efficient(SampleStringPhase<char_type, index_type, DC> phase1,
+    create_ranks_space_efficient(auto phase1,
                                  std::vector<char_type>& local_string,
                                  const uint64_t num_buckets,
                                  const bool use_packing = false) {
