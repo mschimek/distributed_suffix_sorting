@@ -129,9 +129,9 @@ void configure_cli() {
                 pdcx_config.use_randomized_chunks_merging,
                 "Use randomized chunks in merging phase to distribute work.");
     cp.add_bytes('z',
-                 "num_randomized_chunks",
-                 pdcx_config.num_randomized_chunks,
-                 "Number of chunks to use for randomized chunks in merging phase.");
+                 "chunk_size",
+                 pdcx_config.chunk_size,
+                 "Sie of a chunk to use for randomized chunks in merging phase.");
     cp.add_flag(
         'g',
         "use_char_packing_samples",

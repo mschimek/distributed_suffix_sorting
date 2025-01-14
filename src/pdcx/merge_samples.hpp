@@ -437,7 +437,7 @@ struct MergeSamplePhase {
         std::vector<int64_t> send_cnt_index(comm.size(), 0);
 
         uint64_t total_chars = mpi_util::all_reduce_sum(info.local_chars, comm);
-        uint64_t chunk_size = config.num_randomized_chunks;
+        uint64_t chunk_size = config.chunk_size;
         uint64_t num_local_chunks = util::div_ceil(info.local_chars, chunk_size);
 
         // add padding to be able to materialize last suffix in chunk
