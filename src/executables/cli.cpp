@@ -155,6 +155,11 @@ void configure_cli() {
                   atomic_sorter,
                   "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
     cp.add_bytes('l', "ams_levels", pdcx_config.ams_levels, "Number of levels to be used in ams.");
+    
+    // temp config
+    cp.add_bytes('v', "ams_partition", sample_sort_config.ams_partition_strategy, "0,1");
+    cp.add_bytes('V', "ams_distribution", sample_sort_config.ams_distributiong_strategy, "0,1,2");
+
     cp.add_string('p',
                   "splitter_sampling",
                   "<F>",
@@ -369,6 +374,7 @@ void run_pdcx(kamping::Communicator<>& comm) {
     kamping::report_on_root("\n", comm);
     algo.report_stats();
 }
+
 
 template <bool small_alphabet = true>
 void run_packed_dcx_variant(kamping::Communicator<>& comm) {

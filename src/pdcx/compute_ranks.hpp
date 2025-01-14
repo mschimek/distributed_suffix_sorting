@@ -138,7 +138,7 @@ struct LexicographicRankPhase {
 
     std::vector<RankIndex>
     // create_ranks_space_efficient(SampleStringPhase<char_type, index_type, DC> phase1,
-    create_ranks_space_efficient(auto &phase1,
+    create_ranks_space_efficient(auto& phase1,
                                  std::vector<char_type>& local_string,
                                  const uint64_t num_buckets,
                                  const bool use_packing = false) {
@@ -155,6 +155,9 @@ struct LexicographicRankPhase {
         auto materialize_sample = [&](uint64_t i) {
             return phase1.materialize_sample(local_string, i);
         };
+
+
+        DBG("determine bucket splitters");
 
         // determine bucket splitters
         std::vector<Splitter> bucket_splitter =
@@ -197,6 +200,8 @@ struct LexicographicRankPhase {
         SampleString prev_sample;
         // sorting in each round one blocks of materialized samples
         for (uint64_t k = 0; k < num_buckets; k++) {
+            DBG("bucket round " + std::to_string(k));
+
             timer.synchronize_and_start("phase_01_02_space_efficient_sort_collect_buckets");
 
             // collect samples falling into kth block
@@ -211,8 +216,15 @@ struct LexicographicRankPhase {
             timer.stop();
             KASSERT(bucket_sizes[k] == samples.size());
 
+            DBG("sort bucket samples");
+            // print_concatenated_size(samples, comm, "samples size before sort");
+
             // Phase 1: sort dc-samples
             phase1.sort_samples(samples);
+
+            // print_concatenated_size(samples, comm, "samples size after sort");
+            DBG("redist");
+
 
             // Phase 2: compute lexicographic ranks
             redistribute_if_imbalanced(samples, config.min_imbalance, comm);
@@ -251,6 +263,9 @@ struct LexicographicRankPhase {
             get_imbalance_bucket(received_size, info.total_sample_size, comm);
         get_stats_instance().bucket_imbalance_samples_received.push_back(bucket_imbalance_received);
 
+
+        DBG("transpose blocks");
+
         timer.synchronize_and_start("phase_01_02_space_efficient_sort_alltoall");
         std::vector<RankIndex> local_ranks =
             mpi_util::transpose_blocks(concat_rank_buckets, received_size, comm);
@@ -269,6 +284,8 @@ struct LexicographicRankPhase {
         std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
             x.rank += index_type(1 + ranks_before);
         });
+
+        DBG("flag ranks");
 
         flag_unique_ranks(local_ranks);
         return local_ranks;

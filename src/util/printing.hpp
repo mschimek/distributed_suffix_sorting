@@ -21,6 +21,7 @@
 
 #define V(x) std::string(#x "=") << (x) << " " //"x=...
 
+#define DEBUG_SIZE false
 #define DEBUG true
 // #define DEBUG false
 #define DBG(x) if constexpr(DEBUG) report_on_root(x, comm)

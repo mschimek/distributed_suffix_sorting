@@ -107,7 +107,7 @@ inline void sample_sort(std::vector<DataType>& local_data,
     // exchange data in intervals
     timer.synchronize_and_start("sample_sort_alltoall");
     DBG("alltoall");
-    if constexpr (DEBUG) {
+    if constexpr (DEBUG_SIZE) {
         print_concatenated_size(local_data, comm, "local data size");
         print_concatenated_size(interval_sizes, comm, "interval_sizes size");
         print_concatenated(interval_sizes, comm, "interval_sizes");

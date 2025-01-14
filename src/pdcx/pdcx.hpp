@@ -351,15 +351,30 @@ public:
         DBG("sort rri");
 
         double imbalance_rri_before_sort = mpi_util::compute_max_imbalance(rri.size(), comm);
+        // to isolate output of ams
+        if (recursion_depth == 0) {
+            atomic_sorter.set_sorter(mpi::AtomicSorters::Ams);
+            atomic_sorter.set_print(true);
+            // comm.barrier();
+        }
+        // DBG("START_AMS_DEBUG_" + std::to_string(recursion_depth));
         timer.synchronize_and_start("phase_03_sort_rri");
         atomic_sorter.sort(rri, cmp_rri);
         timer.stop();
+        // DBG("END_AMS_DEBUG_" + std::to_string(recursion_depth));
         double imbalance_rri_after_sort = mpi_util::compute_max_imbalance(rri.size(), comm);
         uint64_t total_size_rri = mpi_util::all_reduce_sum(rri.size(), comm);
         report_max_mem("after sort rri");
         DBG("rri_total_size=" + std::to_string(total_size_rri));
         DBG("imbalance_rri_before_sort=" + std::to_string(imbalance_rri_before_sort));
         DBG("imbalance_rri_after_sort=" + std::to_string(imbalance_rri_after_sort));
+        if (recursion_depth == 0) {
+            atomic_sorter.set_sorter(config.atomic_sorter);
+            atomic_sorter.set_print(false);
+            // comm.barrier();
+
+        }
+
 
         // extract local ranks
         auto index_local_ranks = [&](uint64_t idx, RankRankIndex& rr) {
@@ -369,7 +384,6 @@ public:
         local_ranks =
             mpi_util::zip_with_index<RankRankIndex, RankIndex>(rri, index_local_ranks, comm);
         report_max_mem("after zip rii");
-
     }
 
     // computes how many chars are at position with a remainder
@@ -419,6 +433,8 @@ public:
     }
 
     void report_max_mem(std::string name) {
+        // temporary
+        // return;
         std::replace(name.begin(), name.end(), ' ', '_');
         name = "DEBUG_PE_MEM_" + name;
         if (recursion_depth == 0) {
@@ -442,7 +458,7 @@ public:
 
         timer.synchronize_and_start("pdcx");
 
-        if constexpr (DEBUG)
+        if constexpr (DEBUG_SIZE)
             print_concatenated_size(local_string, comm, "local_string");
 
 
@@ -577,7 +593,7 @@ public:
                 phase1.sorted_dc_samples(local_string, use_packed_samples);
             timer.stop();
 
-            if constexpr (DEBUG)
+            if constexpr (DEBUG_SIZE)
                 print_concatenated_size(local_samples, comm, "local_samples");
 
 
@@ -653,7 +669,7 @@ public:
             uint64_t max_mem = dsss::get_max_mem_bytes();
             get_stats_instance().max_mem_pe_phase_03_1 = comm.allgather(kamping::send_buf(max_mem));
         }
-        if constexpr (DEBUG)
+        if constexpr (DEBUG_SIZE)
             print_concatenated_size(local_ranks, comm, "local_ranks");
 
 
@@ -717,7 +733,7 @@ public:
             uint64_t max_mem = dsss::get_max_mem_bytes();
             get_stats_instance().max_mem_pe_phase_04_1 = comm.allgather(kamping::send_buf(max_mem));
         }
-        if constexpr (DEBUG)
+        if constexpr (DEBUG_SIZE)
             print_concatenated_size(local_SA, comm, "local_SA");
 
 

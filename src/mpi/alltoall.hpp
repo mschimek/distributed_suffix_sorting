@@ -115,6 +115,9 @@ auto alltoallv_combined(SendBuf&& send_buffer,
     int64_t const global_max = comm.allreduce_single(send_buf(local_max), op(ops::max<>{}));
 
     DBG("local max: " + std::to_string(local_max) + ", global max: " + std::to_string(global_max));
+    comm.barrier();
+
+    // if (false && global_max < std::numeric_limits<int>::max()) {
     if (global_max < std::numeric_limits<int>::max()) {
         DBG("using native alltoall");
         return alltoallv_native(send_buffer, send_counts, recv_counts, comm);
