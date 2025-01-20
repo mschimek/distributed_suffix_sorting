@@ -105,22 +105,24 @@ struct SortingWrapper {
                 RFis::Sort(my_mpi_type, local_data, rcomm, comp);
                 break;
             case Ams:
-                std::cout << comm.rank() << " "
-                          << "calling AMS, print=" << print << "\n";
-                // Ams::sortLevel(my_mpi_type, local_data, num_levels, gen, rcomm, comp);
-                Ams::sortLevel(my_mpi_type,
-                               local_data,
-                               num_levels,
-                               gen,
-                               rcomm,
-                               comp,
-                               imbalance,
-                               use_dma,
-                               part,
-                               distr,
-                               use_ips4o,
-                               use_two_tree,
-                               ams_print);
+                Ams::sortLevel(my_mpi_type, local_data, num_levels, gen, rcomm, comp);
+                
+                // this part is for debugging AMS, need to switch to debug-memory branch in AMS
+                // std::cout << comm.rank() << " "
+                //           << "calling AMS, print=" << print << "\n";
+                // Ams::sortLevel(my_mpi_type,
+                //                local_data,
+                //                num_levels,
+                //                gen,
+                //                rcomm,
+                //                comp,
+                //                imbalance,
+                //                use_dma,
+                //                part,
+                //                distr,
+                //                use_ips4o,
+                //                use_two_tree,
+                //                ams_print);
 
                 // void sortLevel(MPI_Datatype mpi_type, std::vector<T>& data, int l,
                 //                std::mt19937_64& async_gen,

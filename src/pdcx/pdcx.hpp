@@ -347,6 +347,9 @@ public:
         }
         report_max_mem("after build rri");
 
+        // TEST
+        free_memory(std::move(local_ranks));
+        free_memory(std::move(ranks_sa));
 
         DBG("sort rri");
 
