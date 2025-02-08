@@ -141,7 +141,7 @@ struct SpaceEfficientSort {
         uint64_t blocks = global_splitters.size() + 1;
         std::vector<uint64_t> bucket_sizes(blocks, 0);
         std::vector<uint8_t> sample_to_block(local_size, 0);
-        KASSERT(blocks <= 255);
+        KASSERT(blocks <= 255ull);
 
         // assign each substring to a block
         for (uint64_t i = 0; i < local_size; i++) {

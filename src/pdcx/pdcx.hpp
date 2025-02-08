@@ -481,10 +481,12 @@ public:
             uint64_t m = (i + offset) % X;
             local_sample_size += is_in_dc<DC>(m);
         }
+        info.local_chars_with_dummy = info.local_chars + added_dummy_to_pe;
+
         local_sample_size += added_dummy_to_pe;
         info.local_sample_size = local_sample_size;
         info.total_sample_size = mpi_util::all_reduce_sum(local_sample_size, comm);
-        info.local_chars_with_dummy = info.local_chars + added_dummy_to_pe;
+        info.samples_before = mpi_util::ex_prefix_sum(local_sample_size, comm);
 
         // number of positions with mod X = d
         std::array<uint64_t, X> num_at_mod = compute_num_pos_mod(info.total_chars);

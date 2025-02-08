@@ -18,6 +18,7 @@ struct PDCXLengthInfo {
     uint64_t total_chars = 0;
     uint64_t largest_char = 0;
     uint64_t chars_before = 0;
+    uint64_t samples_before = 0;
     uint64_t recursion_depth = 0;
 };
 

@@ -466,6 +466,7 @@ void compute_sa(kamping::Communicator<>& comm) {
 
     } else {
         /*** standard variant with atomic sorting or string sorting  ***/
+        
         using DCXParam = DC21Param;
         run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     }
