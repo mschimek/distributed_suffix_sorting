@@ -461,6 +461,7 @@ struct MergeSamplePhase {
             send_cnt_index[chunk.target_pe] += 1;
         }
 
+
         // sort chunks by PE
         ips4o::sort(chunks.begin(), chunks.end(), [&](const Chunk& a, const Chunk& b) {
             return a.target_pe < b.target_pe;
@@ -532,6 +533,7 @@ struct MergeSamplePhase {
         timer.stop();
 
 
+
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_mapping");
         uint64_t received_chunks = chunk_global_index.size();
         KASSERT(chunked_chars.size() == received_chunks * chars_with_padding);
@@ -592,6 +594,8 @@ struct MergeSamplePhase {
         std::vector<uint64_t> sa_bucket_size;
         sa_bucket_size.reserve(num_buckets);
 
+
+
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
             timer.synchronize_and_start("phase_04_space_effient_sort_chunking_collect_bucket");
@@ -630,8 +634,12 @@ struct MergeSamplePhase {
             timer.stop();
 
 
+
+
             DBG("sort merge samples " + std::to_string(k));
             sort_merge_samples(samples);
+
+
 
             timer.start("phase_04_space_effient_sort_wait_after_sort");
             comm.barrier();
@@ -683,6 +691,7 @@ struct MergeSamplePhase {
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
         SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
         timer.stop();
+
 
         // print_concatenated(bucket_sizes,
         //                    comm,

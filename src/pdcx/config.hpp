@@ -27,6 +27,8 @@ struct PDCXConfig {
     dsss::SeqStringSorter string_sorter = dsss::SeqStringSorter::MultiKeyQSort;
     std::vector<uint32_t> buckets_samples;
     std::vector<uint32_t> buckets_merging;
+    uint32_t buckets_phase3 = 1;
+    uint32_t num_samples_phase3 = 10000;
     uint64_t ams_levels = 1;
     uint64_t memory_seq_string_sorter = 0;
     uint64_t num_samples_splitters = 100;
@@ -64,6 +66,8 @@ struct PDCXConfig {
         kamping::print_vector(buckets_samples, ",");
         std::cout << "buckets_merging=";
         kamping::print_vector(buckets_merging, ",");
+        std::cout << V(buckets_phase3) << "\n";
+        std::cout << V(num_samples_phase3) << "\n";
         std::cout << V(use_string_sort) << "\n";
         std::cout << V(use_string_sort_tie_breaking) << "\n";
         std::cout << V(use_lcps_tie_breaking) << "\n";

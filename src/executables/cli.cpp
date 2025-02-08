@@ -124,6 +124,14 @@ void configure_cli() {
                   buckets_merging,
                   "Number of buckets to use for space efficient sorting in merging phase on each "
                   "recursion level. Missing values default to 1. Example: 16,8,4");
+    cp.add_bytes('D',
+                 "buckets_phase3",
+                 pdcx_config.buckets_phase3,
+                 "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
+    cp.add_bytes('d',
+                 "samples_buckets_phase3",
+                 pdcx_config.num_samples_phase3,
+                 "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
     cp.add_flag('Z',
                 "use_randomized_chunks_merging",
                 pdcx_config.use_randomized_chunks_merging,
@@ -155,7 +163,7 @@ void configure_cli() {
                   atomic_sorter,
                   "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
     cp.add_bytes('l', "ams_levels", pdcx_config.ams_levels, "Number of levels to be used in ams.");
-    
+
     // temp config
     cp.add_bytes('v', "ams_partition", sample_sort_config.ams_partition_strategy, "0,1");
     cp.add_bytes('V', "ams_distribution", sample_sort_config.ams_distributiong_strategy, "0,1,2");
@@ -274,6 +282,7 @@ void parse_enums_and_lists(kamping::Communicator<>& comm) {
     map_strings_to_enum(comm);
     pdcx_config.buckets_samples = parse_list_of_ints(buckets_samples);
     pdcx_config.buckets_merging = parse_list_of_ints(buckets_merging);
+    // TODO adjust limit
     check_limit(pdcx_config.buckets_samples, 255, "buckets_samples", comm);
     check_limit(pdcx_config.buckets_merging, 255, "buckets_merging", comm);
 }
@@ -378,7 +387,6 @@ void run_pdcx(kamping::Communicator<>& comm) {
 
 template <bool small_alphabet = true>
 void run_packed_dcx_variant(kamping::Communicator<>& comm) {
-    
     using namespace dcx;
     using DCXParam = DC21Param;
     double dcx = 21;
@@ -430,7 +438,6 @@ void run_packed_dcx_variant(kamping::Communicator<>& comm) {
                      index_type>(comm);
         }
     }
-    
 }
 
 void compute_sa(kamping::Communicator<>& comm) {
