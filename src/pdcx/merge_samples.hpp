@@ -129,21 +129,21 @@ struct MergeSamplePhase {
           space_efficient_sort(comm, config) {}
 
     // shift ranks left to access overlapping ranks
-    void shift_ranks_left(std::vector<RankIndex>& local_ranks) const {
+    void shift_ranks_left(std::vector<index_type>& local_ranks) const {
         mpi_util::shift_entries_left(local_ranks, D, comm);
         local_ranks.shrink_to_fit();
     }
 
     // add dummy padding that is sorted at the end
-    void push_padding(std::vector<RankIndex>& local_ranks) const {
+    void push_padding(std::vector<index_type>& local_ranks) const {
         if (comm.rank() == comm.size() - 1) {
-            RankIndex padding(0, info.total_chars, false);
+            index_type padding = 0;
             std::fill_n(std::back_inserter(local_ranks), D, padding);
             local_ranks.shrink_to_fit();
         }
     }
 
-    uint64_t get_ranks_pos(std::vector<RankIndex>& local_ranks, int64_t local_index) const {
+    uint64_t get_ranks_pos(std::vector<index_type>& local_ranks, int64_t local_index) const {
         // does not need index, maybe can remove index
         uint64_t global_index = local_index + info.chars_before;
         uint64_t block_nr = global_index / X;
@@ -163,18 +163,18 @@ struct MergeSamplePhase {
                              local_string.begin() + char_pos + char_packing_ratio * X - 1);
     }
 
-    std::array<index_type, D> materialize_ranks(std::vector<RankIndex>& local_ranks,
+    std::array<index_type, D> materialize_ranks(std::vector<index_type>& local_ranks,
                                                 uint64_t rank_pos) const {
         KASSERT(rank_pos + D - 1 < local_ranks.size());
         std::array<index_type, D> ranks;
         for (uint32_t i = 0; i < D; i++) {
-            ranks[i] = local_ranks[rank_pos + i].rank;
+            ranks[i] = local_ranks[rank_pos + i];
         }
         return ranks;
     }
 
     MergeSamples materialize_merge_sample(std::vector<char_type>& local_string,
-                                          std::vector<RankIndex>& local_ranks,
+                                          std::vector<index_type>& local_ranks,
                                           uint64_t char_pos,
                                           uint64_t rank_pos,
                                           auto materialize_chars) const {
@@ -184,7 +184,7 @@ struct MergeSamplePhase {
         return MergeSamples(std::move(chars), std::move(ranks), global_index);
     }
     MergeSamples materialize_merge_sample_at(std::vector<char_type>& local_string,
-                                             std::vector<RankIndex>& local_ranks,
+                                             std::vector<index_type>& local_ranks,
                                              uint64_t local_index,
                                              auto materialize_chars) const {
         uint64_t rank_pos = get_ranks_pos(local_ranks, local_index);
@@ -197,7 +197,7 @@ struct MergeSamplePhase {
 
     // materialize all substrings of length X - 1 and corresponding D ranks
     std::vector<MergeSamples> construct_merge_samples(std::vector<char_type>& local_string,
-                                                      std::vector<RankIndex>& local_ranks,
+                                                      std::vector<index_type>& local_ranks,
                                                       const bool use_packing = false) const {
         std::vector<MergeSamples> merge_samples;
         merge_samples.reserve(info.local_chars);
@@ -327,7 +327,7 @@ struct MergeSamplePhase {
 
     std::vector<index_type>
     space_effient_sort_SA(std::vector<char_type>& local_string,
-                          std::vector<RankIndex>& local_ranks,
+                          std::vector<index_type>& local_ranks,
                           std::vector<typename SampleString::SampleStringLetters>& global_splitters,
                           bool use_packing = false) {
         auto& timer = measurements::timer();
@@ -418,7 +418,7 @@ struct MergeSamplePhase {
 
     std::vector<index_type> space_effient_sort_chunking_SA(
         std::vector<char_type>& local_string,
-        std::vector<RankIndex>& local_ranks,
+        std::vector<index_type>& local_ranks,
         std::vector<typename SampleString::SampleStringLetters>& global_splitters,
         bool use_packing = false) {
         auto& timer = measurements::timer();
@@ -481,7 +481,7 @@ struct MergeSamplePhase {
 
         // linearize data
         std::vector<char_type> chunked_chars;
-        std::vector<RankIndex> chunked_ranks;
+        std::vector<index_type> chunked_ranks;
         std::vector<uint32_t> chunk_sizes;
         chunked_chars.reserve(chars_with_padding * num_local_chunks);
         chunked_ranks.reserve(ranks_with_padding * num_local_chunks);
@@ -511,7 +511,7 @@ struct MergeSamplePhase {
                 chunked_ranks.push_back(local_ranks[i]);
             }
             for (uint64_t i = 0; i < ranks_with_padding - (limit - first_rank); i++) {
-                chunked_ranks.push_back({padding_rank, padding_rank, false});
+                chunked_ranks.push_back(padding_rank);
             }
         }
 
@@ -525,7 +525,7 @@ struct MergeSamplePhase {
         KASSERT(std::accumulate(send_cnt_index.begin(), send_cnt_index.end(), 0)
                 == (int64_t)chunk_global_index.size());
 
-        free_memory(local_ranks);
+        free_memory(std::move(local_ranks));
         timer.stop();
 
         DBG("alltoall chunks");
@@ -653,16 +653,14 @@ struct MergeSamplePhase {
             samples.clear();
         }
 
-        // ensure memory of samples is freed
-        free_memory(samples);
-
-        // more vectors freed
-        free_memory(chunks);
-        free_memory(sample_to_bucket);
-        free_memory(chunked_chars);
-        free_memory(chunked_ranks);
-        free_memory(chunk_global_index);
-        free_memory(chunk_sizes);
+        // ensure memory is freed
+        free_memory(std::move(samples));
+        free_memory(std::move(chunks));
+        free_memory(std::move(sample_to_bucket));
+        free_memory(std::move(chunked_chars));
+        free_memory(std::move(chunked_ranks));
+        free_memory(std::move(chunk_global_index));
+        free_memory(std::move(chunk_sizes));
 
         // log imbalance of received suffixes
         double bucket_imbalance_received = get_imbalance_bucket(sa_bucket_size, total_chars, comm);

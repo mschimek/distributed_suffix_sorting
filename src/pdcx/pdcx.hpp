@@ -751,9 +751,13 @@ public:
         report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_04_merge");
 
+        auto get_rank = [](RankIndex& r) { return r.rank; };
+        std::vector<index_type> sample_ranks = extract_attribute<RankIndex, index_type>(local_ranks, get_rank);
+        free_memory(std::move(local_ranks));
+
         MergePhase phase4(comm, config, info, atomic_sorter, string_sorter_merging);
-        phase4.shift_ranks_left(local_ranks);
-        phase4.push_padding(local_ranks);
+        phase4.shift_ranks_left(sample_ranks);
+        phase4.push_padding(sample_ranks);
 
         std::vector<index_type> local_SA;
         if (use_bucket_sorting_merging) {
@@ -776,21 +780,21 @@ public:
             if (config.use_randomized_chunks_merging) {
                 // with chunking
                 local_SA = phase4.space_effient_sort_chunking_SA(local_string,
-                                                                 local_ranks,
+                                                                 sample_ranks,
                                                                  global_samples_splitters,
                                                                  use_packed_merging);
 
             } else {
                 local_SA = phase4.space_effient_sort_SA(local_string,
-                                                        local_ranks,
+                                                        sample_ranks,
                                                         global_samples_splitters,
                                                         use_packed_merging);
             }
 
         } else {
             std::vector<MergeSamples> merge_samples =
-                phase4.construct_merge_samples(local_string, local_ranks, use_packed_merging);
-            free_memory(std::move(local_ranks));
+                phase4.construct_merge_samples(local_string, sample_ranks, use_packed_merging);
+            free_memory(std::move(sample_ranks));
             phase4.sort_merge_samples(merge_samples);
             local_SA = phase4.extract_SA(merge_samples);
         }
