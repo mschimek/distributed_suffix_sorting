@@ -209,12 +209,15 @@ struct MergeSamplePhase {
         };
 
         // for each index in local string
+        uint64_t rank_pos = get_ranks_pos(local_ranks, 0);
         for (uint64_t local_index = 0; local_index < info.local_chars; local_index++) {
-            MergeSamples sample = materialize_merge_sample_at(local_string,
-                                                              local_ranks,
-                                                              local_index,
-                                                              materialize_chars);
+            MergeSamples sample = materialize_merge_sample(local_string,
+                                                           local_ranks,
+                                                           local_index,
+                                                           rank_pos,
+                                                           materialize_chars);
             merge_samples.push_back(sample);
+            rank_pos += DC::IN_DC[sample.index % DC::X];
         }
         return merge_samples;
     }
@@ -355,21 +358,27 @@ struct MergeSamplePhase {
                        comm,
                        info.recursion_depth);
 
+
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
             timer.synchronize_and_start("phase_04_space_efficient_sort_collect_bucket");
 
             // collect samples falling into kth block
+            uint64_t rank_pos = get_ranks_pos(local_ranks, 0);
             samples.reserve(bucket_sizes[k]);
             for (uint64_t idx = 0; idx < info.local_chars; idx++) {
                 if (sample_to_bucket[idx] == k) {
-                    MergeSamples sample = materialize_merge_sample_at(local_string,
-                                                                      local_ranks,
-                                                                      idx,
-                                                                      materialize_chars);
+                    MergeSamples sample = materialize_merge_sample(local_string,
+                                                                   local_ranks,
+                                                                   idx,
+                                                                   rank_pos,
+                                                                   materialize_chars);
                     samples.push_back(sample);
                 }
+                uint64_t global_index = info.chars_before + idx;
+                rank_pos += DC::IN_DC[global_index % X];
             }
+
             timer.stop();
             KASSERT(bucket_sizes[k] == samples.size());
 
@@ -604,30 +613,22 @@ struct MergeSamplePhase {
                 uint64_t global_index_chunk = chunk_global_index[i];
                 for (uint64_t j = 0; j < chunk_size; j++) {
                     uint64_t char_pos = start_chunk + j;
+                    uint64_t global_index = global_index_chunk + j;
                     if (sample_to_bucket[char_pos] == k) {
-                        uint64_t global_index = global_index_chunk + j;
-
-                        // increment rank position index
-                        while (global_index > (uint64_t)chunked_ranks[rank_pos].index) {
-                            rank_pos++;
-                            KASSERT(rank_pos < chunked_ranks.size(),
-                                    std::to_string(global_index) + " > "
-                                        + std::to_string(chunked_ranks[rank_pos - 1].index));
-                        }
                         auto merge_sample = materialize_merge_sample(chunked_chars,
                                                                      chunked_ranks,
                                                                      char_pos,
                                                                      rank_pos,
                                                                      materialize_chars);
-
                         // above function does not compute global_index the right way
                         merge_sample.index = global_index;
                         samples.push_back(merge_sample);
                     }
+                    // increment rank position index when we skipped over a DC-element
+                    rank_pos += DC::IN_DC[global_index % X];
                 }
             }
             timer.stop();
-
 
             DBG("sort merge samples " + std::to_string(k));
             sort_merge_samples(samples);
