@@ -177,4 +177,13 @@ void report_on_root(std::string const& str,
     }
 }
 
+template<typename T>
+void report_on_pe(T const& x,
+                    Communicator<> const& comm,
+                    std::string msg = "") {
+    
+    std::string s = msg + " " + std::to_string(x);
+    print_result(s, comm); 
+}
+
 } // namespace kamping

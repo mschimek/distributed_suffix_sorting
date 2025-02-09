@@ -1,4 +1,3 @@
-// #include <cstdint>
 #include <algorithm>
 #include <cstdint>
 #include <functional>
@@ -10,6 +9,7 @@
 
 #include "kamping/communicator.hpp"
 #include "kamping/named_parameters.hpp"
+#include "mpi/distribute.hpp"
 #include "options.hpp"
 #include "pdcx/config.hpp"
 #include "sa_check.hpp"
@@ -169,21 +169,39 @@ void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
     }
 }
 
+void test_transpose_blocks_balanced(Communicator<>& comm) {
+    int blocks = 4;
+    // int n = 4;
+    // int n = 4 + comm.rank();
+    // std::vector<int> ns = {0, 0, 10, 10};
+    // int n = ns[comm.rank()];
+    // std::vector<int> local_data(n * blocks);
+    // for (int i = 0; i < blocks; i++) {
+    //     for(int j = 0; j < n; j++) {
+    //         local_data[i * n + j] = 100 * i + 10 * comm.rank() + j;
+    //     }
+    // }
+
+    std::vector<std::vector<uint64_t>> B = {{2, 4, 8, 16},
+                                            {0, 0, 0, 0},
+                                            {0, 0, 0, 0},
+                                            {2, 4, 8, 16}};
+    std::vector<uint64_t> block_size = B[comm.rank()];
+    std::vector<int> local_data;
+    for (int i = 0; i < blocks; i++) {
+        for (uint64_t j = 0; j < block_size[i]; j++) {
+            int x = 1000 * i + 100 * comm.rank() + 10 * j;
+            local_data.push_back(x);
+        }
+    }
+
+    // print_concatenated(local_data, comm, "input_data");
+    mpi_util::transpose_blocks_balanced(local_data, block_size, comm);
+}
+
 int main() {
     Environment e;
     Communicator comm;
-
-    // using namespace dcx;
-    // options::report_compile_flags(comm);/
-    // start_tests(comm);
-
-    // using char_type = uint16_t;
-    // using index_type = uint32_t;
-    // int n = 1e3 / comm.size();
-    // int alpha = 4;
-    // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(n, alpha, comm);
-    // run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(n, alpha, comm);
-    // run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(n, alpha, comm);
 
     return 0;
 }

@@ -398,7 +398,10 @@ struct MergeSamplePhase {
 
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
-        SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
+        SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
+                                                         sa_bucket_size,
+                                                         comm,
+                                                         config.rearrange_buckets_balanced);
         timer.stop();
 
         return local_SA;
@@ -678,7 +681,10 @@ struct MergeSamplePhase {
         DBG("transpose blocks");
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
-        SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
+        SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
+                                                         sa_bucket_size,
+                                                         comm,
+                                                         config.rearrange_buckets_balanced);
         timer.stop();
 
 

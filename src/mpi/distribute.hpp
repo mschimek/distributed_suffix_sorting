@@ -1,14 +1,17 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <numeric>
 #include <vector>
 
 #include "kamping/collectives/allgather.hpp"
 #include "kamping/collectives/allreduce.hpp"
+#include "kamping/collectives/alltoall.hpp"
 #include "kamping/collectives/exscan.hpp"
 #include "kamping/communicator.hpp"
+#include "kamping/named_parameters.hpp"
 #include "mpi/alltoall.hpp"
 #include "mpi/reduce.hpp"
 #include "util/printing.hpp"
@@ -96,12 +99,12 @@ std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
     int64_t num_blocks = block_size.size();
     KASSERT(num_blocks <= (int64_t)comm.size());
 
-    KASSERT(local_data.size() == std::accumulate(block_size.begin(), block_size.end(), uint64_t(0)));
+    KASSERT(local_data.size()
+            == std::accumulate(block_size.begin(), block_size.end(), uint64_t(0)));
 
     // compute prefix sums
     std::vector<uint64_t> pref_sum_kth_block = comm.exscan(send_buf(block_size), op(ops::plus<>{}));
-    std::vector<uint64_t> sum_kth_block =
-        comm.allreduce(send_buf(block_size), op(ops::plus<>{}));
+    std::vector<uint64_t> sum_kth_block = comm.allreduce(send_buf(block_size), op(ops::plus<>{}));
 
     // sort block indices by decreasing size
     std::vector<int64_t> idx_blocks(num_blocks);
@@ -131,7 +134,7 @@ std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
         }
         target_size[pe_range[k + 1] - 1] += sum_kth_block[k] % num_pe_per_block[k];
     }
-    
+
     std::vector<int64_t> pred_target_size(comm.size(), 0);
     for (int64_t k = 0; k < num_blocks; k++) {
         std::exclusive_scan(target_size.begin() + pe_range[k],
@@ -161,4 +164,132 @@ std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
 
     return mpi_util::alltoallv_combined(local_data, send_cnts, comm);
 }
+
+
+/*
+Rearranges data that result from space efficient bucket sorting.
+Data is distributed equally amoung the PEs.
+Additional bookkeeping information (#PEs x #blocks) is required to correctly reorder the received data locally in an
+output buffer.
+*/
+template <typename DataType>
+std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_data,
+                                                std::vector<uint64_t> block_size,
+                                                Communicator<>& comm) {
+    KASSERT(local_data.size()
+            == std::accumulate(block_size.begin(), block_size.end(), uint64_t(0)));
+    uint64_t num_blocks = block_size.size();
+
+    // compute prefix sums of blocks
+    std::vector<uint64_t> pref_sum_kth_block = comm.exscan(send_buf(block_size), op(ops::plus<>{}));
+    std::vector<uint64_t> sum_kth_block = comm.allreduce(send_buf(block_size), op(ops::plus<>{}));
+    uint64_t total_size = std::accumulate(sum_kth_block.begin(), sum_kth_block.end(), uint64_t(0));
+
+    std::vector<uint64_t> global_pref_sum_block(num_blocks, 0);
+    std::exclusive_scan(sum_kth_block.begin(),
+                        sum_kth_block.end(),
+                        global_pref_sum_block.begin(),
+                        uint64_t(0));
+
+    // compute target size
+    std::vector<uint64_t> pe_target_sizes(comm.size(), total_size / comm.size());
+    uint64_t rem = total_size % comm.size();
+    for (uint64_t i = 0; i < rem; i++) {
+        pe_target_sizes[i]++;
+    }
+    uint64_t target_size = pe_target_sizes[comm.rank()];
+    KASSERT(total_size == mpi_util::all_reduce_sum(target_size, comm));
+    KASSERT(total_size
+            == std::accumulate(pe_target_sizes.begin(), pe_target_sizes.end(), uint64_t(0)));
+
+    std::vector<uint64_t> pref_target_sizes(comm.size(), 0);
+    std::exclusive_scan(pe_target_sizes.begin(),
+                        pe_target_sizes.end(),
+                        pref_target_sizes.begin(),
+                        uint64_t(0));
+
+    // compute send counts
+    std::vector<int64_t> send_cnts(comm.size(), 0);
+
+    // one block of num_blocks sizes per PE
+    std::vector<uint64_t> block_size_send(num_blocks * comm.size());
+
+    uint64_t local_data_size = local_data.size();
+    uint64_t r = 0;
+    for (uint64_t k = 0; k < num_blocks; k++) {
+        uint64_t remaining_block_size = block_size[k];
+        uint64_t global_index_block = global_pref_sum_block[k] + pref_sum_kth_block[k];
+        uint64_t preceding_size = global_index_block;
+
+        // assign current block
+        while (r < comm.size() - 1 && remaining_block_size > 0) {
+            if (preceding_size < pref_target_sizes[r + 1]) {
+                uint64_t elements_left = pref_target_sizes[r + 1] - preceding_size;
+                uint64_t to_send = std::min(remaining_block_size, elements_left);
+                remaining_block_size -= to_send;
+                local_data_size -= to_send;
+                send_cnts[r] += to_send;
+                preceding_size += to_send;
+                block_size_send[r * num_blocks + k] = to_send;
+            }
+            // same PE might get part of next block
+            if (remaining_block_size > 0) {
+                r++;
+            }
+        }
+        KASSERT(remaining_block_size == 0ull || r == comm.size() - 1);
+        if (r == comm.size() - 1) {
+            uint64_t to_send = remaining_block_size;
+            remaining_block_size -= to_send;
+            local_data_size -= to_send;
+            send_cnts[r] += to_send;
+            block_size_send[r * num_blocks + k] = to_send;
+        }
+    }
+    KASSERT(local_data_size == 0ull);
+
+    local_data = mpi_util::alltoallv_combined(local_data, send_cnts, comm);
+    std::vector<uint64_t> block_size_rcv = comm.alltoall(send_buf(block_size_send));
+
+    KASSERT(local_data.size() == target_size);
+
+    // rearrange data
+    std::vector<DataType> output_buffer(local_data.size());
+    std::vector<uint64_t> pref_block_size_rcv(block_size_rcv.size() + 1, 0);
+    std::inclusive_scan(block_size_rcv.begin(),
+                        block_size_rcv.end(),
+                        pref_block_size_rcv.begin() + 1);
+
+    // copy each received region in correct order into output buffer
+    uint64_t write_index = 0;
+    for (uint64_t k = 0; k < num_blocks; k++) {
+        for (uint64_t r = 0; r < comm.size(); r++) {
+            uint64_t start = pref_block_size_rcv[r * num_blocks + k];
+            uint64_t end = pref_block_size_rcv[r * num_blocks + k + 1];
+            if (start < end) {
+                std::copy(local_data.begin() + start,
+                          local_data.begin() + end,
+                          output_buffer.begin() + write_index);
+                write_index += end - start;
+            }
+        }
+    }
+
+    std::swap(output_buffer, local_data);
+    return local_data;
+}
+
+template <typename DataType>
+std::vector<DataType> transpose_blocks_wrapper(std::vector<DataType>& local_data,
+                                               std::vector<uint64_t> block_size,
+                                               Communicator<>& comm,
+                                               bool balanced) {
+    if (balanced) {
+        return transpose_blocks_balanced(local_data, block_size, comm);
+    } else {
+        return transpose_blocks(local_data, block_size, comm);
+    }
+}
+
+
 } // namespace dsss::mpi_util

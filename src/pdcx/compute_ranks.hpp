@@ -268,7 +268,10 @@ struct LexicographicRankPhase {
 
         timer.synchronize_and_start("phase_01_02_space_efficient_sort_alltoall");
         std::vector<RankIndex> local_ranks =
-            mpi_util::transpose_blocks(concat_rank_buckets, received_size, comm);
+            mpi_util::transpose_blocks_wrapper(concat_rank_buckets,
+                                               received_size,
+                                               comm,
+                                               config.rearrange_buckets_balanced);
         timer.stop();
 
         // compute local ranks

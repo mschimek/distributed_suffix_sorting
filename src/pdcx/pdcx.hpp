@@ -438,9 +438,11 @@ public:
                            info.recursion_depth);
 
 
-
             timer.synchronize_and_start("phase_03_space_efficient_sort_alltoall");
-            SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
+            SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
+                                                             sa_bucket_size,
+                                                             comm,
+                                                             config.rearrange_buckets_balanced);
             timer.stop();
 
             // zip SA with 1, ..., n

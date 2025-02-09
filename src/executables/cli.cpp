@@ -154,6 +154,11 @@ void configure_cli() {
                  "container_variant",
                  pdcx_config.container_variant,
                  "4 Container Variants for DNA with 4 bits, 0,1,2,3.");
+    cp.add_flag('E',
+                "rearrange_buckets_balanced",
+                pdcx_config.rearrange_buckets_balanced,
+                "Balances the buckets in a balanced way, which needs an additional output buffer "
+                "and some bookkeeping information.");
 
 
     // sorter configuration
@@ -466,7 +471,7 @@ void compute_sa(kamping::Communicator<>& comm) {
 
     } else {
         /*** standard variant with atomic sorting or string sorting  ***/
-        
+
         using DCXParam = DC21Param;
         run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     }
@@ -589,5 +594,6 @@ int main(int32_t argc, char const* argv[]) {
 
     check_sa(comm);
     write_sa(comm);
+
     return 0;
 }

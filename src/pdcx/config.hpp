@@ -48,6 +48,7 @@ struct PDCXConfig {
     bool use_char_packing_samples = false;
     bool use_char_packing_merging = false;
     bool print_phases = true;
+    bool rearrange_buckets_balanced = false;
 
 
     uint32_t buckets_samples_at_level(uint32_t level) const {
@@ -83,6 +84,7 @@ struct PDCXConfig {
         std::cout << V(num_randomized_chunks) << "\n";
         std::cout << V(packing_ratio) << "\n";
         std::cout << V(container_variant) << "\n";
+        std::cout << V(rearrange_buckets_balanced) << "\n";
         std::cout << std::endl;
 
         sample_sort_config.print_config();
