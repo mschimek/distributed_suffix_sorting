@@ -18,6 +18,7 @@ struct PDCXLengthInfo {
     uint64_t total_chars = 0;
     uint64_t largest_char = 0;
     uint64_t chars_before = 0;
+    uint64_t samples_before = 0;
     uint64_t recursion_depth = 0;
 };
 
@@ -27,6 +28,8 @@ struct PDCXConfig {
     dsss::SeqStringSorter string_sorter = dsss::SeqStringSorter::MultiKeyQSort;
     std::vector<uint32_t> buckets_samples;
     std::vector<uint32_t> buckets_merging;
+    uint32_t buckets_phase3 = 1;
+    uint32_t num_samples_phase3 = 10000;
     uint64_t ams_levels = 1;
     uint64_t memory_seq_string_sorter = 0;
     uint64_t num_samples_splitters = 100;
@@ -45,6 +48,7 @@ struct PDCXConfig {
     bool use_char_packing_samples = false;
     bool use_char_packing_merging = false;
     bool print_phases = true;
+    bool rearrange_buckets_balanced = false;
 
 
     uint32_t buckets_samples_at_level(uint32_t level) const {
@@ -64,6 +68,8 @@ struct PDCXConfig {
         kamping::print_vector(buckets_samples, ",");
         std::cout << "buckets_merging=";
         kamping::print_vector(buckets_merging, ",");
+        std::cout << V(buckets_phase3) << "\n";
+        std::cout << V(num_samples_phase3) << "\n";
         std::cout << V(use_string_sort) << "\n";
         std::cout << V(use_string_sort_tie_breaking) << "\n";
         std::cout << V(use_lcps_tie_breaking) << "\n";
@@ -78,6 +84,7 @@ struct PDCXConfig {
         std::cout << V(chunk_size) << "\n";
         std::cout << V(packing_ratio) << "\n";
         std::cout << V(container_variant) << "\n";
+        std::cout << V(rearrange_buckets_balanced) << "\n";
         std::cout << std::endl;
 
         sample_sort_config.print_config();

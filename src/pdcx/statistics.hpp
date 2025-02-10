@@ -36,6 +36,14 @@ struct Statistics {
         bucket_sizes.clear();
         packed_chars_samples.clear();
         packed_chars_merging.clear();
+        max_mem_pe_phase_01.clear();
+        max_mem_pe_phase_02.clear();
+        max_mem_pe_phase_03.clear();
+        max_mem_pe_phase_04.clear();
+        max_mem_pe_phase_01_1.clear();
+        max_mem_pe_phase_02_1.clear();
+        max_mem_pe_phase_03_1.clear();
+        max_mem_pe_phase_04_1.clear();
     }
 
     void print() const {
@@ -90,6 +98,14 @@ struct Statistics {
         print_vector(max_mem_pe_phase_03, ",");
         std::cout << "max_mem_pe_phase_04=";
         print_vector(max_mem_pe_phase_04, ",");
+        std::cout << "max_mem_pe_phase_01_1=";
+        print_vector(max_mem_pe_phase_01_1, ",");
+        std::cout << "max_mem_pe_phase_02_1=";
+        print_vector(max_mem_pe_phase_02_1, ",");
+        std::cout << "max_mem_pe_phase_03_1=";
+        print_vector(max_mem_pe_phase_03_1, ",");
+        std::cout << "max_mem_pe_phase_04_1=";
+        print_vector(max_mem_pe_phase_04_1, ",");
         std::cout << "max_mem_pe_chunking_before_sort=";
         print_vector(max_mem_pe_chunking_before_sort, ",");
         std::cout << "max_mem_pe_chunking_after_sort=";
@@ -136,6 +152,10 @@ struct Statistics {
     std::vector<uint64_t> max_mem_pe_phase_02;
     std::vector<uint64_t> max_mem_pe_phase_03;
     std::vector<uint64_t> max_mem_pe_phase_04;
+    std::vector<uint64_t> max_mem_pe_phase_01_1;
+    std::vector<uint64_t> max_mem_pe_phase_02_1;
+    std::vector<uint64_t> max_mem_pe_phase_03_1;
+    std::vector<uint64_t> max_mem_pe_phase_04_1;
     std::vector<uint64_t> max_mem_pe_chunking_before_sort;
     std::vector<uint64_t> max_mem_pe_chunking_after_sort;
     std::vector<uint64_t> max_mem_pe_chunking_after_concat;

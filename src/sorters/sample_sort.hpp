@@ -63,32 +63,42 @@ inline void sample_sort(std::vector<DataType>& local_data,
 
     // code breaks for very small inputs --> switch to sequential sorting
     if (input_is_small(local_data, comm)) {
+        DBG("sample sort on root");
         uint64_t local_n = local_data.size();
         sort_on_root(local_data, comm, local_sorter);
         local_data = mpi_util::distribute_data_custom(local_data, local_n, comm);
         return;
     }
 
+
     // handle cases with empty PEs
     timer.synchronize_and_start("sample_sort_distribute_data");
+    DBG("redist");
     redistribute_imbalanced_data(local_data, comm);
     timer.stop();
 
+
     // Sort data locally
     timer.synchronize_and_start("sample_sort_local_sorting_01");
+    DBG("local_sorting 1");
     local_sorter(local_data);
     timer.stop();
 
     // compute global splitters
     timer.synchronize_and_start("sample_sort_global_splitters");
+    DBG("global splitters");
     std::vector<DataType> global_splitters =
         get_global_splitters(local_data, local_sorter, distributed_sorter, comm, config);
     timer.stop();
 
+
+    DBG("interval sizes");
     // Use the final set of splitters to find the intervals
     std::vector<int64_t> interval_sizes =
         compute_interval_sizes(local_data, global_splitters, comm, comp, config);
-    
+
+
+    DBG("receiving sizes");
     std::vector<int64_t> receiving_sizes = comm.alltoall(kamping::send_buf(interval_sizes));
     for (size_t i = interval_sizes.size(); i < comm.size(); ++i) {
         interval_sizes.emplace_back(0);
@@ -96,10 +106,18 @@ inline void sample_sort(std::vector<DataType>& local_data,
 
     // exchange data in intervals
     timer.synchronize_and_start("sample_sort_alltoall");
+    DBG("alltoall");
+    if constexpr (DEBUG_SIZE) {
+        print_concatenated_size(local_data, comm, "local data size");
+        print_concatenated_size(interval_sizes, comm, "interval_sizes size");
+        print_concatenated(interval_sizes, comm, "interval_sizes");
+    }
     local_data = mpi_util::alltoallv_combined(local_data, interval_sizes, comm);
     timer.stop();
 
     if (config.use_loser_tree) {
+        DBG("loser tree");
+
         std::vector<decltype(local_data.cbegin())> string_it(comm.size(), local_data.cbegin());
         std::vector<decltype(local_data.cbegin())> end_it(comm.size(),
                                                           local_data.cbegin() + receiving_sizes[0]);
@@ -150,6 +168,7 @@ inline void sample_sort(std::vector<DataType>& local_data,
         local_data = std::move(result);
     } else if (local_data.size() > 0) {
         timer.synchronize_and_start("sample_sort_local_sorting_02");
+        DBG("local_sorting 2");
         local_sorter(local_data);
         timer.stop();
     }

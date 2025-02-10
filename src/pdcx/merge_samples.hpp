@@ -79,7 +79,7 @@ struct DCMergeSamples {
                 return (chars < b.chars);
         } else {
             // compare first d chars
-            for (int k = 0; k < d; k++) {
+            for (uint32_t k = 0; k < d; k++) {
                 if (chars.at(k) != b.chars.at(k)) {
                     return chars.at(k) < b.chars.at(k);
                 }
@@ -129,29 +129,30 @@ struct MergeSamplePhase {
           space_efficient_sort(comm, config) {}
 
     // shift ranks left to access overlapping ranks
-    void shift_ranks_left(std::vector<RankIndex>& local_ranks) const {
+    void shift_ranks_left(std::vector<index_type>& local_ranks) const {
         mpi_util::shift_entries_left(local_ranks, D, comm);
         local_ranks.shrink_to_fit();
     }
 
     // add dummy padding that is sorted at the end
-    void push_padding(std::vector<RankIndex>& local_ranks) const {
+    void push_padding(std::vector<index_type>& local_ranks) const {
         if (comm.rank() == comm.size() - 1) {
-            RankIndex padding(0, info.total_chars, false);
+            index_type padding = 0;
             std::fill_n(std::back_inserter(local_ranks), D, padding);
             local_ranks.shrink_to_fit();
         }
     }
 
-    uint64_t get_ranks_pos(std::vector<RankIndex>& local_ranks, int64_t local_index) const {
-        int64_t block_nr =
-            std::max(int64_t(0), (local_index / X) - 1); // block of one periodic sample
-        int64_t rank_pos = block_nr * D;                 // estimate of position
-        while (local_index > (int64_t)local_ranks[rank_pos].index - (int64_t)info.chars_before) {
-            rank_pos++;
-            KASSERT(rank_pos < (int64_t)local_ranks.size());
-        }
-        return rank_pos;
+    uint64_t get_ranks_pos(std::vector<index_type>& local_ranks, int64_t local_index) const {
+        // does not need index, maybe can remove index
+        uint64_t global_index = local_index + info.chars_before;
+        uint64_t block_nr = global_index / X;
+        uint64_t start_block = block_nr * D;
+        uint64_t rem = global_index % X;
+        uint64_t offset = DC::NEXT_RANK[rem];
+        uint64_t global_rank_pos = start_block + offset;
+        uint64_t local_rank_pos = global_rank_pos - info.samples_before;
+        return local_rank_pos;
     }
 
     CharContainer materialize_characters(std::vector<char_type>& local_string,
@@ -162,18 +163,18 @@ struct MergeSamplePhase {
                              local_string.begin() + char_pos + char_packing_ratio * X - 1);
     }
 
-    std::array<index_type, D> materialize_ranks(std::vector<RankIndex>& local_ranks,
+    std::array<index_type, D> materialize_ranks(std::vector<index_type>& local_ranks,
                                                 uint64_t rank_pos) const {
         KASSERT(rank_pos + D - 1 < local_ranks.size());
         std::array<index_type, D> ranks;
         for (uint32_t i = 0; i < D; i++) {
-            ranks[i] = local_ranks[rank_pos + i].rank;
+            ranks[i] = local_ranks[rank_pos + i];
         }
         return ranks;
     }
 
     MergeSamples materialize_merge_sample(std::vector<char_type>& local_string,
-                                          std::vector<RankIndex>& local_ranks,
+                                          std::vector<index_type>& local_ranks,
                                           uint64_t char_pos,
                                           uint64_t rank_pos,
                                           auto materialize_chars) const {
@@ -183,7 +184,7 @@ struct MergeSamplePhase {
         return MergeSamples(std::move(chars), std::move(ranks), global_index);
     }
     MergeSamples materialize_merge_sample_at(std::vector<char_type>& local_string,
-                                             std::vector<RankIndex>& local_ranks,
+                                             std::vector<index_type>& local_ranks,
                                              uint64_t local_index,
                                              auto materialize_chars) const {
         uint64_t rank_pos = get_ranks_pos(local_ranks, local_index);
@@ -196,9 +197,8 @@ struct MergeSamplePhase {
 
     // materialize all substrings of length X - 1 and corresponding D ranks
     std::vector<MergeSamples> construct_merge_samples(std::vector<char_type>& local_string,
-                                                      std::vector<RankIndex>& local_ranks,
+                                                      std::vector<index_type>& local_ranks,
                                                       const bool use_packing = false) const {
-        uint64_t rank_pos = 0;
         std::vector<MergeSamples> merge_samples;
         merge_samples.reserve(info.local_chars);
 
@@ -209,18 +209,15 @@ struct MergeSamplePhase {
         };
 
         // for each index in local string
+        uint64_t rank_pos = get_ranks_pos(local_ranks, 0);
         for (uint64_t local_index = 0; local_index < info.local_chars; local_index++) {
-            // find next index in difference cover
-            while (local_index > local_ranks[rank_pos].index - info.chars_before) {
-                rank_pos++;
-                KASSERT(rank_pos < local_ranks.size());
-            }
             MergeSamples sample = materialize_merge_sample(local_string,
                                                            local_ranks,
                                                            local_index,
                                                            rank_pos,
                                                            materialize_chars);
             merge_samples.push_back(sample);
+            rank_pos += DC::IN_DC[sample.index % DC::X];
         }
         return merge_samples;
     }
@@ -330,7 +327,7 @@ struct MergeSamplePhase {
 
     std::vector<index_type>
     space_effient_sort_SA(std::vector<char_type>& local_string,
-                          std::vector<RankIndex>& local_ranks,
+                          std::vector<index_type>& local_ranks,
                           std::vector<typename SampleString::SampleStringLetters>& global_splitters,
                           bool use_packing = false) {
         auto& timer = measurements::timer();
@@ -361,21 +358,27 @@ struct MergeSamplePhase {
                        comm,
                        info.recursion_depth);
 
+
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
             timer.synchronize_and_start("phase_04_space_efficient_sort_collect_bucket");
 
             // collect samples falling into kth block
+            uint64_t rank_pos = get_ranks_pos(local_ranks, 0);
             samples.reserve(bucket_sizes[k]);
             for (uint64_t idx = 0; idx < info.local_chars; idx++) {
                 if (sample_to_bucket[idx] == k) {
-                    MergeSamples sample = materialize_merge_sample_at(local_string,
-                                                                      local_ranks,
-                                                                      idx,
-                                                                      materialize_chars);
+                    MergeSamples sample = materialize_merge_sample(local_string,
+                                                                   local_ranks,
+                                                                   idx,
+                                                                   rank_pos,
+                                                                   materialize_chars);
                     samples.push_back(sample);
                 }
+                uint64_t global_index = info.chars_before + idx;
+                rank_pos += DC::IN_DC[global_index % X];
             }
+
             timer.stop();
             KASSERT(bucket_sizes[k] == samples.size());
 
@@ -404,7 +407,10 @@ struct MergeSamplePhase {
 
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
-        SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
+        SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
+                                                         sa_bucket_size,
+                                                         comm,
+                                                         config.rearrange_buckets_balanced);
         timer.stop();
 
         return local_SA;
@@ -412,7 +418,7 @@ struct MergeSamplePhase {
 
     std::vector<index_type> space_effient_sort_chunking_SA(
         std::vector<char_type>& local_string,
-        std::vector<RankIndex>& local_ranks,
+        std::vector<index_type>& local_ranks,
         std::vector<typename SampleString::SampleStringLetters>& global_splitters,
         bool use_packing = false) {
         auto& timer = measurements::timer();
@@ -448,6 +454,8 @@ struct MergeSamplePhase {
         std::mt19937 rng(config.seed + comm.rank());
         std::uniform_int_distribution<uint32_t> dist(0, comm.size() - 1);
 
+        DBG("create chunks");
+
         // create chunks in evenly spaced intervals
         std::vector<Chunk> chunks;
         chunks.reserve(num_local_chunks);
@@ -458,6 +466,7 @@ struct MergeSamplePhase {
             send_cnt_ranks[chunk.target_pe] += ranks_with_padding;
             send_cnt_index[chunk.target_pe] += 1;
         }
+
 
         // sort chunks by PE
         ips4o::sort(chunks.begin(), chunks.end(), [&](const Chunk& a, const Chunk& b) {
@@ -472,7 +481,7 @@ struct MergeSamplePhase {
 
         // linearize data
         std::vector<char_type> chunked_chars;
-        std::vector<RankIndex> chunked_ranks;
+        std::vector<index_type> chunked_ranks;
         std::vector<uint32_t> chunk_sizes;
         chunked_chars.reserve(chars_with_padding * num_local_chunks);
         chunked_ranks.reserve(ranks_with_padding * num_local_chunks);
@@ -481,6 +490,7 @@ struct MergeSamplePhase {
         char_type fill_char = char_type(0);
         uint64_t padding_rank = total_chars + 1;
 
+        DBG("fill chunks");
         for (auto& chunk: chunks) {
             // chars
             uint64_t start = chunk.start_index;
@@ -501,7 +511,7 @@ struct MergeSamplePhase {
                 chunked_ranks.push_back(local_ranks[i]);
             }
             for (uint64_t i = 0; i < ranks_with_padding - (limit - first_rank); i++) {
-                chunked_ranks.push_back({padding_rank, padding_rank, false});
+                chunked_ranks.push_back(padding_rank);
             }
         }
 
@@ -515,8 +525,10 @@ struct MergeSamplePhase {
         KASSERT(std::accumulate(send_cnt_index.begin(), send_cnt_index.end(), 0)
                 == (int64_t)chunk_global_index.size());
 
-        free_memory(local_ranks);
+        free_memory(std::move(local_ranks));
         timer.stop();
+
+        DBG("alltoall chunks");
 
         // exchange linearized data
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_alltoall_chunks");
@@ -537,6 +549,8 @@ struct MergeSamplePhase {
         int64_t num_buckets = global_splitters.size() + 1;
         std::vector<uint64_t> bucket_sizes(num_buckets, 0);
         std::vector<uint8_t> sample_to_bucket(chunked_chars.size(), num_buckets);
+
+        DBG("compute bucket mapping");
 
         uint64_t num_materialized_samples = 0;
         for (uint64_t i = 0; i < received_chunks; i++) {
@@ -585,6 +599,7 @@ struct MergeSamplePhase {
         std::vector<uint64_t> sa_bucket_size;
         sa_bucket_size.reserve(num_buckets);
 
+
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
             timer.synchronize_and_start("phase_04_space_effient_sort_chunking_collect_bucket");
@@ -598,31 +613,26 @@ struct MergeSamplePhase {
                 uint64_t global_index_chunk = chunk_global_index[i];
                 for (uint64_t j = 0; j < chunk_size; j++) {
                     uint64_t char_pos = start_chunk + j;
+                    uint64_t global_index = global_index_chunk + j;
                     if (sample_to_bucket[char_pos] == k) {
-                        uint64_t global_index = global_index_chunk + j;
-
-                        // increment rank position index
-                        while (global_index > (uint64_t)chunked_ranks[rank_pos].index) {
-                            rank_pos++;
-                            KASSERT(rank_pos < chunked_ranks.size(),
-                                    std::to_string(global_index) + " > "
-                                        + std::to_string(chunked_ranks[rank_pos - 1].index));
-                        }
                         auto merge_sample = materialize_merge_sample(chunked_chars,
                                                                      chunked_ranks,
                                                                      char_pos,
                                                                      rank_pos,
                                                                      materialize_chars);
-
                         // above function does not compute global_index the right way
                         merge_sample.index = global_index;
                         samples.push_back(merge_sample);
                     }
+                    // increment rank position index when we skipped over a DC-element
+                    rank_pos += DC::IN_DC[global_index % X];
                 }
             }
             timer.stop();
 
+            DBG("sort merge samples " + std::to_string(k));
             sort_merge_samples(samples);
+
 
             timer.start("phase_04_space_effient_sort_wait_after_sort");
             comm.barrier();
@@ -643,16 +653,14 @@ struct MergeSamplePhase {
             samples.clear();
         }
 
-        // ensure memory of samples is freed
-        free_memory(samples);
-
-        // more vectors freed
-        free_memory(chunks);
-        free_memory(sample_to_bucket);
-        free_memory(chunked_chars);
-        free_memory(chunked_ranks);
-        free_memory(chunk_global_index);
-        free_memory(chunk_sizes);
+        // ensure memory is freed
+        free_memory(std::move(samples));
+        free_memory(std::move(chunks));
+        free_memory(std::move(sample_to_bucket));
+        free_memory(std::move(chunked_chars));
+        free_memory(std::move(chunked_ranks));
+        free_memory(std::move(chunk_global_index));
+        free_memory(std::move(chunk_sizes));
 
         // log imbalance of received suffixes
         double bucket_imbalance_received = get_imbalance_bucket(sa_bucket_size, total_chars, comm);
@@ -669,16 +677,22 @@ struct MergeSamplePhase {
                 comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
         }
 
+        DBG("transpose blocks");
+
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
-        SA local_SA = mpi_util::transpose_blocks(concat_sa_buckets, sa_bucket_size, comm);
+        SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
+                                                         sa_bucket_size,
+                                                         comm,
+                                                         config.rearrange_buckets_balanced);
         timer.stop();
 
-        print_concatenated(bucket_sizes,
-                           comm,
-                           "bucket_sizes_" + std::to_string(info.recursion_depth));
-        print_concatenated(sa_bucket_size,
-                           comm,
-                           "sa_bucket_size_" + std::to_string(info.recursion_depth));
+
+        // print_concatenated(bucket_sizes,
+        //                    comm,
+        //                    "bucket_sizes_" + std::to_string(info.recursion_depth));
+        // print_concatenated(sa_bucket_size,
+        //                    comm,
+        //                    "sa_bucket_size_" + std::to_string(info.recursion_depth));
 
         return local_SA;
     }

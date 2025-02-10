@@ -144,6 +144,7 @@ public:
     template <typename new_char_type>
     void handle_recursive_call(std::vector<RankIndex>& local_ranks, auto map_back_func) {
         // sort by (mod X, div X)
+
         timer.synchronize_and_start("phase_03_sort_mod_div");
         atomic_sorter.sort(local_ranks, RankIndex::cmp_mod_div);
         timer.stop();
@@ -167,11 +168,11 @@ public:
             recursive_call_direct<new_char_type>(local_ranks, map_back_func);
         }
 
+
         // sort samples by original index and distribute back to PEs
         timer.synchronize_and_start("phase_03_sort_ranks_index");
         atomic_sorter.sort(local_ranks, RankIndex::cmp_by_index);
         timer.stop();
-        report_on_root("distribute after recursion", comm);
         local_ranks = mpi_util::distribute_data_custom(local_ranks, info.local_sample_size, comm);
     }
 
@@ -189,6 +190,7 @@ public:
         PDCX<new_char_type, index_type, DC> rec_pdcx(config, comm);
 
         // memory of SA is counted in recursive call
+
         recursion_depth++;
         rec_pdcx.recursion_depth = recursion_depth;
         std::vector<index_type> SA = rec_pdcx.compute_sa(recursive_string);
@@ -246,13 +248,16 @@ public:
             }
         }
 
+
         // recursive call
+
         PDCX<new_char_type, index_type, DC> rec_pdcx(config, comm);
         recursion_depth++;
         rec_pdcx.recursion_depth = recursion_depth;
         std::vector<index_type> reduced_SA = rec_pdcx.compute_sa(recursive_string);
         recursion_depth--;
         free_memory(std::move(recursive_string));
+
 
         // zip SA with 1, ..., n
         struct IndexRank {
@@ -275,9 +280,11 @@ public:
             return l.index < r.index;
         };
 
+
         timer.synchronize_and_start("phase_03_sort_index_sa");
         atomic_sorter.sort(ranks_sa, cmp_index_sa);
         timer.stop();
+
 
         // get ranks of recursive string that was generated locally on this PE
         ranks_sa = mpi_util::distribute_data_custom(ranks_sa, after_discarding, comm);
@@ -307,26 +314,145 @@ public:
             return ranks_sa[index_reduced++].rank;
         };
 
-        std::vector<RankRankIndex> rri;
-        rri.reserve(local_ranks.size());
-        for (uint64_t i = 0; i < local_ranks.size(); i++) {
-            index_type rank1 = local_ranks[i].rank;
-            index_type rank2 = local_ranks[i].unique ? index_type(0) : get_next_rank();
-            index_type index = local_ranks[i].index;
-            rri.emplace_back(rank1, rank2, index);
-        }
-
-        timer.synchronize_and_start("phase_03_sort_rri");
-        atomic_sorter.sort(rri, cmp_rri);
-        timer.stop();
-
         // extract local ranks
         auto index_local_ranks = [&](uint64_t idx, RankRankIndex& rr) {
             return RankIndex{index_type(1 + idx), rr.index, true};
         };
 
-        local_ranks =
-            mpi_util::zip_with_index<RankRankIndex, RankIndex>(rri, index_local_ranks, comm);
+        uint64_t buckets = config.buckets_phase3;
+        uint64_t total_random_samples = config.num_samples_phase3;
+
+        if (buckets == 1 || recursion_depth > 0) {
+            std::vector<RankRankIndex> rri;
+            rri.reserve(local_ranks.size());
+            for (uint64_t i = 0; i < local_ranks.size(); i++) {
+                index_type rank1 = local_ranks[i].rank;
+                index_type rank2 = local_ranks[i].unique ? index_type(0) : get_next_rank();
+                index_type index = local_ranks[i].index;
+                rri.emplace_back(rank1, rank2, index);
+            }
+
+            free_memory(std::move(local_ranks));
+            free_memory(std::move(ranks_sa));
+
+            timer.synchronize_and_start("phase_03_sort_rri");
+            atomic_sorter.sort(rri, cmp_rri);
+            timer.stop();
+
+            local_ranks =
+                mpi_util::zip_with_index<RankRankIndex, RankIndex>(rri, index_local_ranks, comm);
+        } else {
+            report_on_root("Space efficient sort in Phase 3 with " + std::to_string(buckets)
+                               + " buckets",
+                           comm);
+
+            // space efficient variant
+            SpaceEfficientSort<char_type, index_type, DC> helper(comm, config);
+            using SA = std::vector<index_type>;
+
+            // 1. collect reduced index with dummy elements for easier random access
+            std::vector<index_type> ranks_sa_with_dummy;
+            ranks_sa_with_dummy.reserve(local_ranks.size());
+            for (uint64_t i = 0; i < local_ranks.size(); i++) {
+                index_type rank = local_ranks[i].unique ? index_type(0) : get_next_rank();
+                ranks_sa_with_dummy.emplace_back(rank);
+            }
+            free_memory(std::move(ranks_sa));
+            free_memory(std::move(red_pos_unique));
+
+
+            // 2. determine splitters
+            auto get_element_at = [&](uint64_t i) {
+                return RankRankIndex{local_ranks[i].rank,
+                                     ranks_sa_with_dummy[i],
+                                     local_ranks[i].index};
+            };
+            uint64_t local_size = local_ranks.size();
+            uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
+
+            std::vector<RankRankIndex> splitters =
+                helper.template general_random_sample_splitters<RankRankIndex>(
+                    get_element_at,
+                    cmp_rri,
+                    local_size,
+                    buckets,
+                    total_random_samples);
+
+
+            // 3. determine block mapping
+            auto [bucket_sizes, sample_to_bucket] =
+                helper.compute_sample_to_block_mapping(get_element_at,
+                                                       cmp_rri,
+                                                       local_size,
+                                                       splitters);
+
+
+            // 4. report bucket imbalance
+            double bucket_imbalance = get_imbalance_bucket(bucket_sizes, total_size, comm);
+            report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance),
+                           comm,
+                           info.recursion_depth);
+
+
+            // 5. allocate datastructures to store results
+            std::vector<index_type> concat_sa_buckets;
+            std::vector<uint64_t> sa_bucket_size;
+            sa_bucket_size.reserve(buckets);
+            std::vector<RankRankIndex> block_rri;
+
+            uint64_t estimated_size = (total_size / comm.size()) * 1.03;
+            concat_sa_buckets.reserve(estimated_size);
+
+            // 6. materialize data in k rounds
+            for (uint64_t k = 0; k < buckets; k++) {
+                timer.synchronize_and_start("phase_03_space_efficient_sort_collect_bucket");
+
+                // collect samples falling into kth block
+                block_rri.reserve(bucket_sizes[k]);
+                for (uint64_t idx = 0; idx < local_size; idx++) {
+                    if (sample_to_bucket[idx] == k) {
+                        RankRankIndex element = get_element_at(idx);
+                        block_rri.emplace_back(element);
+                    }
+                }
+                timer.stop();
+                KASSERT(bucket_sizes[k] == block_rri.size());
+
+                timer.synchronize_and_start("phase_03_space_efficient_sort_rri");
+                atomic_sorter.sort(block_rri, cmp_rri);
+                timer.stop();
+
+                // extract SA of block
+                for (auto& r: block_rri) {
+                    concat_sa_buckets.push_back(r.index);
+                }
+                sa_bucket_size.push_back(block_rri.size());
+                block_rri.clear();
+            }
+            // log imbalance of received suffixes
+            double bucket_imbalance_received =
+                get_imbalance_bucket(sa_bucket_size, total_size, comm);
+            report_on_root("--> Bucket Imbalance Received "
+                               + std::to_string(bucket_imbalance_received),
+                           comm,
+                           info.recursion_depth);
+
+
+            timer.synchronize_and_start("phase_03_space_efficient_sort_alltoall");
+            SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
+                                                             sa_bucket_size,
+                                                             comm,
+                                                             config.rearrange_buckets_balanced);
+            timer.stop();
+
+            // zip SA with 1, ..., n
+            auto get_index_local_ranks = [&](uint64_t idx, index_type& index) {
+                return RankIndex{index_type(1 + idx), index, true};
+            };
+            local_ranks = mpi_util::zip_with_index<index_type, RankIndex>(local_SA,
+                                                                          get_index_local_ranks,
+                                                                          comm);
+        }
     }
 
     // computes how many chars are at position with a remainder
@@ -357,10 +483,12 @@ public:
             uint64_t m = (i + offset) % X;
             local_sample_size += is_in_dc<DC>(m);
         }
+        info.local_chars_with_dummy = info.local_chars + added_dummy_to_pe;
+
         local_sample_size += added_dummy_to_pe;
         info.local_sample_size = local_sample_size;
         info.total_sample_size = mpi_util::all_reduce_sum(local_sample_size, comm);
-        info.local_chars_with_dummy = info.local_chars + added_dummy_to_pe;
+        info.samples_before = mpi_util::ex_prefix_sum(local_sample_size, comm);
 
         // number of positions with mod X = d
         std::array<uint64_t, X> num_at_mod = compute_num_pos_mod(info.total_chars);
@@ -375,6 +503,23 @@ public:
         return info;
     }
 
+
+    void report_max_mem(std::string name) {
+        // temporary
+        // return;
+        std::replace(name.begin(), name.end(), ' ', '_');
+        name = "DEBUG_PE_MEM_" + name;
+        if (recursion_depth == 0) {
+            uint64_t max_mem = dsss::get_max_mem_bytes();
+            auto all_mem = comm.allgather(kamping::send_buf(max_mem));
+            if (comm.rank() == 0) {
+                std::cout << name << "=";
+                kamping::print_vector(all_mem, ",");
+                std::cout << std::endl;
+            }
+        }
+    }
+
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
         uint64_t max_mem_pdcx_start = dsss::get_max_mem_bytes();
         auto all_max_mem_pdcx_start = comm.allgather(kamping::send_buf(max_mem_pdcx_start));
@@ -384,6 +529,10 @@ public:
         }
 
         timer.synchronize_and_start("pdcx");
+
+        if constexpr (DEBUG_SIZE)
+            print_concatenated_size(local_string, comm, "local_string");
+
 
         //******* Start Phase 0: Preparation  ********
         timer.synchronize_and_start("phase_00_preparation");
@@ -489,6 +638,20 @@ public:
                                                               buckets_samples,
                                                               use_packed_samples);
             timer.stop();
+
+            if (recursion_depth == 0) {
+                uint64_t max_mem = dsss::get_max_mem_bytes();
+                auto all_mem = comm.allgather(kamping::send_buf(max_mem));
+                get_stats_instance().max_mem_pe_phase_01 = all_mem;
+                get_stats_instance().max_mem_pe_phase_02 = all_mem;
+            }
+            if (recursion_depth == 1) {
+                uint64_t max_mem = dsss::get_max_mem_bytes();
+                auto all_mem = comm.allgather(kamping::send_buf(max_mem));
+                get_stats_instance().max_mem_pe_phase_01_1 = all_mem;
+                get_stats_instance().max_mem_pe_phase_02_1 = all_mem;
+            }
+
             //******* End Phase 1 + 2: Construct Samples +   Construct Ranks********
 
         } else {
@@ -498,6 +661,10 @@ public:
             std::vector<SampleString> local_samples =
                 phase1.sorted_dc_samples(local_string, use_packed_samples);
             timer.stop();
+
+            if constexpr (DEBUG_SIZE)
+                print_concatenated_size(local_samples, comm, "local_samples");
+
 
             // we would have to unpack the splitters again --> for now switch to random samples
             config.use_random_sampling_splitters = use_packed_samples;
@@ -512,6 +679,11 @@ public:
                 get_stats_instance().max_mem_pe_phase_01 =
                     comm.allgather(kamping::send_buf(max_mem));
             }
+            if (recursion_depth == 1) {
+                uint64_t max_mem = dsss::get_max_mem_bytes();
+                get_stats_instance().max_mem_pe_phase_01_1 =
+                    comm.allgather(kamping::send_buf(max_mem));
+            }
             //******* End Phase 1: Construct Samples  ********
 
             //******* Start Phase 2: Construct Ranks  ********
@@ -524,6 +696,11 @@ public:
             if (recursion_depth == 0) {
                 uint64_t max_mem = dsss::get_max_mem_bytes();
                 get_stats_instance().max_mem_pe_phase_02 =
+                    comm.allgather(kamping::send_buf(max_mem));
+            }
+            if (recursion_depth == 1) {
+                uint64_t max_mem = dsss::get_max_mem_bytes();
+                get_stats_instance().max_mem_pe_phase_02_1 =
                     comm.allgather(kamping::send_buf(max_mem));
             }
 
@@ -557,6 +734,13 @@ public:
             uint64_t max_mem = dsss::get_max_mem_bytes();
             get_stats_instance().max_mem_pe_phase_03 = comm.allgather(kamping::send_buf(max_mem));
         }
+        if (recursion_depth == 1) {
+            uint64_t max_mem = dsss::get_max_mem_bytes();
+            get_stats_instance().max_mem_pe_phase_03_1 = comm.allgather(kamping::send_buf(max_mem));
+        }
+        if constexpr (DEBUG_SIZE)
+            print_concatenated_size(local_ranks, comm, "local_ranks");
+
 
         //******* End Phase 3: Recursive Call  ********
 
@@ -564,9 +748,13 @@ public:
         report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_04_merge");
 
+        auto get_rank = [](RankIndex& r) { return r.rank; };
+        std::vector<index_type> sample_ranks = extract_attribute<RankIndex, index_type>(local_ranks, get_rank);
+        free_memory(std::move(local_ranks));
+
         MergePhase phase4(comm, config, info, atomic_sorter, string_sorter_merging);
-        phase4.shift_ranks_left(local_ranks);
-        phase4.push_padding(local_ranks);
+        phase4.shift_ranks_left(sample_ranks);
+        phase4.push_padding(sample_ranks);
 
         std::vector<index_type> local_SA;
         if (use_bucket_sorting_merging) {
@@ -589,21 +777,21 @@ public:
             if (config.use_randomized_chunks_merging) {
                 // with chunking
                 local_SA = phase4.space_effient_sort_chunking_SA(local_string,
-                                                                 local_ranks,
+                                                                 sample_ranks,
                                                                  global_samples_splitters,
                                                                  use_packed_merging);
 
             } else {
                 local_SA = phase4.space_effient_sort_SA(local_string,
-                                                        local_ranks,
+                                                        sample_ranks,
                                                         global_samples_splitters,
                                                         use_packed_merging);
             }
 
         } else {
             std::vector<MergeSamples> merge_samples =
-                phase4.construct_merge_samples(local_string, local_ranks, use_packed_merging);
-            free_memory(std::move(local_ranks));
+                phase4.construct_merge_samples(local_string, sample_ranks, use_packed_merging);
+            free_memory(std::move(sample_ranks));
             phase4.sort_merge_samples(merge_samples);
             local_SA = phase4.extract_SA(merge_samples);
         }
@@ -614,6 +802,13 @@ public:
             uint64_t max_mem = dsss::get_max_mem_bytes();
             get_stats_instance().max_mem_pe_phase_04 = comm.allgather(kamping::send_buf(max_mem));
         }
+        if (recursion_depth == 1) {
+            uint64_t max_mem = dsss::get_max_mem_bytes();
+            get_stats_instance().max_mem_pe_phase_04_1 = comm.allgather(kamping::send_buf(max_mem));
+        }
+        if constexpr (DEBUG_SIZE)
+            print_concatenated_size(local_SA, comm, "local_SA");
+
 
         //******* End Phase 4: Merge Suffixes  ********
 
@@ -677,8 +872,6 @@ public:
 
     constexpr static uint32_t X = DC::X;
     constexpr static uint32_t D = DC::D;
-    constexpr static bool DBG = false;
-    constexpr static bool use_recursion = true;
 
     PDCXLengthInfo info;
     PDCXConfig& config;
