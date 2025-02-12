@@ -28,7 +28,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     using namespace kamping;
 
     mpi::SortingWrapper sorting_wrapper(comm);
-    sorting_wrapper.set_sorter(mpi::AtomicSorters::SampleSort);
+    sorting_wrapper.set_sorter(mpi::AtomicSorters::Ams);
 
     bool is_correct = true;
     size_t local_size_sa = sa.size();

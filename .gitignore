@@ -1,6 +1,7 @@
 build/
 debug/
 debug_sorters/
+debug_ams/
 release/
 .cache/
 target/

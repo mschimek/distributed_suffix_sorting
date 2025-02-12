@@ -67,23 +67,22 @@ struct SpaceEfficientSort {
 
     // compute even distributed splitters from sorted local samples
     template <typename SampleString>
-    std::vector<Splitter> get_uniform_splitters(std::vector<SampleString>& local_samples,
+    std::vector<SampleString> get_uniform_splitters(std::vector<SampleString>& local_samples,
                                                 uint64_t blocks) {
         int64_t num_samples = local_samples.size();
         int64_t samples_before = mpi_util::ex_prefix_sum(num_samples, comm);
         int64_t total_sample_size = mpi_util::all_reduce_sum(num_samples, comm);
-        std::vector<Splitter> local_splitters;
+        std::vector<SampleString> local_splitters;
         for (uint64_t i = 0; i < blocks - 1; i++) {
             int64_t global_index = (i + 1) * total_sample_size / blocks;
             int64_t x = global_index - samples_before;
             if (x >= 0 && x < num_samples) {
-                local_splitters.push_back(local_samples[x].get_array_letters());
+                local_splitters.push_back(local_samples[x]);
             }
         }
-        std::vector<Splitter> global_splitters = comm.allgatherv(send_buf(local_splitters));
+        std::vector<SampleString> global_splitters = comm.allgatherv(send_buf(local_splitters));
         return global_splitters;
     }
-
 
     std::pair<std::vector<uint64_t>, std::vector<uint8_t>>
     compute_sample_to_block_mapping(std::vector<char_type>& local_string,
@@ -146,9 +145,9 @@ struct SpaceEfficientSort {
         // assign each substring to a block
         for (uint64_t i = 0; i < local_size; i++) {
             uint8_t block_id = blocks - 1;
+            DataType element = get_element_at(i);
             for (uint64_t j = 0; j < blocks - 1; j++) {
-                // TODO maybe binary search
-                if (cmp_element(get_element_at(i), global_splitters[j])) {
+                if (cmp_element(element, global_splitters[j])) {
                     block_id = j;
                     break;
                 }

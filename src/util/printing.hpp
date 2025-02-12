@@ -12,6 +12,7 @@
 // not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "kamping/collectives/allgather.hpp"
@@ -117,12 +118,13 @@ void print_concatenated_string(std::string const& local_str,
 template <typename T>
 void print_concatenated_string(std::vector<T> const& local_data,
                                Communicator<> const& comm,
-                               std::string msg = "") {
+                               std::string msg = "",
+                               std::string sep = " ") {
     std::string local_str;
     bool is_first = true;
     for (auto& x: local_data) {
         if (!is_first) {
-            local_str += ' ';
+            local_str += sep;
         }
         local_str += x.to_string();
         is_first = false;

@@ -31,9 +31,9 @@ struct CharArray {
 
     std::string to_string() const {
         std::stringstream ss;
-        ss << chars[0];
+        ss << (uint64_t)chars[0];
         for (uint i = 1; i < N; i++) {
-            ss << " " << chars[i];
+            ss << " " << (uint64_t)chars[i];
         }
         return ss.str();
     }

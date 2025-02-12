@@ -610,7 +610,7 @@ public:
         }
 
         std::vector<RankIndex> local_ranks;
-        std::vector<typename SampleString::SampleStringLetters> global_samples_splitters;
+        std::vector<SampleString> global_samples_splitters;
         SamplePhase phase1(comm, config, info, atomic_sorter, string_sorter_samples);
 
         // add a padding of zeros to local string taking into account char packing
@@ -667,7 +667,10 @@ public:
 
 
             // we would have to unpack the splitters again --> for now switch to random samples
-            config.use_random_sampling_splitters = use_packed_samples;
+
+            if (use_packed_samples) {
+                config.use_random_sampling_splitters = true;
+            }
 
             // get splitters from sorted sample sequence
             if (use_bucket_sorting_merging && !config.use_random_sampling_splitters) {
@@ -749,26 +752,62 @@ public:
         timer.synchronize_and_start("phase_04_merge");
 
         auto get_rank = [](RankIndex& r) { return r.rank; };
-        std::vector<index_type> sample_ranks = extract_attribute<RankIndex, index_type>(local_ranks, get_rank);
+        std::vector<index_type> sample_ranks =
+            extract_attribute<RankIndex, index_type>(local_ranks, get_rank);
         free_memory(std::move(local_ranks));
 
         MergePhase phase4(comm, config, info, atomic_sorter, string_sorter_merging);
         phase4.shift_ranks_left(sample_ranks);
         phase4.push_padding(sample_ranks);
 
+        using MergePhaseSplitter = typename MergePhase::SplitterType;
+
         std::vector<index_type> local_SA;
+        std::vector<MergePhaseSplitter> bucket_splitter;
         if (use_bucket_sorting_merging) {
+            // determine splitters for buckets
+            double char_packing_ratio = use_packed_merging ? config.packing_ratio : 1;
+            auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
+                return phase4.materialize_characters(local_string, char_pos, char_packing_ratio);
+            };
+            auto get_merge_splitter_at = [&](uint64_t local_index) {
+                return phase4.materialize_merge_sample_at(local_string,
+                                                          sample_ranks,
+                                                          local_index,
+                                                          materialize_chars);
+            };
+
             if (config.use_random_sampling_splitters || global_samples_splitters.empty()) {
                 SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort(comm, config);
                 timer.synchronize_and_start("phase_04_random_sample_splitters");
-                global_samples_splitters =
-                    space_efficient_sort.random_sample_splitters(info.local_chars,
-                                                                 buckets_merging,
-                                                                 local_string);
+                auto cmp_splitters = std::less<MergePhaseSplitter>{};
+                bucket_splitter = space_efficient_sort
+                                      .template general_random_sample_splitters<MergePhaseSplitter>(
+                                          get_merge_splitter_at,
+                                          cmp_splitters,
+                                          info.local_chars,
+                                          buckets_merging,
+                                          config.num_samples_splitters);
                 timer.stop();
+            } else {
+                // convert uniform splitters
+                std::vector<MergePhaseSplitter> local_splitters;
+                for (auto& s: global_samples_splitters) {
+                    int64_t local_index = int64_t(s.index) - int64_t(info.chars_before);
+                    // convert splitters that can be converted with local data
+                    if (local_index >= 0 && local_index < int64_t(info.local_chars)) {
+                        MergePhaseSplitter splitter = get_merge_splitter_at(uint64_t(local_index));
+                        local_splitters.push_back(splitter);
+                    }
+                }
+                // splitters might not be in sorted order after redistributing the samples
+                bucket_splitter = comm.allgatherv(send_buf(local_splitters));
+                ips4o::sort(bucket_splitter.begin(), bucket_splitter.end());
+                free_memory(std::move(global_samples_splitters));
             }
+            KASSERT(bucket_splitter.size() == buckets_merging - 1);
+            KASSERT(check_sorted(bucket_splitter, std::less<MergePhaseSplitter>{}, comm));
 
-            KASSERT(global_samples_splitters.size() == buckets_merging - 1);
             report_on_root("Using " + std::to_string(buckets_merging) + " buckets for merging.",
                            comm,
                            recursion_depth,
@@ -778,13 +817,13 @@ public:
                 // with chunking
                 local_SA = phase4.space_effient_sort_chunking_SA(local_string,
                                                                  sample_ranks,
-                                                                 global_samples_splitters,
+                                                                 bucket_splitter,
                                                                  use_packed_merging);
 
             } else {
                 local_SA = phase4.space_effient_sort_SA(local_string,
                                                         sample_ranks,
-                                                        global_samples_splitters,
+                                                        bucket_splitter,
                                                         use_packed_merging);
             }
 
@@ -843,10 +882,13 @@ public:
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
             std::reverse(stats.bucket_sizes.begin(), stats.bucket_sizes.end());
         }
+
         KASSERT(local_string.size() == info.local_chars);
         KASSERT(mpi_util::all_reduce_sum(local_SA.size(), comm) == info.total_chars);
+        DBG("checking SA on recursion level " + std::to_string(recursion_depth));
         KASSERT(check_suffixarray(local_SA, local_string, comm),
                 "Suffix array is not sorted on level " + std::to_string(recursion_depth));
+        DBG("returing form recursion level " + std::to_string(recursion_depth));
         return local_SA;
     }
 
