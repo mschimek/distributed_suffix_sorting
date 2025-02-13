@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <random>
 #include <vector>
+
 #include <sys/types.h>
 
 #include "kamping/communicator.hpp"
@@ -68,7 +69,7 @@ struct SpaceEfficientSort {
     // compute even distributed splitters from sorted local samples
     template <typename SampleString>
     std::vector<SampleString> get_uniform_splitters(std::vector<SampleString>& local_samples,
-                                                uint64_t blocks) {
+                                                    uint64_t blocks) {
         int64_t num_samples = local_samples.size();
         int64_t samples_before = mpi_util::ex_prefix_sum(num_samples, comm);
         int64_t total_sample_size = mpi_util::all_reduce_sum(num_samples, comm);
@@ -83,21 +84,29 @@ struct SpaceEfficientSort {
         std::vector<SampleString> global_splitters = comm.allgatherv(send_buf(local_splitters));
         return global_splitters;
     }
-
     std::pair<std::vector<uint64_t>, std::vector<uint8_t>>
     compute_sample_to_block_mapping(std::vector<char_type>& local_string,
                                     uint64_t local_chars,
-                                    std::vector<Splitter>& global_splitters) {
-        int64_t blocks = global_splitters.size() + 1;
+                                    uint64_t blocks,
+                                    auto get_kth_splitter_at) {
         std::vector<uint64_t> bucket_sizes(blocks, 0);
         std::vector<uint8_t> sample_to_block(local_string.size(), 0);
         KASSERT(blocks <= 255);
 
+        auto cmp_substring = [&](uint64_t local_index, uint64_t splitter_nr) {
+            for (uint64_t k = 0; k < DC::X - 1; k++) {
+                if (local_string[local_index + k] != get_kth_splitter_at(splitter_nr, k)) {
+                    return local_string[local_index + k] < get_kth_splitter_at(splitter_nr, k);
+                }
+            }
+            return false;
+        };
+
         // assign each substring to a block
         for (uint64_t i = 0; i < local_chars; i++) {
             uint8_t block_id = blocks - 1;
-            for (int64_t j = 0; j < blocks - 1; j++) {
-                if (cmp_index_substring(local_string, i, global_splitters[j], DC::X - 1)) {
+            for (uint64_t j = 0; j < blocks - 1; j++) {
+                if (cmp_substring(i, j)) {
                     block_id = j;
                     break;
                 }
@@ -106,29 +115,6 @@ struct SpaceEfficientSort {
             sample_to_block[i] = block_id;
         }
         return {bucket_sizes, sample_to_block};
-    }
-
-
-    // variant for general elements
-    // compute splitters for partition into blocks
-    template <typename DataType>
-    std::vector<DataType> general_random_sample_splitters(auto get_element_at,
-                                                          auto cmp_element,
-                                                          uint64_t local_size,
-                                                          uint64_t blocks,
-                                                          uint64_t total_samples) {
-        uint64_t n = comm.size();
-        uint64_t local_samples = (total_samples + n - 1) / n;
-        std::vector<DataType> local_splitters =
-            mpi::sample_random_splitters1<DataType>(local_size,
-                                                    local_samples,
-                                                    get_element_at,
-                                                    comm);
-
-        std::vector<DataType> all_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
-        ips4o::sort(all_splitters.begin(), all_splitters.end(), cmp_element);
-
-        return mpi::sample_uniform_splitters(all_splitters, blocks - 1, comm);
     }
 
     template <typename DataType>
@@ -156,6 +142,28 @@ struct SpaceEfficientSort {
             sample_to_block[i] = block_id;
         }
         return {bucket_sizes, sample_to_block};
+    }
+
+    // variant for general elements
+    // compute splitters for partition into blocks
+    template <typename DataType>
+    std::vector<DataType> general_random_sample_splitters(auto get_element_at,
+                                                          auto cmp_element,
+                                                          uint64_t local_size,
+                                                          uint64_t blocks,
+                                                          uint64_t total_samples) {
+        uint64_t n = comm.size();
+        uint64_t local_samples = (total_samples + n - 1) / n;
+        std::vector<DataType> local_splitters =
+            mpi::sample_random_splitters1<DataType>(local_size,
+                                                    local_samples,
+                                                    get_element_at,
+                                                    comm);
+
+        std::vector<DataType> all_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
+        ips4o::sort(all_splitters.begin(), all_splitters.end(), cmp_element);
+
+        return mpi::sample_uniform_splitters(all_splitters, blocks - 1, comm);
     }
 };
 double get_imbalance_bucket(std::vector<uint64_t>& bucket_sizes,

@@ -159,6 +159,10 @@ void configure_cli() {
                 pdcx_config.rearrange_buckets_balanced,
                 "Balances the buckets in a balanced way, which needs an additional output buffer "
                 "and some bookkeeping information.");
+    cp.add_flag('k',
+                "use_robust_tie_break",
+                pdcx_config.use_robust_tie_break,
+                "Use ranks as a tie break in space efficient sorting in Phase 4. Is slower but splits equal strings amoung buckets.");
 
 
     // sorter configuration

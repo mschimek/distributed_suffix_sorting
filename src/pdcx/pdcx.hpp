@@ -665,13 +665,6 @@ public:
             if constexpr (DEBUG_SIZE)
                 print_concatenated_size(local_samples, comm, "local_samples");
 
-
-            // we would have to unpack the splitters again --> for now switch to random samples
-
-            if (use_packed_samples) {
-                config.use_random_sampling_splitters = true;
-            }
-
             // get splitters from sorted sample sequence
             if (use_bucket_sorting_merging && !config.use_random_sampling_splitters) {
                 global_samples_splitters =
@@ -776,11 +769,11 @@ public:
                                                           local_index,
                                                           materialize_chars);
             };
+            auto cmp_splitters = phase4.get_splitter_comparator();
 
             if (config.use_random_sampling_splitters || global_samples_splitters.empty()) {
                 SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort(comm, config);
                 timer.synchronize_and_start("phase_04_random_sample_splitters");
-                auto cmp_splitters = std::less<MergePhaseSplitter>{};
                 bucket_splitter = space_efficient_sort
                                       .template general_random_sample_splitters<MergePhaseSplitter>(
                                           get_merge_splitter_at,
@@ -802,11 +795,11 @@ public:
                 }
                 // splitters might not be in sorted order after redistributing the samples
                 bucket_splitter = comm.allgatherv(send_buf(local_splitters));
-                ips4o::sort(bucket_splitter.begin(), bucket_splitter.end());
+                ips4o::sort(bucket_splitter.begin(), bucket_splitter.end(), cmp_splitters);
                 free_memory(std::move(global_samples_splitters));
             }
             KASSERT(bucket_splitter.size() == buckets_merging - 1);
-            KASSERT(check_sorted(bucket_splitter, std::less<MergePhaseSplitter>{}, comm));
+            KASSERT(std::is_sorted(bucket_splitter.begin(), bucket_splitter.end(), cmp_splitters));
 
             report_on_root("Using " + std::to_string(buckets_merging) + " buckets for merging.",
                            comm,

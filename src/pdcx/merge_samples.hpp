@@ -92,6 +92,13 @@ struct DCMergeSamples {
         return ranks[r1] < b.ranks[r2];
     }
 
+    static bool cmp_by_chars_and_ranks(const DCMergeSamples& a, const DCMergeSamples& b) {
+        return a < b;
+    }
+    static bool cmp_by_chars(const DCMergeSamples& a, const DCMergeSamples& b) {
+        return a.chars < b.chars;
+    }
+
     // X - 1 chars + 0
     CharContainer chars;
     std::array<index_type, DC::D> ranks;
@@ -148,8 +155,12 @@ struct MergeSamplePhase {
         }
     }
 
+    auto get_splitter_comparator() const {
+        return config.use_robust_tie_break ? MergeSamples::cmp_by_chars_and_ranks
+                                           : MergeSamples::cmp_by_chars;
+    }
+
     uint64_t get_ranks_pos(std::vector<index_type>& local_ranks, int64_t local_index) const {
-        // does not need index, maybe can remove index
         uint64_t global_index = local_index + info.chars_before;
         uint64_t block_nr = global_index / X;
         uint64_t start_block = block_nr * D;
@@ -171,10 +182,9 @@ struct MergeSamplePhase {
     std::array<index_type, D> materialize_ranks(std::vector<index_type>& local_ranks,
                                                 uint64_t rank_pos) const {
         KASSERT(rank_pos + D - 1 < local_ranks.size());
+        auto start = local_ranks.begin() + rank_pos;
         std::array<index_type, D> ranks;
-        for (uint32_t i = 0; i < D; i++) {
-            ranks[i] = local_ranks[rank_pos + i];
-        }
+        std::copy(start, start + D, ranks.begin());
         return ranks;
     }
 
@@ -207,7 +217,6 @@ struct MergeSamplePhase {
         std::vector<MergeSamples> merge_samples;
         merge_samples.reserve(info.local_chars);
 
-        CharPacking<char_type, X> packing(info.largest_char + 1);
         double char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
             return materialize_characters(local_string, char_pos, char_packing_ratio);
@@ -348,14 +357,26 @@ struct MergeSamplePhase {
         auto get_element_at = [&](index_type i) {
             return materialize_merge_sample_at(local_string, local_ranks, i, materialize_chars);
         };
-        auto cmp_splitter = std::less<MergeSamples>{}; // with tie breaking
-        // auto cmp_splitter = [](MergeSamples& a, MergeSamples& b) { return a.chars < b.chars; };
-        // without tie breaking
-        auto [bucket_sizes, sample_to_bucket] =
-            space_efficient_sort.compute_sample_to_block_mapping(get_element_at,
-                                                                 cmp_splitter,
-                                                                 info.local_chars,
-                                                                 global_splitters);
+        std::vector<uint64_t> bucket_sizes;
+        std::vector<uint8_t> sample_to_bucket;
+        if (config.use_robust_tie_break) {
+            auto cmp_splitter = MergeSamples::cmp_by_chars_and_ranks;
+            std::tie(bucket_sizes, sample_to_bucket) =
+                space_efficient_sort.compute_sample_to_block_mapping(get_element_at,
+                                                                     cmp_splitter,
+                                                                     info.local_chars,
+                                                                     global_splitters);
+        } else {
+            auto get_kth_splitter_at = [&](uint64_t splitter_nr, uint64_t i) {
+                return global_splitters[splitter_nr].chars.at(i);
+            };
+            std::tie(bucket_sizes, sample_to_bucket) =
+                space_efficient_sort.compute_sample_to_block_mapping(local_string,
+                                                                     info.local_chars,
+                                                                     num_buckets,
+                                                                     get_kth_splitter_at);
+        }
+
 
         std::vector<MergeSamples> samples;
         SA concat_sa_buckets;
@@ -478,7 +499,6 @@ struct MergeSamplePhase {
             send_cnt_index[chunk.target_pe] += 1;
         }
 
-
         // sort chunks by PE
         ips4o::sort(chunks.begin(), chunks.end(), [&](const Chunk& a, const Chunk& b) {
             return a.target_pe < b.target_pe;
@@ -570,19 +590,38 @@ struct MergeSamplePhase {
                 uint8_t block_id = num_buckets - 1;
                 uint64_t suffix_start = start_chunk + j;
                 uint64_t global_index = global_index_chunk + j;
-                MergeSamples sample = materialize_merge_sample(chunked_chars,
-                                                               chunked_ranks,
-                                                               suffix_start,
-                                                               rank_pos,
-                                                               materialize_chars);
-                sample.index = global_index;
-                for (int64_t k = 0; k < num_buckets - 1; k++) {
-                    if (sample < global_splitters[k]) { // with tie breaking
-                        // if (sample.chars < global_splitters[k].chars) { // without tie breaking
-                        block_id = k;
-                        break;
+                if (config.use_robust_tie_break) {
+                    MergeSamples sample = materialize_merge_sample(chunked_chars,
+                                                                   chunked_ranks,
+                                                                   suffix_start,
+                                                                   rank_pos,
+                                                                   materialize_chars);
+                    sample.index = global_index;
+                    for (int64_t k = 0; k < num_buckets - 1; k++) {
+                        if (sample < global_splitters[k]) {
+                            block_id = k;
+                            break;
+                        }
+                    }
+                } else {
+                    for (int64_t k = 0; k < num_buckets - 1; k++) {
+                        auto cmp = [&]() {
+                            for (uint64_t i = suffix_start; i < suffix_start + X - 1; i++) {
+                                char_type c = chunked_chars[i];
+                                if (c != global_splitters[k].chars.at(i - suffix_start)) {
+                                    return c < global_splitters[k].chars.at(i - suffix_start);
+                                }
+                            }
+                            return false;
+                        };
+
+                        if (cmp()) {
+                            block_id = k;
+                            break;
+                        }
                     }
                 }
+
                 bucket_sizes[block_id]++;
                 sample_to_bucket[suffix_start] = block_id;
                 num_materialized_samples++;

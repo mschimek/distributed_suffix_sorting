@@ -276,7 +276,7 @@ template <typename char_type,
           typename IntType2 = uint64_t,
           typename IntType3 = uint64_t>
 struct TriplePackedInteger {
-    TriplePackedInteger() : chars1(0), chars2(0) {}
+    TriplePackedInteger() : chars1(0), chars2(0), chars3(0) {}
 
     static constexpr uint64_t char_mask1 = (IntType1(1) << BitsChar) - 1;
     static constexpr uint64_t char_mask2 = (IntType2(1) << BitsChar) - 1;
