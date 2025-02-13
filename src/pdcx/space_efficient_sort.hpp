@@ -91,7 +91,7 @@ struct SpaceEfficientSort {
                                     auto get_kth_splitter_at) {
         std::vector<uint64_t> bucket_sizes(blocks, 0);
         std::vector<uint8_t> sample_to_block(local_string.size(), 0);
-        KASSERT(blocks <= 255);
+        KASSERT(blocks <= 255ull);
 
         auto cmp_substring = [&](uint64_t local_index, uint64_t splitter_nr) {
             for (uint64_t k = 0; k < DC::X - 1; k++) {

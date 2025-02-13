@@ -14,6 +14,7 @@
 #include "mpi/zip.hpp"
 #include "sorters/sorting_wrapper.hpp"
 #include "strings/lcp_type.hpp"
+#include "util/memory.hpp"
 #include "util/printing.hpp"
 
 namespace dsss {
@@ -98,10 +99,12 @@ bool check_suffixarray(std::vector<IndexType>& sa,
         sa_tuples.emplace_back(sa_tuple{0, 0});
     }
 
+    
     std::vector<rank_triple> rts;
     for (size_t i = 0; i < local_size; ++i) {
         rts.emplace_back(rank_triple{sa_tuples[i].rank, sa_tuples[i + 1].rank, text[i]});
     }
+    free_memory(std::move(sa_tuples));
 
     sorting_wrapper.sort(rts, [](const rank_triple& a, const rank_triple& b) {
         return a.rank1 < b.rank1;
