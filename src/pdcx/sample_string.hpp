@@ -38,12 +38,25 @@ struct DCSampleString {
     const CharType* cend_chars() const { return chars.cend_chars(); }
     std::string get_string() { return to_string(); }
 
+    // to separately send chars, ranks and index
+    using CharContainerType = CharContainer;
+    struct NonCharData {
+        index_type index;
+    };
+
+    NonCharData get_non_char_data() const { return {index}; }
+
+
     // X chars and one 0-character
     using SampleStringLetters = std::array<char_type, DC::X + 1>;
 
     DCSampleString() : chars(CharContainer()), index(0) {}
 
     DCSampleString(CharContainer&& _chars, index_type _index) : chars(_chars), index(_index) {}
+
+    DCSampleString(CharContainer&& _chars, NonCharData&& _non_chars)
+        : chars(_chars),
+          index(_non_chars.index) {}
 
     bool operator<(const DCSampleString& other) const { return chars < other.chars; }
 
@@ -157,7 +170,14 @@ struct SampleStringPhase {
 
     // sort samples using a string sorter
     void string_sort_samples(std::vector<SampleString>& local_samples) const {
-        mpi::sample_sort_strings(local_samples, comm, string_sorter, config.sample_sort_config);
+        std::vector<LcpType> lcps;
+        // dummy tie break
+        auto tie_break = [&](std::vector<SampleString>& merge_samples) { return; };
+        sample_sort_strings_tie_break(local_samples,
+                                      comm,
+                                      string_sorter,
+                                      tie_break,
+                                      config.sample_sort_config);
     }
 
     void sort_samples(std::vector<SampleString>& local_samples) const {

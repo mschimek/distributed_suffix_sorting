@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <sstream>
 #include <string>
@@ -28,6 +29,9 @@ struct CharArray {
 
     const char_type* cbegin_chars() const { return chars.data(); }
     const char_type* cend_chars() const { return chars.data() + chars.size(); }
+    char_type* begin() { return chars.data(); }
+    char_type* end() { return chars.data() + chars.size(); }
+    size_t size() const { return chars.size(); }
 
     std::string to_string() const {
         std::stringstream ss;
@@ -82,6 +86,15 @@ struct PackedInteger {
         return (const char_type*)&chars;
     }
     const char_type* cend_chars() const { return (const char_type*)&chars; }
+
+    char_type* begin() const {
+        std::cout << "iterator not supported for PackedInteger\n";
+        exit(1);
+        return (char_type*)&chars;
+    }
+    char_type* end() const { return (char_type*)&chars; }
+    size_t size() const { return 0; }
+
 
     std::string to_string() const { return std::to_string(chars); }
 
@@ -168,6 +181,13 @@ struct PackedIntegerPadding {
         return (const char_type*)&chars;
     }
     const char_type* cend_chars() const { return (const char_type*)&chars; }
+    char_type* begin() const {
+        std::cout << "iterator not supported for PackedInteger\n";
+        exit(1);
+        return (char_type*)&chars;
+    }
+    char_type* end() const { return (char_type*)&chars; }
+    size_t size() const { return 0; }
 
     std::string to_string() const {
         return std::to_string(chars) + "-" + std::to_string(padding_len);
@@ -262,6 +282,14 @@ struct DoublePackedInteger {
         return (const char_type*)&chars1;
     }
     const char_type* cend_chars() const { return (const char_type*)&chars1; }
+
+    char_type* begin() const {
+        std::cout << "iterator not supported for PackedInteger\n";
+        exit(1);
+        return (char_type*)&chars1;
+    }
+    char_type* end() const { return (char_type*)&chars1; }
+    size_t size() const { return 0; }
 
     std::string to_string() const { return std::to_string(chars1) + "-" + std::to_string(chars2); }
 
@@ -380,6 +408,14 @@ struct TriplePackedInteger {
     }
     const char_type* cend_chars() const { return (const char_type*)&chars1; }
 
+    char_type* begin() const {
+        std::cout << "iterator not supported for PackedInteger\n";
+        exit(1);
+        return (char_type*)&chars1;
+    }
+    char_type* end() const { return (char_type*)&chars1; }
+    size_t size() const { return 0; }
+
     std::string to_string() const { return std::to_string(chars1) + "-" + std::to_string(chars2); }
 
     static constexpr bool IS_PACKED = true;
@@ -394,10 +430,12 @@ struct QuadruplePackedInteger {
     QuadruplePackedInteger() : chars1(), chars2() {}
 
     template <typename CharIterator>
-    QuadruplePackedInteger(CharIterator begin, CharIterator end) : chars1(begin, begin + 16), chars2(begin + 16, end) {}
+    QuadruplePackedInteger(CharIterator begin, CharIterator end)
+        : chars1(begin, begin + 16),
+          chars2(begin + 16, end) {}
 
     char_type at(uint64_t i) const {
-        if(i < 16) {
+        if (i < 16) {
             return chars1.at(i);
         } else {
             return chars2.at(i - 16);
@@ -425,6 +463,14 @@ struct QuadruplePackedInteger {
         return (const char_type*)&chars1;
     }
     const char_type* cend_chars() const { return (const char_type*)&chars1; }
+
+    char_type* begin() const {
+        std::cout << "iterator not supported for PackedInteger\n";
+        exit(1);
+        return (char_type*)&chars1;
+    }
+    char_type* end() const { return (char_type*)&chars1; }
+    size_t size() const { return 0; }
 
     std::string to_string() const { return chars1.to_string() + "-" + chars2.to_string(); }
 

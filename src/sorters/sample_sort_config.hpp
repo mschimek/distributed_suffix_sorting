@@ -17,6 +17,8 @@ struct SampleSortConfig {
     bool use_loser_tree = false;
     bool use_rquick_for_splitters = false;
     bool use_binary_search_for_splitters = false;
+    bool use_lcp_compression = false;
+    bool use_prefix_doubling = false;
     SplitterSampling splitter_sampling = SplitterSampling::Uniform;
     SplitterSorting splitter_sorting = SplitterSorting::Central;
 
@@ -29,6 +31,8 @@ struct SampleSortConfig {
         std::cout << V(use_loser_tree) << "\n";
         std::cout << V(use_rquick_for_splitters) << "\n";
         std::cout << V(use_binary_search_for_splitters) << "\n";
+        std::cout << V(use_lcp_compression) << "\n";
+        std::cout << V(use_prefix_doubling) << "\n";
         std::cout << V(ams_partition_strategy) << "\n";
         std::cout << V(ams_distributiong_strategy) << "\n";
         std::cout << "splitter_sampling=" << splitter_sampling_names[splitter_sampling] << "\n";

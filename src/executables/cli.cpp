@@ -216,6 +216,14 @@ void configure_cli() {
                 "use_binary_search_for_splitters",
                 sample_sort_config.use_binary_search_for_splitters,
                 "Use binary search instead of linear scan to find intervals in sample sort.");
+    cp.add_flag('W',
+                "use_lcp_compression",
+                sample_sort_config.use_lcp_compression,
+                "Use lcp-compression in string sample sort to reduce communication volume.");
+    cp.add_flag('X',
+                "use_prefix_doubling",
+                sample_sort_config.use_prefix_doubling,
+                "Use prefix-doubling in string sample sort to reduce communication volume.");
 }
 
 template <typename EnumType>

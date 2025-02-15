@@ -50,6 +50,15 @@ struct DCMergeSamples {
     const CharType* cend_chars() const { return chars.cend_chars(); }
     std::string get_string() { return to_string(); }
 
+    // to separately send chars, ranks and index
+    using CharContainerType = CharContainer;
+    struct NonCharData {
+        std::array<index_type, DC::D> ranks;
+        index_type index;
+    };
+
+    NonCharData get_non_char_data() const { return {ranks, index}; }
+
     DCMergeSamples() : chars(CharContainer()), ranks(), index(0) { ranks.fill(0); }
     DCMergeSamples(CharContainer&& _chars,
                    std::array<index_type, DC::D>&& _ranks,
@@ -57,6 +66,11 @@ struct DCMergeSamples {
         : chars(_chars),
           ranks(_ranks),
           index(_index) {}
+
+    DCMergeSamples(CharContainer&& _chars, NonCharData&& _non_chars)
+        : chars(_chars),
+          ranks(std::move(_non_chars.ranks)),
+          index(std::move(_non_chars.index)) {}
 
     std::string to_string() const {
         std::stringstream ss;
@@ -98,6 +112,7 @@ struct DCMergeSamples {
     static bool cmp_by_chars(const DCMergeSamples& a, const DCMergeSamples& b) {
         return a.chars < b.chars;
     }
+
 
     // X - 1 chars + 0
     CharContainer chars;

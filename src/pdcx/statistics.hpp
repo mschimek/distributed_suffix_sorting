@@ -44,7 +44,10 @@ struct Statistics {
         max_mem_pe_phase_02_1.clear();
         max_mem_pe_phase_03_1.clear();
         max_mem_pe_phase_04_1.clear();
-    }
+        sample_sort_lcp_compression.clear();
+        sample_sort_avg_lcp.clear();
+        sample_sort_lcp_total_reduction.clear();
+        }
 
     void print() const {
         using namespace kamping;
@@ -122,7 +125,13 @@ struct Statistics {
         print_vector(phase_04_before_alltoall_chunks, ",");
         std::cout << "phase_04_after_alltoall_chunks=";
         print_vector(phase_04_after_alltoall_chunks, ",");
-        std::cout << std::endl;
+        std::cout << "sample_sort_lcp_compression=";
+        print_vector(sample_sort_lcp_compression, ",");
+        std::cout << "sample_sort_avg_lcp=";
+        print_vector(sample_sort_avg_lcp, ",");
+        std::cout << "sample_sort_lcp_total_reduction=";
+        print_vector(sample_sort_lcp_total_reduction, ",");
+        std::cout << std::endl;    
     }
 
     std::string algo;
@@ -164,6 +173,9 @@ struct Statistics {
     std::vector<uint64_t> phase_04_sa_capacity;
     std::vector<uint64_t> phase_04_before_alltoall_chunks;
     std::vector<uint64_t> phase_04_after_alltoall_chunks;
+    std::vector<double> sample_sort_lcp_compression;
+    std::vector<double> sample_sort_avg_lcp;
+    std::vector<double> sample_sort_lcp_total_reduction;
     
 };
 
