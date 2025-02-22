@@ -170,6 +170,7 @@ struct SampleStringPhase {
 
     // sort samples using a string sorter
     void string_sort_samples(std::vector<SampleString>& local_samples) const {
+        // mpi::sample_sort_strings(local_samples, comm, string_sorter);
         std::vector<LcpType> lcps;
         // dummy tie break
         auto tie_break = [&](std::vector<SampleString>& merge_samples) { return; };

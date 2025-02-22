@@ -47,6 +47,7 @@ struct Statistics {
         sample_sort_lcp_compression.clear();
         sample_sort_avg_lcp.clear();
         sample_sort_lcp_total_reduction.clear();
+        sample_sort_avg_prefix_length.clear();
         }
 
     void print() const {
@@ -131,6 +132,8 @@ struct Statistics {
         print_vector(sample_sort_avg_lcp, ",");
         std::cout << "sample_sort_lcp_total_reduction=";
         print_vector(sample_sort_lcp_total_reduction, ",");
+        std::cout << "sample_sort_avg_prefix_length=";
+        print_vector(sample_sort_avg_prefix_length, ",");
         std::cout << std::endl;    
     }
 
@@ -176,6 +179,7 @@ struct Statistics {
     std::vector<double> sample_sort_lcp_compression;
     std::vector<double> sample_sort_avg_lcp;
     std::vector<double> sample_sort_lcp_total_reduction;
+    std::vector<double> sample_sort_avg_prefix_length;
     
 };
 

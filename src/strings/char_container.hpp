@@ -17,6 +17,7 @@ struct CharArray {
 
     template <typename CharIterator>
     CharArray(CharIterator begin, CharIterator end) {
+        chars.fill(0);
         std::copy(begin, end, chars.begin());
         chars.back() = 0;
     }

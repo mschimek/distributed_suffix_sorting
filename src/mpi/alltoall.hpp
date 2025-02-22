@@ -55,7 +55,7 @@ auto alltoallv_direct(SendBuf&& send_buf,
                       std::span<int64_t> send_counts,
                       std::span<int64_t> recv_counts,
                       Communicator<>& comm) {
-    DBG("call alltoallv native start");
+    DBG("call alltoallv direct start");
 
     using DataType = std::remove_reference_t<SendBuf>::value_type;
     std::vector<size_t> send_displs(comm.size()), recv_displs(comm.size());
@@ -115,18 +115,15 @@ auto alltoallv_combined(SendBuf&& send_buffer,
     int64_t const global_max = comm.allreduce_single(send_buf(local_max), op(ops::max<>{}));
 
     DBG("local max: " + std::to_string(local_max) + ", global max: " + std::to_string(global_max));
-    comm.barrier();
 
-    // if (false && global_max < std::numeric_limits<int>::max()) {
     if (global_max < std::numeric_limits<int>::max()) {
         DBG("using native alltoall");
         return alltoallv_native(send_buffer, send_counts, recv_counts, comm);
     } else {
-        // TODO remove
         DBG("using direct alltoall");
-        // report_on_root("--> using direct alltoall, global_max: " + std::to_string(global_max), comm);
         return alltoallv_direct(send_buffer, send_counts, recv_counts, comm);
     }
+    DBG("using direct alltoall");
 }
 
 template <typename SendBuf>
@@ -138,5 +135,54 @@ auto alltoallv_combined(SendBuf&& send_buffer,
     DBG("call alltoallv combined");
     return alltoallv_combined(std::forward<SendBuf>(send_buffer), send_counts, recv_counts, comm);
 }
+
+std::vector<bool> alltoallv_packed_bits(std::vector<bool>& bits,
+                                        std::vector<int64_t>& send_counts,
+                                        std::vector<int64_t>& recv_counts,
+                                        kamping::Communicator<>& comm) {
+    using PackType = uint64_t;
+    constexpr uint64_t BITS = sizeof(PackType) * 8;
+
+    // pack bits into words
+    std::vector<int64_t> entries_pe(comm.size(), 0);
+    std::vector<PackType> send_masks;
+    int64_t idx_bits = 0;
+    for (uint64_t r = 0; r < comm.size(); r++) {
+        int64_t cnt = 0;
+        while (cnt < send_counts[r]) {
+            PackType mask = 0;
+            for (uint64_t b = 0; b < BITS && cnt < send_counts[r]; b++) {
+                if (bits[idx_bits]) {
+                    mask |= (1ull << b);
+                }
+                idx_bits++;
+                cnt++;
+            }
+            send_masks.push_back(mask);
+            entries_pe[r]++;
+        }
+    }
+
+    // send packed bits
+    send_masks = mpi_util::alltoallv_combined(send_masks, entries_pe, comm);
+
+    // unpack masks
+    std::vector<bool> recv_bits;
+    uint64_t mask_idx = 0;
+    for (uint64_t r = 0; r < comm.size(); r++) {
+        int64_t cnt = 0;
+        while (cnt < recv_counts[r]) {
+            for (uint64_t b = 0; b < BITS && cnt < recv_counts[r]; b++) {
+                bool bit_set = send_masks[mask_idx] & (1ull << b);
+                recv_bits.push_back(bit_set);
+                cnt++;
+            }
+            mask_idx++;
+        }
+    }
+    KASSERT(mask_idx == send_masks.size());
+    return recv_bits;
+}
+
 
 } // namespace dsss::mpi_util

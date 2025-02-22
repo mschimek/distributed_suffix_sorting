@@ -45,4 +45,11 @@ T max_value(std::vector<T>& v, kamping::Communicator<>& comm) {
     T global_max = all_reduce_max(local_max, comm);
     return global_max;
 }
+
+template <typename T>
+T min_value(std::vector<T>& v, kamping::Communicator<>& comm) {
+    T local_max = *std::min_element(v.begin(), v.end());
+    T global_max = all_reduce_max(local_max, comm);
+    return global_max;
+}
 } // namespace dsss::mpi_util

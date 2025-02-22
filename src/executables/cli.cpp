@@ -162,7 +162,8 @@ void configure_cli() {
     cp.add_flag('k',
                 "use_robust_tie_break",
                 pdcx_config.use_robust_tie_break,
-                "Use ranks as a tie break in space efficient sorting in Phase 4. Is slower but splits equal strings amoung buckets.");
+                "Use ranks as a tie break in space efficient sorting in Phase 4. Is slower but "
+                "splits equal strings amoung buckets.");
 
 
     // sorter configuration
@@ -220,10 +221,19 @@ void configure_cli() {
                 "use_lcp_compression",
                 sample_sort_config.use_lcp_compression,
                 "Use lcp-compression in string sample sort to reduce communication volume.");
+    cp.add_double('Y',
+                  "lcp_compression_threshold",
+                  sample_sort_config.lcp_compression_threshold,
+                  "Value between [0, 1], threshold on compression ratio when to start using "
+                  "LCP-compression.");
     cp.add_flag('X',
                 "use_prefix_doubling",
                 sample_sort_config.use_prefix_doubling,
                 "Use prefix-doubling in string sample sort to reduce communication volume.");
+    cp.add_bytes('w',
+                 "inital_prefix_length",
+                 sample_sort_config.inital_prefix_length,
+                 "Inital prefix-length to use for prefix doubling.");
 }
 
 template <typename EnumType>
@@ -484,8 +494,18 @@ void compute_sa(kamping::Communicator<>& comm) {
     } else {
         /*** standard variant with atomic sorting or string sorting  ***/
 
-        using DCXParam = DC21Param;
-        run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        if (dcx_variant == "dc21") {
+            using DCXParam = DC21Param;
+            run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        } else if (dcx_variant == "dc31") {
+            using DCXParam = DC31Param;
+            run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        } else if (dcx_variant == "dc133") {
+            using DCXParam = DC133Param;
+            run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        }
+        // using DCXParam = DC21Param;
+        // run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     }
 
 

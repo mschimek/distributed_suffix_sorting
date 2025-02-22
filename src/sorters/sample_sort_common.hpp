@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <numeric>
 #include <random>
 #include <string>
 #include <vector>
@@ -164,12 +165,12 @@ std::vector<DataType> get_global_splitters(std::vector<DataType>& local_data,
     } else {
         local_splitters = sample_random_splitters(local_data, comm);
     }
-
+    
     // select subset of splitters as global splitters
     std::vector<DataType> global_splitters;
     if (config.splitter_sorting == SplitterSorting::Distributed) {
         global_splitters =
-            sample_global_splitters_distributed(local_splitters, distributed_sorter, comm);
+        sample_global_splitters_distributed(local_splitters, distributed_sorter, comm);
     } else {
         global_splitters = sample_global_splitters_centralized(local_splitters, local_sorter, comm);
     }
@@ -202,17 +203,20 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
                                             SampleSortConfig& config) {
     const size_t local_n = local_data.size();
     const size_t nr_splitters = splitters.size();
+    const size_t nr_send_counts = splitters.size() + 1;
 
     if (local_n == 0) {
-        return std::vector<int64_t>(splitters.size(), 0);
+        return std::vector<int64_t>(nr_send_counts, 0);
     }
 
+    KASSERT(std::is_sorted(splitters.begin(), splitters.end(), comp));
+
     std::vector<int64_t> interval_sizes;
-    interval_sizes.reserve(splitters.size());
+    interval_sizes.reserve(nr_send_counts);
     size_t element_pos = 0;
     for (size_t i = 0; i < splitters.size(); ++i) {
         if (config.use_binary_search_for_splitters) {
-            // start left interval from last found element
+            // start left interval from last found 
             const size_t start_pos = std::min(element_pos, local_data.size() - 1);
             KASSERT(start_pos < local_data.size());
             auto it = std::lower_bound(local_data.begin() + start_pos,
@@ -222,6 +226,7 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
             element_pos = it - local_data.begin();
         } else {
             // assume splitters to be distributed equally in remaining interval
+            KASSERT(local_n >= element_pos);
             const size_t remaining_n = local_n - element_pos;
             KASSERT(nr_splitters + 1 > i);
             const size_t splitter_dist = remaining_n / (nr_splitters + 1 - i);
@@ -241,6 +246,8 @@ std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
     for (size_t i = interval_sizes.size() - 1; i > 0; --i) {
         interval_sizes[i] -= interval_sizes[i - 1];
     }
+    KASSERT(interval_sizes.size() == nr_send_counts);
+    KASSERT(std::accumulate(interval_sizes.begin(), interval_sizes.end(), int64_t(0)) == int64_t(local_n));
     return interval_sizes;
 }
 
