@@ -494,18 +494,18 @@ void compute_sa(kamping::Communicator<>& comm) {
     } else {
         /*** standard variant with atomic sorting or string sorting  ***/
 
-        if (dcx_variant == "dc21") {
-            using DCXParam = DC21Param;
-            run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        } else if (dcx_variant == "dc31") {
-            using DCXParam = DC31Param;
-            run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        } else if (dcx_variant == "dc133") {
-            using DCXParam = DC133Param;
-            run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        }
-        // using DCXParam = DC21Param;
-        // run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // if (dcx_variant == "dc21") {
+        //     using DCXParam = DC21Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc31") {
+        //     using DCXParam = DC31Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc133") {
+        //     using DCXParam = DC133Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // }
+        using DCXParam = DC21Param;
+        run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     }
 
 

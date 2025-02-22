@@ -116,36 +116,22 @@ inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_dat
         get_global_splitters(local_data, local_sorter, distributed_sorter, comm, config);
     timer.stop();
 
-
-    // print_concatenated_string("get interval sizes", comm);
-    // print_concatenated_string(global_splitters, comm, "global_splitters");
-
-
     // Use the final set of splitters to find the intervals
     timer.synchronize_and_start("string_sample_sort_interval_sizes");
     std::vector<int64_t> interval_sizes =
         compute_interval_sizes(local_data, global_splitters, comm, comp, config);
     timer.stop();
 
-    // print_concatenated_size(interval_sizes, comm, "interval_sizes");
-
-    // print_concatenated(interval_sizes, comm, "interval_sizes");
-    // print_concatenated_string("alltoall", comm);
-
     // exchange data in intervals
     timer.synchronize_and_start("string_sample_sort_alltoall");
     local_data = mpi_util::alltoallv_combined(local_data, interval_sizes, comm);
     timer.stop();
-
-    // print_concatenated_size(local_data, comm, "local_data");
 
     if (config.use_loser_tree) {
         timer.synchronize_and_start("string_sample_sort_lcp_alltoall");
         lcps = mpi_util::alltoallv_combined(lcps, interval_sizes, comm);
         timer.stop();
     }
-
-    // print_concatenated_string("merge buckets", comm);
 
     // merge buckets
     if (config.use_loser_tree) {
@@ -190,19 +176,8 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
     using LengthType = dsss::distinguishing_prefix::LengthType;
     const char_type string_separator = std::numeric_limits<char_type>::max();
     KASSERT(!CharContainer::IS_PACKED);
-
-    // print_concatenated(interval_sizes, comm, "interval sizes");
-    // print_concatenated_size(local_data, comm, "local_data_size");
-
-    // int64_t max_intv = mpi_util::max_value(interval_sizes, comm);
-    // int64_t min_intv = mpi_util::min_value(interval_sizes, comm);
-
-    // report_on_root("max_intv=" + std::to_string(max_intv), comm);
-    // report_on_root("min_intv=" + std::to_string(min_intv), comm);
-
     KASSERT(lcps.size() == local_data.size());
 
-    // uint64_t static_string_size = local_data[0].chars.size();
     uint64_t static_string_size = sizeof(CharContainer) / sizeof(char_type);
 
     std::vector<LengthType> unique_prefix_lengths(local_data.size(), static_string_size);
@@ -227,9 +202,7 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
     /***  LCP-Compression ***/
     timer.synchronize_and_start("string_sample_sort_lcp_compression");
 
-    // print_concatenated_string("lcp compression", comm);
     // set first lcp of each PE region to 0 to be able to reconstruct first element
-
     // if last interval is 0, segfault can happen --> 2. condition
     uint64_t index = 0;
     for (uint64_t rank = 0; rank < interval_sizes.size() && index < lcps.size(); rank++) {
@@ -252,16 +225,13 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
     int64_t total_send_bytes_reduced =
         total_send_bytes + (total_char_bytes_reduced - total_char_bytes);
 
-    KASSERT(total_elements > 0);
+    KASSERT(total_elements > 0ull);
     KASSERT(total_char_bytes > 0);
     KASSERT(total_send_bytes > 0);
     double avg_lcp = (double)total_lcps / total_elements;
     double lcp_compression_reduction = 1.0 - ((double)total_char_bytes_reduced / total_char_bytes);
     double total_reduction = 1.0 - ((double)total_send_bytes_reduced / total_send_bytes);
     double avg_prefix_length = mpi_util::avg_value(unique_prefix_lengths, comm);
-
-
-    // print_concatenated(unique_prefix_lengths, comm, "unique_prefix_lengths");
 
     report_on_root("---> LCP-compression reduction: " + std::to_string(lcp_compression_reduction)
                        + ", avg lcp: " + std::to_string(avg_lcp)
@@ -285,9 +255,6 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
         return;
     }
 
-
-    // print_concatenated_string("send chars", comm);
-
     // linearize chars into a single vector with separators
     std::vector<char_type> send_chars(local_send_chars);
     uint64_t write_index = 0;
@@ -301,8 +268,6 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
     }
     KASSERT(write_index == local_send_chars);
 
-
-    // print_concatenated_string("send counts", comm);
     // compute send counts
     std::vector<int64_t> send_cnts(comm.size(), 0);
     uint64_t k = 0;
@@ -314,14 +279,8 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
             k++;
         }
     }
-    // int64_t min_send_cnt = mpi_util::min_value(send_cnts, comm);
-    // report_on_root("min_send_cnt=" + std::to_string(min_send_cnt), comm);
-
     KASSERT(std::accumulate(send_cnts.begin(), send_cnts.end(), int64_t(0))
             == (int64_t)local_send_chars);
-
-
-    // print_concatenated_string("non char data", comm);
 
     // extract non-char data
     std::vector<NonCharData> non_char_data;
@@ -336,30 +295,20 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
 
     // exchange all data
 
-    // print_concatenated_string("alltoall no char data", comm);
-
-
     // non-char data
     timer.synchronize_and_start("string_sample_sort_non_char_data_alltoall");
     non_char_data = mpi_util::alltoallv_combined(non_char_data, interval_sizes, comm);
     timer.stop();
 
-    // print_concatenated_string("alltoall chars", comm);
     // linearized chars
     timer.synchronize_and_start("string_sample_sort_alltoall");
     send_chars = mpi_util::alltoallv_combined(send_chars, send_cnts, comm);
     timer.stop();
 
-    // print_concatenated_string("alltoall lcps", comm);
     // lcps
     exchange_lcps(lcps, interval_sizes, comm);
 
     timer.synchronize_and_start("string_sample_sort_lcp_decompression");
-
-    // print_concatenated_string("lcp decompression", comm);
-
-    // print_concatenated_size(send_chars, comm, "send_chars_size");
-    // print_concatenated_size(lcps, comm, "lcps_size");
 
     // reconstruct original strings
     local_data.resize(lcps.size());
@@ -373,10 +322,9 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
             KASSERT(char_end <= send_chars.end());
         }
     };
-    // print_concatenated_string("lcp decompression 2", comm);
 
     // first element has no compressed lcp
-    KASSERT(lcps.size() == 0 || lcps[0] == 0); // ensure this by setting lcps to 0 before sending
+    KASSERT(lcps.size() == uint64_t(0) || lcps[0] == LcpType(0)); // ensure this by setting lcps to 0 before sending
 
     // PE might not receive any element
     if (local_data.size() > 0) {
@@ -386,7 +334,6 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
         local_data[0] = DataType(std::move(chars_first), std::move(non_char_data[0]));
     }
 
-    // print_concatenated_string("lcp decompression 3", comm);
     for (uint64_t i = 1; i < local_data.size(); i++) {
         CharContainer chars;
         auto write_it = chars.begin();
@@ -409,20 +356,6 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
     }
     KASSERT(char_it == send_chars.end());
     timer.stop();
-
-    // std::vector<int> lcp_print(lcps.begin(), lcps.end());
-    // std::vector<int> chars_print(send_chars.begin(), send_chars.end());
-    // print_concatenated(chars_print, comm, "send_chars");
-    // print_concatenated(unique_prefix_lengths, comm, "unique_prefix_length");
-    // print_concatenated(lcp_print, comm, "lcps");
-    // print_concatenated_string(local_data, comm, "local_data_end");
-
-    // auto all_data = comm.gatherv(send_buf(local_data));
-    // std::vector<uint64_t> index_data;
-    // for (auto& x: all_data) {
-    //     index_data.push_back(x.index);
-    // }
-    // print_concatenated(index_data, comm, "index_data");
 }
 
 
@@ -559,26 +492,6 @@ void sample_sort_strings_tie_break(std::vector<DataType>& local_data,
     } else {
         local_sorter(local_data);
     }
-
-    // print_concatenated_string(local_data, comm, "local_data_after_merge");
-    // auto all_data = comm.gatherv(send_buf(local_data));
-    // std::vector<uint64_t> index_data;
-    // for (auto& x: all_data) {
-    //     index_data.push_back(x.index);
-    // }
-    // print_concatenated(index_data, comm, "index_data");
-
-    // sort_on_root(local_data_copy, comm, local_sorter);
-    // auto all_data = comm.gatherv(send_buf(local_data));
-    // auto all_data_copy = comm.gatherv(send_buf(local_data_copy));
-    // if (comm.rank() == 0) {
-    //     for (uint64_t i = 0; i < all_data.size(); i++) {
-    //         if (all_data[i].index != all_data_copy[i].index) {
-    //             std::cout << all_data[i].to_string() << " " << all_data_copy[i].to_string()
-    //                       << std::endl;
-    //         }
-    //     }
-    // }
 }
 
 

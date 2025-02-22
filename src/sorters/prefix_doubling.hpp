@@ -210,24 +210,14 @@ std::vector<LengthType> prefix_doubling(kamping::Communicator<>& comm,
     config.use_binary_search_for_splitters = true;
 
     while (prefix_length < max_string_length) {
-        // alltoall can not handle empty send counts or maybe break early
-        // uint64_t min_candidate_size = mpi_util::all_reduce_min(candidates.size(), comm);
-        // if(min_candidate_size == 0) {
-        //     break;
-        // }
-
-        // kamping::print_concatenated_size(candidates,
-        //                                  comm,
-        //                                  "candidates size " + std::to_string(prefix_length));
-
         // compute hashes
         timer.synchronize_and_start("prefix_doubling_compute_hashes");
         std::vector<HashAndInt> local_hashes =
             compute_local_hashes(candidates, local_data, prefix_length);
         timer.stop();
 
-        timer.synchronize_and_start("prefix_doubling_remove_local_duplicates");
         // remove duplicates
+        timer.synchronize_and_start("prefix_doubling_remove_local_duplicates");
         ips4o::sort(local_hashes.begin(), local_hashes.end());
         std::vector<HashType> local_unique_hashes = local_deduplication(local_hashes);
         timer.stop();
@@ -240,15 +230,11 @@ std::vector<LengthType> prefix_doubling(kamping::Communicator<>& comm,
                                                                              std::less<HashType>{},
                                                                              config);
 
-        // kamping::print_concatenated(send_counts, comm, "send counts");
-
         std::vector<int64_t> recv_counts = comm.alltoall(kamping::send_buf(send_counts));
-        // std::vector<HashType> local_unique_hashes_copy = local_unique_hashes;
         local_unique_hashes = mpi_util::alltoallv_combined(local_unique_hashes, send_counts, comm);
         timer.stop();
 
         // local duplicate detection
-
         timer.synchronize_and_start("prefix_doubling_process_incoming_hashes");
         std::vector<HashAndInt> hash_and_pe = pair_hash_with_pe(local_unique_hashes, recv_counts);
         free_memory(std::move(local_unique_hashes));
@@ -257,7 +243,6 @@ std::vector<LengthType> prefix_doubling(kamping::Communicator<>& comm,
         timer.stop();
 
         // send unique information back to original PE
-
         timer.synchronize_and_start("prefix_doubling_send_hashes_back");
         std::vector<bool> hash_is_unique =
             mpi_util::alltoallv_packed_bits(local_is_unique, recv_counts, send_counts, comm);
@@ -276,41 +261,6 @@ std::vector<LengthType> prefix_doubling(kamping::Communicator<>& comm,
 
         prefix_length *= 2;
     }
-
-    // std::vector<DataType> all_data = comm.allgatherv(kamping::send_buf(local_data));
-    // std::vector<LengthType> all_prefix =
-    // comm.allgatherv(kamping::send_buf(unique_prefix_length));
-
-    // struct Temp {
-    //     DataType data;
-    //     LengthType prefix;
-
-    //     bool operator<(const Temp& other) const { return data.chars < other.data.chars; }
-    // };
-
-    // std::vector<Temp> data_and_length;
-    // data_and_length.reserve(all_data.size());
-    // for (uint64_t i = 0; i < all_data.size(); i++) {
-    //     data_and_length.emplace_back(all_data[i], all_prefix[i]);
-    // }
-    // if (comm.rank() != 0) {
-    //     data_and_length.clear();
-    // }
-    // std::sort(data_and_length.begin(), data_and_length.end());
-
-    // for (int64_t i = 0; i < (int64_t)data_and_length.size() - 1; i++) {
-    //     if (data_and_length[i].data.chars == data_and_length[i + 1].data.chars) {
-    //         bool ok = data_and_length[i].prefix == data_and_length[i + 1].prefix
-    //                   && data_and_length[i + 1].prefix == max_string_length;
-    //         if (!ok) {
-    //             std::cout << "i: " << i << " | " << data_and_length[i].data.chars.to_string()
-    //                       << " | " << data_and_length[i].prefix << " | "
-    //                       << data_and_length[i + 1].prefix << " | " << max_string_length
-    //                       << std::endl;
-    //         }
-    //         KASSERT(ok);
-    //     }
-    // }
 
     return unique_prefix_length;
 }
