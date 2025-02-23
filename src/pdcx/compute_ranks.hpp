@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdlib>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -13,6 +14,7 @@
 #include "mpi/p2p.hpp"
 #include "mpi/reduce.hpp"
 #include "mpi/shift.hpp"
+#include "pdcx/chunking.hpp"
 #include "pdcx/config.hpp"
 #include "pdcx/difference_cover.hpp"
 #include "pdcx/packing.hpp"
@@ -20,9 +22,10 @@
 #include "pdcx/sample_string.hpp"
 #include "pdcx/space_efficient_sort.hpp"
 #include "pdcx/statistics.hpp"
+#include "util/division.hpp"
 #include "util/memory.hpp"
 #include "util/printing.hpp"
-
+#include "util/string_util.hpp"
 
 //******* Start Phase 2: Construct Ranks  ********
 
@@ -60,10 +63,13 @@ struct LexicographicRankPhase {
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
 
     Communicator<>& comm;
+    PDCXConfig& config;
     PDCXLengthInfo& info;
+    static constexpr uint32_t X = DC::X;
 
-    LexicographicRankPhase(Communicator<>& _comm, PDCXLengthInfo& _info)
+    LexicographicRankPhase(Communicator<>& _comm, PDCXConfig& _config, PDCXLengthInfo& _info)
         : comm(_comm),
+          config(_config),
           info(_info) {}
 
     // shift one sample left be able to compute rank of last element
@@ -127,36 +133,87 @@ struct LexicographicRankPhase {
     // sideeffect: shifts one sample from next PE to local_string
     std::vector<RankIndex>
     create_lexicographic_ranks(std::vector<SampleString>& local_samples) const {
-        DBG("shift samples");
         shift_samples_left(local_samples);
-        DBG("compute ranks");
         std::vector<RankIndex> local_ranks = compute_lexicographic_ranks(local_samples);
-        DBG("flag unique ranks");
         flag_unique_ranks(local_ranks);
         return local_ranks;
     }
 
-    std::vector<RankIndex>
-    create_ranks_space_efficient(auto& phase1,
-                                 std::vector<char_type>& local_string,
-                                 const uint64_t num_buckets,
-                                 const bool use_packing = false) {
+    void process_bucket_samples(auto& phase1,
+                                std::vector<SampleString>& samples,
+                                std::vector<RankIndex>& concat_rank_buckets,
+                                std::vector<uint64_t>& received_size,
+                                SampleString& prev_sample,
+                                uint64_t bucket_nr) {
+        auto& timer = measurements::timer();
+        // Phase 1: sort dc-samples
+        timer.synchronize_and_start("phase_01_02_sort_samples");
+        phase1.sort_samples(samples);
+        timer.stop();
+
+        // Phase 2: compute lexicographic ranks
+        timer.synchronize_and_start("phase_01_02_process_samples");
+        redistribute_if_imbalanced(samples, config.min_imbalance, comm);
+        shift_samples_left(samples);
+
+        if (bucket_nr != 0) {
+            SampleString first_sample =
+                mpi_util::send_from_to(samples.front(), 0, comm.size() - 1, comm);
+            if (comm.rank() == comm.size() - 1) {
+                // last PE compared samples with Padding --> change is always 1
+                // if there was no change revert to 0
+                concat_rank_buckets.back().rank -= prev_sample.chars == first_sample.chars ? 1 : 0;
+            }
+        }
+        // skip padding sample
+        prev_sample = samples[samples.size() - 2];
+
+        // exclude sample from process i + 1
+        uint64_t num_ranks = samples.size() - 1;
+
+        // only store changes
+        uint64_t last_changed = 0;
+        for (uint64_t i = 0; i < num_ranks; i++) {
+            last_changed = samples[i].chars != samples[i + 1].chars ? 1 : 0;
+            concat_rank_buckets.emplace_back(index_type(last_changed), samples[i].index, false);
+        }
+
+        received_size.push_back(num_ranks);
+        samples.clear();
+        timer.stop();
+    }
+
+    void compute_ranks_from_changes(std::vector<RankIndex>& local_ranks) {
+        // compute local ranks
+        uint64_t prev_rank = 0;
+        for (uint64_t i = 0; i < local_ranks.size(); i++) {
+            uint64_t change = local_ranks[i].rank;
+            local_ranks[i].rank = index_type(prev_rank);
+            prev_rank += change;
+        }
+
+        // shift ranks by 1 + prefix sum
+        uint64_t ranks_before = mpi_util::ex_prefix_sum(prev_rank, comm);
+        std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
+            x.rank += index_type(1 + ranks_before);
+        });
+    }
+
+    std::vector<RankIndex> create_ranks_space_efficient(auto& phase1,
+                                                        std::vector<char_type>& local_string,
+                                                        const uint64_t num_buckets,
+                                                        const bool use_packing = false) {
         using SpaceEfficient = SpaceEfficientSort<char_type, index_type, DC>;
         using Splitter = typename SpaceEfficient::Splitter;
         const uint32_t X = DC::X;
 
         auto& timer = measurements::timer();
-
-        // CharPacking<char_type, X + 1> packing(info.largest_char);
-        PDCXConfig config = phase1.config;
         SpaceEfficient space_efficient(comm, config);
+        double packing_ratio = use_packing ? config.packing_ratio : 1;
 
         auto materialize_sample = [&](uint64_t i) {
-            return phase1.materialize_sample(local_string, i);
+            return phase1.materialize_sample(local_string, i, packing_ratio);
         };
-
-
-        DBG("determine bucket splitters");
 
         // determine bucket splitters
         std::vector<Splitter> bucket_splitter =
@@ -199,8 +256,6 @@ struct LexicographicRankPhase {
         SampleString prev_sample;
         // sorting in each round one blocks of materialized samples
         for (uint64_t k = 0; k < num_buckets; k++) {
-            DBG("bucket round " + std::to_string(k));
-
             timer.synchronize_and_start("phase_01_02_space_efficient_sort_collect_buckets");
 
             // collect samples falling into kth block
@@ -214,56 +269,18 @@ struct LexicographicRankPhase {
             }
             timer.stop();
             KASSERT(bucket_sizes[k] == samples.size());
-
-            DBG("sort bucket samples");
-            // print_concatenated_size(samples, comm, "samples size before sort");
-
-            // Phase 1: sort dc-samples
-            phase1.sort_samples(samples);
-
-            // print_concatenated_size(samples, comm, "samples size after sort");
-            DBG("redist");
-
-
-            // Phase 2: compute lexicographic ranks
-            redistribute_if_imbalanced(samples, config.min_imbalance, comm);
-            shift_samples_left(samples);
-
-            if (k != 0) {
-                SampleString first_sample =
-                    mpi_util::send_from_to(samples.front(), 0, comm.size() - 1, comm);
-                if (comm.rank() == comm.size() - 1) {
-                    // last PE compared samples with Padding --> change is always 1
-                    // if there was no change revert to 0
-                    concat_rank_buckets.back().rank -=
-                        prev_sample.chars == first_sample.chars ? 1 : 0;
-                }
-            }
-            // skip padding sample
-            prev_sample = samples[samples.size() - 2];
-
-            // exclude sample from process i + 1
-            uint64_t num_ranks = samples.size() - 1;
-            concat_rank_buckets.reserve(concat_rank_buckets.size() + num_ranks);
-
-            // only store changes
-            uint64_t last_changed = 0;
-            for (uint64_t i = 0; i < num_ranks; i++) {
-                last_changed = samples[i].chars != samples[i + 1].chars ? 1 : 0;
-                concat_rank_buckets.emplace_back(index_type(last_changed), samples[i].index, false);
-            }
-
-            received_size.push_back(num_ranks);
-            samples.clear();
+            process_bucket_samples(phase1,
+                                   samples,
+                                   concat_rank_buckets,
+                                   received_size,
+                                   prev_sample,
+                                   k);
         }
         KASSERT(mpi_util::all_reduce_sum(concat_rank_buckets.size(), comm)
                 == info.total_sample_size);
         double bucket_imbalance_received =
             get_imbalance_bucket(received_size, info.total_sample_size, comm);
         get_stats_instance().bucket_imbalance_samples_received.push_back(bucket_imbalance_received);
-
-
-        DBG("transpose blocks");
 
         timer.synchronize_and_start("phase_01_02_space_efficient_sort_alltoall");
         std::vector<RankIndex> local_ranks =
@@ -273,25 +290,164 @@ struct LexicographicRankPhase {
                                                config.rearrange_buckets_balanced);
         timer.stop();
 
-        // compute local ranks
-        uint64_t prev_rank = 0;
-        for (uint64_t i = 0; i < local_ranks.size(); i++) {
-            uint64_t change = local_ranks[i].rank;
-            local_ranks[i].rank = index_type(prev_rank);
-            prev_rank += change;
-        }
-
-        // shift ranks by 1 + prefix sum
-        uint64_t ranks_before = mpi_util::ex_prefix_sum(prev_rank, comm);
-        std::for_each(local_ranks.begin(), local_ranks.end(), [&](RankIndex& x) {
-            x.rank += index_type(1 + ranks_before);
-        });
-
-        DBG("flag ranks");
-
+        compute_ranks_from_changes(local_ranks);
         flag_unique_ranks(local_ranks);
         return local_ranks;
     }
-};
+
+    std::vector<RankIndex>
+    create_ranks_space_efficient_chunking(auto& phase1,
+                                          std::vector<char_type>& local_string,
+                                          const uint64_t num_buckets,
+                                          const bool use_packing = false) {
+        using SpaceEfficient = SpaceEfficientSort<char_type, index_type, DC>;
+        using Splitter = typename SpaceEfficient::Splitter;
+        auto& timer = measurements::timer();
+
+        double char_packing_ratio = use_packing ? config.packing_ratio : 1;
+        SpaceEfficient space_efficient(comm, config);
+
+        // determine bucket splitters
+        std::vector<Splitter> bucket_splitter =
+            space_efficient.random_sample_splitters(info.local_chars, num_buckets, local_string);
+
+        // chunking
+        timer.synchronize_and_start("phase_01_02_chunking_create_chunks");
+        chunking::Chunking<char_type, index_type> chunking(comm, info, config.avg_chunks_pe);
+        using Chunk = chunking::Chunking<char_type, index_type>::Chunk;
+        std::vector<Chunk> chunks = chunking.get_random_chunks(config.seed);
+
+        // add padding to be able to materialize last suffix in chunk
+        uint64_t chars_with_padding = chunking.get_chunk_size() + char_packing_ratio * X;
+
+        // store global index of beginning of each chunk
+        std::vector<char_type> chunked_chars =
+            chunking.get_chunked_chars(chunks, chars_with_padding, local_string);
+        std::vector<index_type> chunk_global_index =
+            chunking.get_chunk_global_index(chunks, info.chars_before);
+        std::vector<uint32_t> chunk_sizes =
+            chunking.get_chunk_sizes(chunks, info.local_chars_with_dummy);
+        std::vector<int64_t> send_cnt_chars = chunking.get_send_counts(chunks, chars_with_padding);
+        std::vector<int64_t> send_cnt_index = chunking.get_send_counts(chunks, 1);
+        timer.stop();
+
+        // sanity checks
+        KASSERT(std::accumulate(send_cnt_chars.begin(), send_cnt_chars.end(), int64_t(0))
+                == (int64_t)chunked_chars.size());
+        KASSERT(std::accumulate(send_cnt_index.begin(), send_cnt_index.end(), int64_t(0))
+                == (int64_t)chunk_global_index.size());
+
+        // exchange linearized data
+        timer.synchronize_and_start("phase_01_02_chunking_alltoall");
+        chunked_chars = mpi_util::alltoallv_combined(chunked_chars, send_cnt_chars, comm);
+        chunk_global_index = mpi_util::alltoallv_combined(chunk_global_index, send_cnt_index, comm);
+        chunk_sizes = mpi_util::alltoallv_combined(chunk_sizes, send_cnt_index, comm);
+        uint64_t received_chunks = chunk_global_index.size();
+        timer.stop();
+
+        timer.synchronize_and_start("phase_01_02_chunking_mapping");
+        // assign dc-substrings to blocks
+        std::vector<uint64_t> bucket_sizes(num_buckets, 0);
+        std::vector<uint8_t> sample_to_bucket(chunked_chars.size(), num_buckets);
+        KASSERT(num_buckets <= 255ull);
+
+        uint64_t materialized_samples = 0;
+        for (uint64_t i = 0; i < received_chunks; i++) {
+            uint64_t start_chunk = i * chars_with_padding;
+            uint64_t global_index_chunk = chunk_global_index[i];
+            for (uint64_t j = 0; j < chunk_sizes[i]; j++) {
+                uint8_t block_id = num_buckets - 1;
+                uint64_t suffix_start = start_chunk + j;
+                uint64_t global_index = global_index_chunk + j;
+                uint64_t m = global_index % X;
+                if (is_in_dc<DC>(m)) {
+                    for (uint64_t k = 0; k < num_buckets - 1; k++) {
+                        if (cmp_index_substring(chunked_chars, suffix_start, bucket_splitter[k])) {
+                            block_id = k;
+                            break;
+                        }
+                    }
+                    bucket_sizes[block_id]++;
+                    sample_to_bucket[suffix_start] = block_id;
+                    materialized_samples++;
+                }
+            }
+        }
+        timer.stop();
+        uint64_t total_materialized_samples = mpi_util::all_reduce_sum(materialized_samples, comm);
+        KASSERT(total_materialized_samples == info.total_sample_size);
+
+        // log imbalance of buckets
+        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_sample_size, comm);
+        get_stats_instance().bucket_imbalance_samples.push_back(bucket_imbalance);
+        report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
+                       comm,
+                       info.recursion_depth);
+
+
+        std::vector<SampleString> samples;
+        std::vector<RankIndex> concat_rank_buckets;
+        std::vector<uint64_t> received_size;
+        received_size.reserve(num_buckets);
+        SampleString prev_sample;
+
+        auto materialize_sample = [&](uint64_t i) {
+            return phase1.materialize_sample(chunked_chars, i, char_packing_ratio);
+        };
+
+        // sorting in each round one blocks of materialized samples
+        for (uint64_t k = 0; k < num_buckets; k++) {
+            timer.synchronize_and_start("phase_01_02_chunkingcollect_buckets");
+
+            // collect samples falling into kth block
+            samples.reserve(bucket_sizes[k]);
+
+            for (uint64_t i = 0; i < received_chunks; i++) {
+                uint64_t start_chunk = i * chars_with_padding;
+                uint64_t global_index_chunk = chunk_global_index[i];
+                for (uint64_t j = 0; j < chunk_sizes[i]; j++) {
+                    uint64_t char_pos = start_chunk + j;
+                    uint64_t global_index = global_index_chunk + j;
+                    if (sample_to_bucket[char_pos] == k) {
+                        auto chars = materialize_sample(char_pos);
+                        samples.push_back(SampleString(std::move(chars), global_index));
+                    }
+                }
+            }
+
+            timer.stop();
+            KASSERT(bucket_sizes[k] == samples.size());
+            process_bucket_samples(phase1,
+                                   samples,
+                                   concat_rank_buckets,
+                                   received_size,
+                                   prev_sample,
+                                   k);
+        }
+        KASSERT(mpi_util::all_reduce_sum(concat_rank_buckets.size(), comm)
+                == info.total_sample_size);
+        double bucket_imbalance_received =
+            get_imbalance_bucket(received_size, info.total_sample_size, comm);
+        get_stats_instance().bucket_imbalance_samples_received.push_back(bucket_imbalance_received);
+        report_on_root("--> Randomized Bucket Imbalance Received "
+                           + std::to_string(bucket_imbalance_received),
+                       comm,
+                       info.recursion_depth);
+
+
+        timer.synchronize_and_start("phase_01_02_space_efficient_sort_alltoall");
+        std::vector<RankIndex> local_ranks =
+            mpi_util::transpose_blocks_wrapper(concat_rank_buckets,
+                                               received_size,
+                                               comm,
+                                               config.rearrange_buckets_balanced);
+        timer.stop();
+
+        compute_ranks_from_changes(local_ranks);
+        flag_unique_ranks(local_ranks);
+        return local_ranks;
+    }
+
+}; // namespace dsss::dcx
 
 } // namespace dsss::dcx

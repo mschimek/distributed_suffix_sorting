@@ -632,11 +632,19 @@ public:
                            recursion_depth,
                            config.print_phases);
             timer.synchronize_and_start("phase_01_02_samples_ranks");
-            RankPhase phase2(comm, info);
-            local_ranks = phase2.create_ranks_space_efficient(phase1,
-                                                              local_string,
-                                                              buckets_samples,
-                                                              use_packed_samples);
+            RankPhase phase2(comm, config, info);
+            if (config.use_randomized_chunks) {
+                report_on_root("using randomized chunks for Phase 1 + 2", comm);
+                local_ranks = phase2.create_ranks_space_efficient_chunking(phase1,
+                                                                           local_string,
+                                                                           buckets_samples,
+                                                                           use_packed_samples);
+            } else {
+                local_ranks = phase2.create_ranks_space_efficient(phase1,
+                                                                  local_string,
+                                                                  buckets_samples,
+                                                                  use_packed_samples);
+            }
             timer.stop();
 
             if (recursion_depth == 0) {
@@ -653,7 +661,6 @@ public:
             }
 
             //******* End Phase 1 + 2: Construct Samples +   Construct Ranks********
-
         } else {
             //******* Start Phase 1: Construct Samples  ********
             report_on_root("Phase 1: Sort Samples", comm, recursion_depth, config.print_phases);
@@ -685,7 +692,7 @@ public:
             //******* Start Phase 2: Construct Ranks  ********
             report_on_root("Phase 2: Construct Ranks", comm, recursion_depth, config.print_phases);
             timer.synchronize_and_start("phase_02_ranks");
-            RankPhase phase2(comm, info);
+            RankPhase phase2(comm, config, info);
             local_ranks = phase2.create_lexicographic_ranks(local_samples);
             free_memory(std::move(local_samples));
             timer.stop();
@@ -806,7 +813,7 @@ public:
                            recursion_depth,
                            config.print_phases);
 
-            if (config.use_randomized_chunks_merging) {
+            if (config.use_randomized_chunks) {
                 // with chunking
                 local_SA = phase4.space_effient_sort_chunking_SA(local_string,
                                                                  sample_ranks,
@@ -921,6 +928,6 @@ public:
     measurements::Timer<Communicator<>>& timer;
     Statistics& stats;
     int recursion_depth;
-};
+}; // namespace dsss::dcx
 
 } // namespace dsss::dcx

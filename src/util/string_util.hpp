@@ -5,6 +5,7 @@
 #include <iterator>
 #include <numeric>
 #include <vector>
+
 #include "strings/lcp_type.hpp"
 
 namespace dsss {
@@ -80,7 +81,6 @@ bool cmp_index_substring(std::vector<char_type>& str,
     }
     return false;
 };
-
 
 
 template <typename char_type>

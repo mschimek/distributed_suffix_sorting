@@ -133,13 +133,13 @@ void configure_cli() {
                  pdcx_config.num_samples_phase3,
                  "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
     cp.add_flag('Z',
-                "use_randomized_chunks_merging",
-                pdcx_config.use_randomized_chunks_merging,
-                "Use randomized chunks in merging phase to distribute work.");
+                "use_randomized_chunks",
+                pdcx_config.use_randomized_chunks,
+                "Use randomized chunks in bucket sorting to distribute work.");
     cp.add_bytes('z',
-                 "chunk_size",
-                 pdcx_config.chunk_size,
-                 "Sie of a chunk to use for randomized chunks in merging phase.");
+                 "avg_chunks_pe",
+                 pdcx_config.avg_chunks_pe,
+                 "Average number of chunks on a PE.");
     cp.add_flag(
         'g',
         "use_char_packing_samples",
@@ -368,7 +368,7 @@ void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& c
     }
 
     // determine character frequencies
-    std::vector<uint64_t> local_counts(max_char + 1, 0);
+    std::vector<uint64_t> local_counts(max_alphabet_size, 0);
     for (auto c: input) {
         local_counts[c]++;
     }

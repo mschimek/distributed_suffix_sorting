@@ -33,7 +33,7 @@ struct PDCXConfig {
     uint64_t ams_levels = 1;
     uint64_t memory_seq_string_sorter = 0;
     uint64_t num_samples_splitters = 1000;
-    uint64_t chunk_size = 1000;
+    uint64_t avg_chunks_pe = 1000;
     uint64_t seed = 0;
     uint64_t container_variant = 0;
     double packing_ratio = 1;
@@ -44,7 +44,7 @@ struct PDCXConfig {
     bool use_lcps_tie_breaking = false;
     bool use_random_sampling_splitters = false;
     bool balance_blocks_space_efficient_sort = false;
-    bool use_randomized_chunks_merging = false;
+    bool use_randomized_chunks = false;
     bool use_char_packing_samples = false;
     bool use_char_packing_merging = false;
     bool print_phases = true;
@@ -81,8 +81,8 @@ struct PDCXConfig {
         std::cout << V(num_samples_splitters) << "\n";
         std::cout << V(use_random_sampling_splitters) << "\n";
         std::cout << V(balance_blocks_space_efficient_sort) << "\n";
-        std::cout << V(use_randomized_chunks_merging) << "\n";
-        std::cout << V(chunk_size) << "\n";
+        std::cout << V(use_randomized_chunks) << "\n";
+        std::cout << V(avg_chunks_pe) << "\n";
         std::cout << V(packing_ratio) << "\n";
         std::cout << V(container_variant) << "\n";
         std::cout << V(rearrange_buckets_balanced) << "\n";
