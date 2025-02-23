@@ -50,6 +50,7 @@ struct PDCXConfig {
     bool print_phases = true;
     bool rearrange_buckets_balanced = false;
     bool use_robust_tie_break = false;
+    bool use_compressed_buckets = false;
 
 
     uint32_t buckets_samples_at_level(uint32_t level) const {
@@ -87,6 +88,7 @@ struct PDCXConfig {
         std::cout << V(container_variant) << "\n";
         std::cout << V(rearrange_buckets_balanced) << "\n";
         std::cout << V(use_robust_tie_break) << "\n";
+        std::cout << V(use_compressed_buckets) << "\n";
         std::cout << std::endl;
 
         sample_sort_config.print_config();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -175,13 +176,18 @@ struct MergeSamplePhase {
                                            : MergeSamples::cmp_by_chars;
     }
 
-    uint64_t get_ranks_pos(std::vector<index_type>& local_ranks, int64_t local_index) const {
-        uint64_t global_index = local_index + info.chars_before;
+    inline uint64_t get_global_ranks_pos(int64_t global_index) const {
         uint64_t block_nr = global_index / X;
         uint64_t start_block = block_nr * D;
         uint64_t rem = global_index % X;
         uint64_t offset = DC::NEXT_RANK[rem];
         uint64_t global_rank_pos = start_block + offset;
+        return global_rank_pos;
+    }
+
+    inline uint64_t get_ranks_pos(int64_t local_index) const {
+        uint64_t global_index = local_index + info.chars_before;
+        uint64_t global_rank_pos = get_global_ranks_pos(global_index);
         uint64_t local_rank_pos = global_rank_pos - info.samples_before;
         return local_rank_pos;
     }
@@ -217,7 +223,7 @@ struct MergeSamplePhase {
                                              std::vector<index_type>& local_ranks,
                                              uint64_t local_index,
                                              auto materialize_chars) const {
-        uint64_t rank_pos = get_ranks_pos(local_ranks, local_index);
+        uint64_t rank_pos = get_ranks_pos(local_index);
         return materialize_merge_sample(local_string,
                                         local_ranks,
                                         local_index,
@@ -238,7 +244,7 @@ struct MergeSamplePhase {
         };
 
         // for each index in local string
-        uint64_t rank_pos = get_ranks_pos(local_ranks, 0);
+        uint64_t rank_pos = get_ranks_pos(0);
         for (uint64_t local_index = 0; local_index < info.local_chars; local_index++) {
             MergeSamples sample = materialize_merge_sample(local_string,
                                                            local_ranks,
@@ -411,7 +417,7 @@ struct MergeSamplePhase {
             timer.synchronize_and_start("phase_04_space_efficient_sort_collect_bucket");
 
             // collect samples falling into kth block
-            uint64_t rank_pos = get_ranks_pos(local_ranks, 0);
+            uint64_t rank_pos = get_ranks_pos(0);
             samples.reserve(bucket_sizes[k]);
             for (uint64_t idx = 0; idx < info.local_chars; idx++) {
                 if (sample_to_bucket[idx] == k) {
@@ -497,7 +503,7 @@ struct MergeSamplePhase {
         index_type padding_rank = std::numeric_limits<index_type>::max();
 
         auto get_ranks_positions = [&](std::vector<index_type>& local_ranks, uint64_t chunk_start) {
-            return get_ranks_pos(local_ranks, chunk_start);
+            return get_ranks_pos(chunk_start);
         };
 
         std::vector<char_type> chunked_chars =
@@ -745,6 +751,172 @@ struct MergeSamplePhase {
         timer.stop();
         return local_SA;
     }
+
+
+    // store the IDs of suffix in the same memory as the SA
+    // assumes that suffixes after sorting are well balanced
+    std::vector<index_type>
+    space_effient_sort_chunking_SA_compressed(std::vector<char_type>& local_string,
+                                              std::vector<index_type>& local_ranks,
+                                              std::vector<SplitterType>& global_splitters,
+                                              bool use_packing = false) {
+        using SA = std::vector<index_type>;
+        auto& timer = measurements::timer();
+
+        int64_t num_buckets = global_splitters.size() + 1;
+        double char_packing_ratio = use_packing ? config.packing_ratio : 1;
+        auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
+            return materialize_characters(local_string, char_pos, char_packing_ratio);
+        };
+        ChunkedData chunked_data =
+            compute_chunked_data(local_string, local_ranks, global_splitters, char_packing_ratio);
+        auto [chunked_chars, chunked_ranks, chunk_global_index, chunk_sizes] =
+            chunked_data.get_chunked_data_ref();
+        uint64_t chars_with_padding = chunked_data.chars_with_padding;
+        uint64_t ranks_with_padding = chunked_data.ranks_with_padding;
+        uint64_t received_chunks = chunk_global_index.size();
+
+        BucketMapping bucket_mapping =
+            compute_bucket_mapping(chunked_data, global_splitters, materialize_chars);
+        std::vector<uint64_t>& bucket_sizes = bucket_mapping.bucket_sizes;
+        std::vector<uint8_t>& sample_to_bucket = bucket_mapping.sample_to_bucket;
+
+        // store suffixes to be materialized in SA
+        uint64_t num_suffixes =
+            std::accumulate(bucket_sizes.begin(), bucket_sizes.end(), uint64_t(0));
+        uint64_t estimated_size = (info.total_chars / comm.size()) * 1.25;
+        SA concat_sa_buckets(estimated_size, 0);
+        uint64_t offset_sa_idx = estimated_size - num_suffixes;
+        std::vector<uint64_t> bucket_idx(num_buckets, 0);
+        std::exclusive_scan(bucket_sizes.begin(),
+                            bucket_sizes.end(),
+                            bucket_idx.begin(),
+                            uint64_t(0));
+
+        constexpr uint64_t PACK_MASK = (1ull << 20) - 1;
+        KASSERT(*std::max_element(chunk_sizes.begin(), chunk_sizes.end()) <= PACK_MASK);
+        KASSERT(received_chunks <= PACK_MASK);
+        for (uint64_t i = 0; i < received_chunks; i++) {
+            uint64_t start_chunk = i * chars_with_padding;
+            for (uint64_t j = 0; j < chunk_sizes[i]; j++) {
+                uint64_t char_pos = start_chunk + j;
+                uint64_t b = sample_to_bucket[char_pos];
+                uint64_t idx = offset_sa_idx + bucket_idx[b]++;
+                uint64_t packed_chunk_and_idx = (i << 20ull) | j;
+                KASSERT(idx < concat_sa_buckets.size());
+                concat_sa_buckets[idx] = index_type(packed_chunk_and_idx);
+            }
+        }
+        free_memory(std::move(sample_to_bucket));
+
+        // log imbalance
+        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
+        get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
+        report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
+                       comm,
+                       info.recursion_depth);
+        timer.stop();
+
+        std::vector<MergeSamples> samples;
+        std::vector<uint64_t> sa_bucket_size;
+        sa_bucket_size.reserve(num_buckets);
+        uint64_t sa_write_idx = 0;
+
+        // sorting in each round one blocks of materialized samples
+        for (int64_t k = 0; k < num_buckets; k++) {
+            timer.synchronize_and_start("phase_04_space_effient_sort_chunking_collect_bucket");
+
+            // collect samples falling into kth block
+            samples.reserve(bucket_sizes[k]);
+            for (uint64_t i = 0; i < bucket_sizes[k]; i++) {
+                uint64_t packed_chunk_and_idx = concat_sa_buckets[offset_sa_idx + i];
+                uint64_t chunk = packed_chunk_and_idx >> 20ull;
+                uint64_t idx = packed_chunk_and_idx & PACK_MASK;
+
+                uint64_t char_pos = chunk * chars_with_padding + idx;
+                uint64_t global_index_chunk = chunk_global_index[chunk];
+                uint64_t global_index = global_index_chunk + idx;
+
+                uint64_t global_rank_pos = get_global_ranks_pos(global_index);
+                uint64_t rank_pos = global_rank_pos - get_global_ranks_pos(global_index_chunk);
+                rank_pos += chunk * ranks_with_padding;
+
+                auto merge_sample = materialize_merge_sample(chunked_chars,
+                                                             chunked_ranks,
+                                                             char_pos,
+                                                             rank_pos,
+                                                             materialize_chars);
+                // above function does not compute global_index the right way
+                merge_sample.index = global_index;
+                samples.push_back(merge_sample);
+            }
+            offset_sa_idx += bucket_sizes[k];
+            timer.stop();
+            KASSERT(samples.size() == bucket_sizes[k]);
+
+            sort_merge_samples(samples);
+
+            timer.start("phase_04_space_effient_sort_wait_after_sort");
+            comm.barrier();
+            timer.stop();
+
+            bool ok = sa_write_idx + samples.size() < offset_sa_idx;
+            bool all_ok = mpi_util::all_reduce_and(ok, comm);
+            if (!all_ok) {
+                report_on_root("ERROR: sa_write_idx + samples.size() >= offset_sa_idx. Use normal "
+                               "chunking variant.",
+                               comm,
+                               info.recursion_depth);
+                exit(1);
+            }
+
+            // extract SA of block
+            for (auto& sample: samples) {
+                KASSERT(sa_write_idx < concat_sa_buckets.size());
+                concat_sa_buckets[sa_write_idx++] = sample.index;
+            }
+
+            sa_bucket_size.push_back(samples.size());
+            samples.clear();
+        }
+        // ensure memory is freed
+        free_memory(std::move(samples));
+        free_memory(std::move(sample_to_bucket));
+        free_memory(std::move(chunked_chars));
+        free_memory(std::move(chunked_ranks));
+        free_memory(std::move(chunk_global_index));
+        free_memory(std::move(chunk_sizes));
+
+        // delete last entries that do not belong to SA
+        uint64_t num_idx =
+            std::accumulate(sa_bucket_size.begin(), sa_bucket_size.end(), uint64_t(0));
+        concat_sa_buckets.resize(num_idx);
+
+        // log imbalance of received suffixes
+        double bucket_imbalance_received =
+            get_imbalance_bucket(sa_bucket_size, info.total_chars, comm);
+        get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
+        report_on_root("--> Randomized Bucket Imbalance Received "
+                           + std::to_string(bucket_imbalance_received),
+                       comm,
+                       info.recursion_depth);
+
+        if (info.recursion_depth == 0) {
+            get_stats_instance().phase_04_sa_size =
+                comm.allgather(kamping::send_buf(concat_sa_buckets.size()));
+            get_stats_instance().phase_04_sa_capacity =
+                comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
+        }
+
+        timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
+        SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
+                                                         sa_bucket_size,
+                                                         comm,
+                                                         config.rearrange_buckets_balanced);
+        timer.stop();
+        return local_SA;
+    }
+
 }; // namespace dsss::dcx
 
 

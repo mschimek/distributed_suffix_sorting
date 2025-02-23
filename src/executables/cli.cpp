@@ -164,6 +164,10 @@ void configure_cli() {
                 pdcx_config.use_robust_tie_break,
                 "Use ranks as a tie break in space efficient sorting in Phase 4. Is slower but "
                 "splits equal strings amoung buckets.");
+    cp.add_flag('u',
+                "use_compressed_buckets",
+                pdcx_config.use_compressed_buckets,
+                "Store the bucket mapping compressed in the same memory as the SA.");
 
 
     // sorter configuration

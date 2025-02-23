@@ -9,6 +9,7 @@
 #include "mpi/reduce.hpp"
 #include "pdcx/config.hpp"
 #include "util/division.hpp"
+#include "util/string_util.hpp"
 
 namespace dsss::chunking {
 
@@ -26,6 +27,9 @@ struct Chunking {
         avg_chunks_pe = std::max(uint64_t(1), _avg_chunks_pe);
         avg_chunks_pe = std::min(avg_chunks_pe, local_chars_with_dummy);
         chunk_size = util::div_ceil(avg_local_chars, avg_chunks_pe);
+        
+        // ensure chunk size is the same for every PE
+        chunk_size = mpi_util::all_reduce_min(chunk_size, comm);
         num_local_chunks = util::div_ceil(local_chars_with_dummy, chunk_size);
     }
 

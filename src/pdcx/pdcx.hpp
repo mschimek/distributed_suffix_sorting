@@ -814,11 +814,17 @@ public:
                            config.print_phases);
 
             if (config.use_randomized_chunks) {
-                // with chunking
-                local_SA = phase4.space_effient_sort_chunking_SA(local_string,
-                                                                 sample_ranks,
-                                                                 bucket_splitter,
-                                                                 use_packed_merging);
+                if (config.use_compressed_buckets) {
+                    local_SA = phase4.space_effient_sort_chunking_SA_compressed(local_string,
+                                                                                sample_ranks,
+                                                                                bucket_splitter,
+                                                                                use_packed_merging);
+                } else {
+                    local_SA = phase4.space_effient_sort_chunking_SA(local_string,
+                                                                     sample_ranks,
+                                                                     bucket_splitter,
+                                                                     use_packed_merging);
+                }
 
             } else {
                 local_SA = phase4.space_effient_sort_SA(local_string,

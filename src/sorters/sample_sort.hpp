@@ -63,7 +63,6 @@ inline void sample_sort(std::vector<DataType>& local_data,
 
     // code breaks for very small inputs --> switch to sequential sorting
     if (input_is_small(local_data, comm)) {
-        DBG("sample sort on root");
         uint64_t local_n = local_data.size();
         sort_on_root(local_data, comm, local_sorter);
         local_data = mpi_util::distribute_data_custom(local_data, local_n, comm);
@@ -73,20 +72,17 @@ inline void sample_sort(std::vector<DataType>& local_data,
 
     // handle cases with empty PEs
     timer.synchronize_and_start("sample_sort_distribute_data");
-    DBG("redist");
     redistribute_imbalanced_data(local_data, comm);
     timer.stop();
 
 
     // Sort data locally
     timer.synchronize_and_start("sample_sort_local_sorting_01");
-    DBG("local_sorting 1");
     local_sorter(local_data);
     timer.stop();
 
     // compute global splitters
     timer.synchronize_and_start("sample_sort_global_splitters");
-    DBG("global splitters");
     std::vector<DataType> global_splitters =
         get_global_splitters(local_data, local_sorter, distributed_sorter, comm, config);
     timer.stop();
