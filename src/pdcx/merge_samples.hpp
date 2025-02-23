@@ -463,20 +463,28 @@ struct MergeSamplePhase {
         return local_SA;
     }
 
-    std::vector<index_type>
-    space_effient_sort_chunking_SA(std::vector<char_type>& local_string,
-                                   std::vector<index_type>& local_ranks,
-                                   std::vector<SplitterType>& global_splitters,
-                                   bool use_packing = false) {
+    struct ChunkedData {
+        std::vector<char_type> chunked_chars;
+        std::vector<index_type> chunked_ranks;
+        std::vector<index_type> chunk_global_index;
+        std::vector<uint32_t> chunk_sizes;
+        uint64_t chars_with_padding;
+        uint64_t ranks_with_padding;
+
+        std::tuple<std::vector<char_type>&,
+                   std::vector<index_type>&,
+                   std::vector<index_type>&,
+                   std::vector<uint32_t>&>
+        get_chunked_data_ref() {
+            return {chunked_chars, chunked_ranks, chunk_global_index, chunk_sizes};
+        }
+    };
+
+    ChunkedData compute_chunked_data(std::vector<char_type>& local_string,
+                                     std::vector<index_type>& local_ranks,
+                                     std::vector<SplitterType>& global_splitters,
+                                     double char_packing_ratio) {
         auto& timer = measurements::timer();
-        using SA = std::vector<index_type>;
-
-        double char_packing_ratio = use_packing ? config.packing_ratio : 1;
-        auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
-            return materialize_characters(local_string, char_pos, char_packing_ratio);
-        };
-
-        // randomized chunking
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_create_chunks");
         chunking::Chunking<char_type, index_type> chunking(comm, info, config.avg_chunks_pe);
         using Chunk = chunking::Chunking<char_type, index_type>::Chunk;
@@ -495,10 +503,10 @@ struct MergeSamplePhase {
         std::vector<char_type> chunked_chars =
             chunking.get_chunked_chars(chunks, chars_with_padding, local_string);
         std::vector<index_type> chunked_ranks = chunking.get_chunked_ranks(chunks,
-                                                                          ranks_with_padding,
-                                                                          local_ranks,
-                                                                          get_ranks_positions,
-                                                                          padding_rank);
+                                                                           ranks_with_padding,
+                                                                           local_ranks,
+                                                                           get_ranks_positions,
+                                                                           padding_rank);
         std::vector<index_type> chunk_global_index =
             chunking.get_chunk_global_index(chunks, info.chars_before);
         std::vector<uint32_t> chunk_sizes = chunking.get_chunk_sizes(chunks, info.local_chars);
@@ -530,6 +538,28 @@ struct MergeSamplePhase {
         KASSERT(chunked_chars.size() == received_chunks * chars_with_padding);
         KASSERT(chunked_ranks.size() == received_chunks * ranks_with_padding);
         KASSERT(chunk_sizes.size() == received_chunks);
+
+        return {chunked_chars,
+                chunked_ranks,
+                chunk_global_index,
+                chunk_sizes,
+                chars_with_padding,
+                ranks_with_padding};
+    }
+
+    struct BucketMapping {
+        std::vector<uint64_t> bucket_sizes;
+        std::vector<uint8_t> sample_to_bucket;
+    };
+
+    BucketMapping compute_bucket_mapping(ChunkedData& chunked_data,
+                                         std::vector<SplitterType>& global_splitters,
+                                         auto materialize_chars) {
+        auto [chunked_chars, chunked_ranks, chunk_global_index, chunk_sizes] =
+            chunked_data.get_chunked_data_ref();
+        uint64_t chars_with_padding = chunked_data.chars_with_padding;
+        uint64_t ranks_with_padding = chunked_data.ranks_with_padding;
+        uint64_t received_chunks = chunk_global_index.size();
 
         // compute bucket sizes and mapping
         int64_t num_buckets = global_splitters.size() + 1;
@@ -584,6 +614,34 @@ struct MergeSamplePhase {
             }
         }
         KASSERT(mpi_util::all_reduce_sum(num_materialized_samples, comm) == info.total_chars);
+        return {bucket_sizes, sample_to_bucket};
+    }
+
+    std::vector<index_type>
+    space_effient_sort_chunking_SA(std::vector<char_type>& local_string,
+                                   std::vector<index_type>& local_ranks,
+                                   std::vector<SplitterType>& global_splitters,
+                                   bool use_packing = false) {
+        using SA = std::vector<index_type>;
+        auto& timer = measurements::timer();
+
+        int64_t num_buckets = global_splitters.size() + 1;
+        double char_packing_ratio = use_packing ? config.packing_ratio : 1;
+        auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
+            return materialize_characters(local_string, char_pos, char_packing_ratio);
+        };
+        ChunkedData chunked_data =
+            compute_chunked_data(local_string, local_ranks, global_splitters, char_packing_ratio);
+        auto [chunked_chars, chunked_ranks, chunk_global_index, chunk_sizes] =
+            chunked_data.get_chunked_data_ref();
+        uint64_t chars_with_padding = chunked_data.chars_with_padding;
+        uint64_t ranks_with_padding = chunked_data.ranks_with_padding;
+        uint64_t received_chunks = chunk_global_index.size();
+
+        BucketMapping bucket_mapping =
+            compute_bucket_mapping(chunked_data, global_splitters, materialize_chars);
+        std::vector<uint64_t>& bucket_sizes = bucket_mapping.bucket_sizes;
+        std::vector<uint8_t>& sample_to_bucket = bucket_mapping.sample_to_bucket;
 
         // log imbalance
         double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
@@ -657,7 +715,6 @@ struct MergeSamplePhase {
 
         // ensure memory is freed
         free_memory(std::move(samples));
-        free_memory(std::move(chunks));
         free_memory(std::move(sample_to_bucket));
         free_memory(std::move(chunked_chars));
         free_memory(std::move(chunked_ranks));
