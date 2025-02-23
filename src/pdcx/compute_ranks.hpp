@@ -448,6 +448,6 @@ struct LexicographicRankPhase {
         return local_ranks;
     }
 
-}; // namespace dsss::dcx
+};
 
 } // namespace dsss::dcx

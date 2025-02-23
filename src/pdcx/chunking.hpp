@@ -100,15 +100,27 @@ struct Chunking {
         }
         KASSERT(write_it == chunked_chars.end());
         return chunked_chars;
-     
-        // uint64_t start = chunk.start_index;
-        //     uint64_t limit = std::min(start + chars_with_padding, local_string.size());
-        //     for (uint64_t i = start; i < limit; i++) {
-        //         chunked_chars.push_back(local_string[i]);
-        //     }
-        //     for (uint64_t i = 0; i < chars_with_padding - (limit - start); i++) {
-        //         chunked_chars.push_back(fill_char);
-        //     }
+    }
+
+    std::vector<index_type> get_chunked_ranks(std::vector<Chunk>& chunks,
+                                              uint64_t ranks_with_padding,
+                                              std::vector<index_type>& local_ranks,
+                                              auto get_ranks_pos,
+                                              index_type padding_rank) {
+        KASSERT(num_local_chunks == chunks.size());
+        std::vector<index_type> chunked_ranks(num_local_chunks * ranks_with_padding, padding_rank);
+        auto write_it = chunked_ranks.begin();
+        for (auto& chunk: chunks) {
+            uint64_t first_rank = get_ranks_pos(local_ranks, chunk.start_index);
+            auto start = local_ranks.begin() + first_rank;
+            uint64_t len = std::min(ranks_with_padding, local_ranks.size() - first_rank);
+            KASSERT(start + len <= local_ranks.end());
+            std::copy_n(start, len, write_it);
+            write_it += ranks_with_padding;
+            KASSERT(write_it <= chunked_ranks.end());
+        }
+        KASSERT(write_it == chunked_ranks.end());
+        return chunked_ranks;
     }
 
     std::vector<uint32_t> get_chunk_sizes(std::vector<Chunk>& chunks,

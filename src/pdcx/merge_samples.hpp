@@ -471,99 +471,42 @@ struct MergeSamplePhase {
         auto& timer = measurements::timer();
         using SA = std::vector<index_type>;
 
-        // randomized chunking
-        timer.synchronize_and_start("phase_04_space_effient_sort_chunking_create_chunks");
-
-        CharPacking<char_type, X> packing(info.largest_char);
-
         double char_packing_ratio = use_packing ? config.packing_ratio : 1;
         auto materialize_chars = [&](std::vector<char_type>& local_string, uint64_t char_pos) {
             return materialize_characters(local_string, char_pos, char_packing_ratio);
         };
 
-        struct Chunk {
-            index_type start_index;
-            uint32_t target_pe;
-        };
-        std::vector<int64_t> send_cnt_chars(comm.size(), 0);
-        std::vector<int64_t> send_cnt_ranks(comm.size(), 0);
-        std::vector<int64_t> send_cnt_index(comm.size(), 0);
-
-        uint64_t total_chars = mpi_util::all_reduce_sum(info.local_chars, comm);
-        uint64_t chunk_size = config.avg_chunks_pe; // TODO adapt to new config
-        uint64_t num_local_chunks = util::div_ceil(info.local_chars, chunk_size);
+        // randomized chunking
+        timer.synchronize_and_start("phase_04_space_effient_sort_chunking_create_chunks");
+        chunking::Chunking<char_type, index_type> chunking(comm, info, config.avg_chunks_pe);
+        using Chunk = chunking::Chunking<char_type, index_type>::Chunk;
+        std::vector<Chunk> chunks = chunking.get_random_chunks(config.seed);
 
         // add padding to be able to materialize last suffix in chunk
-        uint64_t num_dc_samples = util::div_ceil(chunk_size, X) * D + 1;
-        uint64_t chars_with_padding = chunk_size + char_packing_ratio * X - 1;
+        uint64_t chars_with_padding = chunking.get_chunk_size() + char_packing_ratio * X;
+        uint64_t num_dc_samples = util::div_ceil(chunking.get_chunk_size(), X) * D + 1;
         uint64_t ranks_with_padding = num_dc_samples + D - 1;
+        index_type padding_rank = std::numeric_limits<index_type>::max();
 
-        std::mt19937 rng(config.seed + comm.rank());
-        std::uniform_int_distribution<uint32_t> dist(0, comm.size() - 1);
+        auto get_ranks_positions = [&](std::vector<index_type>& local_ranks, uint64_t chunk_start) {
+            return get_ranks_pos(local_ranks, chunk_start);
+        };
 
-        DBG("create chunks");
-
-        // create chunks in evenly spaced intervals
-        std::vector<Chunk> chunks;
-        chunks.reserve(num_local_chunks);
-        for (uint64_t i = 0; i < num_local_chunks; i++) {
-            Chunk chunk = {i * chunk_size, dist(rng)};
-            chunks.push_back(chunk);
-            send_cnt_chars[chunk.target_pe] += chars_with_padding;
-            send_cnt_ranks[chunk.target_pe] += ranks_with_padding;
-            send_cnt_index[chunk.target_pe] += 1;
-        }
-
-        // sort chunks by PE
-        ips4o::sort(chunks.begin(), chunks.end(), [&](const Chunk& a, const Chunk& b) {
-            return a.target_pe < b.target_pe;
-        });
-
-        // store global index of beginning of each chunk
+        std::vector<char_type> chunked_chars =
+            chunking.get_chunked_chars(chunks, chars_with_padding, local_string);
+        std::vector<index_type> chunked_ranks = chunking.get_chunked_ranks(chunks,
+                                                                          ranks_with_padding,
+                                                                          local_ranks,
+                                                                          get_ranks_positions,
+                                                                          padding_rank);
         std::vector<index_type> chunk_global_index =
-            extract_attribute<Chunk, index_type>(chunks, [&](Chunk& c) {
-                return index_type(info.chars_before + c.start_index);
-            });
-
-        // linearize data
-        std::vector<char_type> chunked_chars;
-        std::vector<index_type> chunked_ranks;
-        std::vector<uint32_t> chunk_sizes;
-        chunked_chars.reserve(chars_with_padding * num_local_chunks);
-        chunked_ranks.reserve(ranks_with_padding * num_local_chunks);
-        chunk_sizes.reserve(num_local_chunks);
-
-        char_type fill_char = char_type(0);
-        uint64_t padding_rank = total_chars + 1;
-
-        DBG("fill chunks");
-        for (auto& chunk: chunks) {
-            // chars
-            uint64_t start = chunk.start_index;
-            uint64_t limit = std::min(start + chars_with_padding, local_string.size());
-            for (uint64_t i = start; i < limit; i++) {
-                chunked_chars.push_back(local_string[i]);
-            }
-            for (uint64_t i = 0; i < chars_with_padding - (limit - start); i++) {
-                chunked_chars.push_back(fill_char);
-            }
-            uint32_t size = std::min(chunk_size, (info.local_chars - start));
-            chunk_sizes.push_back(size);
-
-            // ranks
-            uint64_t first_rank = get_ranks_pos(local_ranks, start);
-            limit = std::min(first_rank + ranks_with_padding, local_ranks.size());
-            for (uint64_t i = first_rank; i < limit; i++) {
-                chunked_ranks.push_back(local_ranks[i]);
-            }
-            for (uint64_t i = 0; i < ranks_with_padding - (limit - first_rank); i++) {
-                chunked_ranks.push_back(padding_rank);
-            }
-        }
+            chunking.get_chunk_global_index(chunks, info.chars_before);
+        std::vector<uint32_t> chunk_sizes = chunking.get_chunk_sizes(chunks, info.local_chars);
+        std::vector<int64_t> send_cnt_chars = chunking.get_send_counts(chunks, chars_with_padding);
+        std::vector<int64_t> send_cnt_ranks = chunking.get_send_counts(chunks, ranks_with_padding);
+        std::vector<int64_t> send_cnt_index = chunking.get_send_counts(chunks, 1);
 
         // sanity checks
-        KASSERT(chunked_chars.size() == chars_with_padding * num_local_chunks);
-        KASSERT(chunked_ranks.size() == ranks_with_padding * num_local_chunks);
         KASSERT(std::accumulate(send_cnt_chars.begin(), send_cnt_chars.end(), 0)
                 == (int64_t)chunked_chars.size());
         KASSERT(std::accumulate(send_cnt_ranks.begin(), send_cnt_ranks.end(), 0)
@@ -574,8 +517,6 @@ struct MergeSamplePhase {
         free_memory(std::move(local_ranks));
         timer.stop();
 
-        DBG("alltoall chunks");
-
         // exchange linearized data
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_alltoall_chunks");
         chunked_chars = mpi_util::alltoallv_combined(chunked_chars, send_cnt_chars, comm);
@@ -583,7 +524,6 @@ struct MergeSamplePhase {
         chunk_global_index = mpi_util::alltoallv_combined(chunk_global_index, send_cnt_index, comm);
         chunk_sizes = mpi_util::alltoallv_combined(chunk_sizes, send_cnt_index, comm);
         timer.stop();
-
 
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_mapping");
         uint64_t received_chunks = chunk_global_index.size();
@@ -643,10 +583,10 @@ struct MergeSamplePhase {
                 rank_pos += DC::IN_DC[global_index % X];
             }
         }
-        KASSERT(mpi_util::all_reduce_sum(num_materialized_samples, comm) == total_chars);
+        KASSERT(mpi_util::all_reduce_sum(num_materialized_samples, comm) == info.total_chars);
 
         // log imbalance
-        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, total_chars, comm);
+        double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
         report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
                        comm,
@@ -662,7 +602,6 @@ struct MergeSamplePhase {
 
         std::vector<uint64_t> sa_bucket_size;
         sa_bucket_size.reserve(num_buckets);
-
 
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
@@ -726,7 +665,8 @@ struct MergeSamplePhase {
         free_memory(std::move(chunk_sizes));
 
         // log imbalance of received suffixes
-        double bucket_imbalance_received = get_imbalance_bucket(sa_bucket_size, total_chars, comm);
+        double bucket_imbalance_received =
+            get_imbalance_bucket(sa_bucket_size, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
         report_on_root("--> Randomized Bucket Imbalance Received "
                            + std::to_string(bucket_imbalance_received),
@@ -740,16 +680,12 @@ struct MergeSamplePhase {
                 comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
         }
 
-        DBG("transpose blocks");
-
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
         SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
                                                          sa_bucket_size,
                                                          comm,
                                                          config.rearrange_buckets_balanced);
         timer.stop();
-
-
         return local_SA;
     }
 }; // namespace dsss::dcx
