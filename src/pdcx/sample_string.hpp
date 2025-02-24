@@ -210,16 +210,13 @@ struct SampleStringPhase {
         // materialize samples
         std::vector<SampleString> local_samples;
         double packing_ratio = use_packing ? config.packing_ratio : 1;
-        DBG("compute sample strings");
         local_samples = compute_sample_strings(local_string, [&](auto& local_string, auto i) {
             return materialize_sample(local_string, i, packing_ratio);
         });
 
         // sort samples
-        DBG("sort samples");
         sort_samples(local_samples);
 
-        DBG("redist samples");
         bool redist_samples = redistribute_if_imbalanced(local_samples, config.min_imbalance, comm);
         get_stats_instance().redistribute_samples.push_back(redist_samples);
         return local_samples;

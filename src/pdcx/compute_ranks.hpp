@@ -361,12 +361,10 @@ struct LexicographicRankPhase {
                 uint64_t global_index = global_index_chunk + j;
                 uint64_t m = global_index % X;
                 if (is_in_dc<DC>(m)) {
-                    for (uint64_t k = 0; k < num_buckets - 1; k++) {
-                        if (cmp_index_substring(chunked_chars, suffix_start, bucket_splitter[k])) {
-                            block_id = k;
-                            break;
-                        }
-                    }
+                    auto cmp = [&](int64_t k) {
+                        return cmp_index_substring(chunked_chars, suffix_start, bucket_splitter[k]);
+                    };
+                    block_id = util::binary_search(0, num_buckets - 1, cmp);
                     bucket_sizes[block_id]++;
                     sample_to_bucket[suffix_start] = block_id;
                     materialized_samples++;
@@ -447,7 +445,6 @@ struct LexicographicRankPhase {
         flag_unique_ranks(local_ranks);
         return local_ranks;
     }
-
 };
 
 } // namespace dsss::dcx

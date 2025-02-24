@@ -29,6 +29,7 @@
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
 #include "strings/char_container.hpp"
+#include "util/binary_search.hpp"
 #include "util/division.hpp"
 #include "util/memory.hpp"
 #include "util/printing.hpp"
@@ -588,29 +589,20 @@ struct MergeSamplePhase {
                                                                    rank_pos,
                                                                    materialize_chars);
                     sample.index = global_index;
-                    for (int64_t k = 0; k < num_buckets - 1; k++) {
-                        if (sample < global_splitters[k]) {
-                            block_id = k;
-                            break;
-                        }
-                    }
-                } else {
-                    for (int64_t k = 0; k < num_buckets - 1; k++) {
-                        auto cmp = [&]() {
-                            for (uint64_t i = suffix_start; i < suffix_start + X - 1; i++) {
-                                char_type c = chunked_chars[i];
-                                if (c != global_splitters[k].chars.at(i - suffix_start)) {
-                                    return c < global_splitters[k].chars.at(i - suffix_start);
-                                }
-                            }
-                            return false;
-                        };
+                    auto cmp = [&](int64_t k) { return sample < global_splitters[k]; };
+                    block_id = util::binary_search(0, num_buckets - 1, cmp);
 
-                        if (cmp()) {
-                            block_id = k;
-                            break;
+                } else {
+                    auto cmp = [&](int64_t k) {
+                        for (uint64_t i = suffix_start; i < suffix_start + X - 1; i++) {
+                            char_type c = chunked_chars[i];
+                            if (c != global_splitters[k].chars.at(i - suffix_start)) {
+                                return c < global_splitters[k].chars.at(i - suffix_start);
+                            }
                         }
-                    }
+                        return false;
+                    };
+                    block_id = util::binary_search(0, num_buckets - 1, cmp);
                 }
 
                 bucket_sizes[block_id]++;

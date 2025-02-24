@@ -11,6 +11,7 @@
 #include "pdcx/config.hpp"
 #include "pdcx/sample_string.hpp"
 #include "sorters/sample_sort_common.hpp"
+#include "util/binary_search.hpp"
 #include "util/printing.hpp"
 
 namespace dsss::dcx {
@@ -105,12 +106,8 @@ struct SpaceEfficientSort {
         // assign each substring to a block
         for (uint64_t i = 0; i < local_chars; i++) {
             uint8_t block_id = blocks - 1;
-            for (uint64_t j = 0; j < blocks - 1; j++) {
-                if (cmp_substring(i, j)) {
-                    block_id = j;
-                    break;
-                }
-            }
+            auto cmp = [&](int64_t k) { return (cmp_substring(i, k)); };
+            block_id = util::binary_search(0, blocks - 1, cmp);
             bucket_sizes[block_id]++;
             sample_to_block[i] = block_id;
         }
@@ -132,12 +129,8 @@ struct SpaceEfficientSort {
         for (uint64_t i = 0; i < local_size; i++) {
             uint8_t block_id = blocks - 1;
             DataType element = get_element_at(i);
-            for (uint64_t j = 0; j < blocks - 1; j++) {
-                if (cmp_element(element, global_splitters[j])) {
-                    block_id = j;
-                    break;
-                }
-            }
+            auto cmp = [&](int64_t k) { return cmp_element(element, global_splitters[k]); };
+            block_id = util::binary_search(0, blocks - 1, cmp);
             bucket_sizes[block_id]++;
             sample_to_block[i] = block_id;
         }
