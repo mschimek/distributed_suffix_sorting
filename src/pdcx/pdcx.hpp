@@ -814,7 +814,8 @@ public:
                            config.print_phases);
 
             if (config.use_randomized_chunks) {
-                if (config.use_compressed_buckets) {
+                // probabilty is higher to crash on small inputs
+                if (config.use_compressed_buckets && recursion_depth == 0) {
                     local_SA = phase4.space_effient_sort_chunking_SA_compressed(local_string,
                                                                                 sample_ranks,
                                                                                 bucket_splitter,
