@@ -168,6 +168,11 @@ void configure_cli() {
                 "use_compressed_buckets",
                 pdcx_config.use_compressed_buckets,
                 "Store the bucket mapping compressed in the same memory as the SA.");
+    cp.add_bytes('A',
+                 "pack_extra_words",
+                 pdcx_config.pack_extra_words,
+                 "Use specificed number of extra words when packing characters into words. "
+                 "Currently supports 0 and 1.");
 
 
     // sorter configuration
@@ -416,59 +421,154 @@ void run_pdcx(kamping::Communicator<>& comm) {
 }
 
 
-template <bool small_alphabet = true>
+template <typename DCXParam, uint64_t EXTRA_WORDS = 0>
 void run_packed_dcx_variant(kamping::Communicator<>& comm) {
     using namespace dcx;
-    using DCXParam = DC21Param;
-    double dcx = 21;
-    if constexpr (!small_alphabet) {
-        // 8-bit variant
-        using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
-        double packed_chars = 3 * 8;
-        pdcx_config.packing_ratio = packed_chars / dcx;
-        report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
-        report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
-        report_on_root("bits_per_char=8", comm);
-        run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
-                 char_type,
-                 index_type>(comm);
+    using WordType = uint64_t;
+    constexpr uint64_t X = DCXParam::X;
+    constexpr uint64_t BITS_WORD = 8 * sizeof(WordType);
+
+    // logging
+    uint64_t packed_chars;
+    uint64_t bits_per_char;
+    double packing_ratio;
+
+    if (input_alphabet_size <= (1 << 3) - 1) {
+        // 3-bit variant
+        constexpr uint64_t BITS_CHAR = 3;
+        constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
+        // constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
+        // TODO only for this experiment
+        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS + 1;
+        constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
+        using CharContainer = KPackedInteger<NUM_WORDS, char_type, BITS_CHAR, WordType>;
+        using PDCXVariant = PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>;
+
+        pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
+        packed_chars = PACKED_CHARS;
+        bits_per_char = BITS_CHAR;
+        packing_ratio = pdcx_config.packing_ratio;
+        run_pdcx<PDCXVariant, char_type, index_type>(comm);
+    } else if (input_alphabet_size <= (1 << 5) - 1) {
+        // 5-bit variant
+        constexpr uint64_t BITS_CHAR = 5;
+        constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
+        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
+        constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
+        using CharContainer = KPackedInteger<NUM_WORDS, char_type, BITS_CHAR, WordType>;
+        using PDCXVariant = PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>;
+
+        pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
+        packed_chars = PACKED_CHARS;
+        bits_per_char = BITS_CHAR;
+        packing_ratio = pdcx_config.packing_ratio;
+        run_pdcx<PDCXVariant, char_type, index_type>(comm);
     } else {
-        if (input_alphabet_size <= 7) {
-            // 3 bit variant (<= 7 chars) 21 chars per 64 bit
-            using CharContainer = DoublePackedInteger<char_type, 3, uint64_t, uint64_t>;
-            double packed_chars = 2 * 21;
-            pdcx_config.packing_ratio = packed_chars / dcx;
-            report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
-            report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
-            report_on_root("bits_per_char=3", comm);
-            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
-                     char_type,
-                     index_type>(comm);
-        }
-        // 5 bit variant (<= 32 chars), 12 chars per 64 bit
-        else if (input_alphabet_size <= 32) {
-            using CharContainer = DoublePackedInteger<char_type, 5, uint64_t, uint64_t>;
-            double packed_chars = 2 * 12;
-            pdcx_config.packing_ratio = packed_chars / dcx;
-            report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
-            report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
-            report_on_root("bits_per_char=5", comm);
-            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
-                     char_type,
-                     index_type>(comm);
-        } else {
-            // 8-bit variant
-            using CharContainer = TriplePackedInteger<char_type, 8, uint64_t, uint64_t, uint64_t>;
-            double packed_chars = 3 * 8;
-            pdcx_config.packing_ratio = packed_chars / dcx;
-            report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
-            report_on_root("_packing_ratio=" + std::to_string(pdcx_config.packing_ratio), comm);
-            report_on_root("bits_per_char=8", comm);
-            run_pdcx<PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>,
-                     char_type,
-                     index_type>(comm);
-        }
+        // 8-bit variant
+        constexpr uint64_t BITS_CHAR = 8;
+        constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
+        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
+        constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
+        using CharContainer = KPackedInteger<NUM_WORDS, char_type, BITS_CHAR, WordType>;
+        using PDCXVariant = PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>;
+
+        pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
+        packed_chars = PACKED_CHARS;
+        bits_per_char = BITS_CHAR;
+        packing_ratio = pdcx_config.packing_ratio;
+        run_pdcx<PDCXVariant, char_type, index_type>(comm);
     }
+
+    // logging
+    report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
+    report_on_root("_packing_ratio=" + std::to_string(packing_ratio), comm);
+    report_on_root("bits_per_char=" + std::to_string(bits_per_char), comm);
+}
+
+void select_dcx_variant(kamping::Communicator<>& comm) {
+    using namespace dcx;
+
+    // if (dcx_variant == "dc3") {
+    //     using DCXParam = DC3Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc7") {
+    //     using DCXParam = DC7Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc13") {
+    //     using DCXParam = DC13Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc21") {
+    //     using DCXParam = DC21Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc31") {
+    //     using DCXParam = DC31Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc39") {
+    //     using DCXParam = DC39Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc57") {
+    //     using DCXParam = DC57Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc73") {
+    //     using DCXParam = DC73Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc91") {
+    //     using DCXParam = DC91Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc95") {
+    //     using DCXParam = DC95Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // } else if (dcx_variant == "dc133") {
+    //     using DCXParam = DC133Param;
+    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    // }
+
+    // using DCXParam = DC21Param;
+    // using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
+    // run_pdcx<PDCXVariant, char_type, index_type>(comm);
+}
+
+template <uint64_t EXTRA_WORDS = 0>
+void select_packed_dcx_variant(kamping::Communicator<>& comm) {
+    using namespace dcx;
+
+    if (dcx_variant == "dc3") {
+        using DCXParam = DC3Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc7") {
+        using DCXParam = DC7Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc13") {
+        using DCXParam = DC13Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc21") {
+        using DCXParam = DC21Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc31") {
+        using DCXParam = DC31Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc39") {
+        using DCXParam = DC39Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc57") {
+        using DCXParam = DC57Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc73") {
+        using DCXParam = DC73Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc91") {
+        using DCXParam = DC91Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc95") {
+        using DCXParam = DC95Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc133") {
+        using DCXParam = DC133Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    }
+
+    // using DCXParam = DC21Param;
+    // run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
 }
 
 void compute_sa(kamping::Communicator<>& comm) {
@@ -487,49 +587,17 @@ void compute_sa(kamping::Communicator<>& comm) {
 
     if (pdcx_config.use_char_packing_merging || pdcx_config.use_char_packing_samples) {
         /*** better variant with packed integers  ***/
-        static constexpr bool small_alphabet = true;
-        run_packed_dcx_variant<small_alphabet>(comm);
+        if (pdcx_config.pack_extra_words == 0) {
+            constexpr uint64_t EXTRA_WORDS = 0;
+            select_packed_dcx_variant<EXTRA_WORDS>(comm);
+        } else {
+            constexpr uint64_t EXTRA_WORDS = 1;
+            select_packed_dcx_variant<EXTRA_WORDS>(comm);
+        }
 
     } else {
         /*** standard variant with atomic sorting or string sorting  ***/
-
-        // if (dcx_variant == "dc3") {
-        //     using DCXParam = DC3Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc7") {
-        //     using DCXParam = DC7Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc13") {
-        //     using DCXParam = DC13Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc21") {
-        //     using DCXParam = DC21Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc31") {
-        //     using DCXParam = DC31Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc39") {
-        //     using DCXParam = DC39Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc57") {
-        //     using DCXParam = DC57Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc73") {
-        //     using DCXParam = DC73Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc91") {
-        //     using DCXParam = DC91Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc95") {
-        //     using DCXParam = DC95Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // } else if (dcx_variant == "dc133") {
-        //     using DCXParam = DC133Param;
-        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-        // }
-
-        using DCXParam = DC21Param;
-        run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        select_dcx_variant(comm);
     }
 
     algo_timer.stop();

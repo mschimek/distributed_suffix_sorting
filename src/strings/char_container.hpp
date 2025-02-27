@@ -479,3 +479,67 @@ struct QuadruplePackedInteger {
     DoublePackedInteger<char_type, 8, uint64_t, uint64_t> chars1;
     DoublePackedInteger<char_type, 8, uint64_t, uint64_t> chars2;
 };
+
+template <size_t K, typename char_type, size_t BitsChar, typename IntType = uint64_t>
+struct KPackedInteger {
+    KPackedInteger() : packed_integers() {}
+
+    static constexpr size_t BITS_INT_TYPE = 8 * sizeof(IntType);
+    static constexpr size_t CHARS_PER_WORD = BITS_INT_TYPE / BitsChar;
+    using PackedIntegerType = PackedInteger<char_type, BitsChar, IntType>;
+
+    template <typename CharIterator>
+    KPackedInteger(CharIterator begin, CharIterator end) {
+        size_t num_chars = end - begin;
+        for (size_t k = 0; k < K; k++) {
+            size_t limit = std::min((k + 1) * CHARS_PER_WORD, num_chars);
+            auto start = begin + k * CHARS_PER_WORD;
+            auto end = begin + limit;
+            packed_integers[k] = PackedIntegerType(start, end);
+        }
+    }
+
+    char_type at(uint64_t i) const {
+        size_t k = i / CHARS_PER_WORD;
+        size_t j = i - k * CHARS_PER_WORD;
+        return packed_integers[k].at(j);
+    }
+
+    bool operator<(const KPackedInteger& other) const {
+        return packed_integers < other.packed_integers;
+    }
+    bool operator==(const KPackedInteger& other) const {
+        return packed_integers == other.packed_integers;
+    }
+    bool operator!=(const KPackedInteger& other) const {
+        return packed_integers != other.packed_integers;
+    }
+
+    // dummy method, do not use!
+    const char_type* cbegin_chars() const {
+        std::cout << "iterator not supported for PackedInteger\n";
+        exit(1);
+        return (const char_type*)&packed_integers;
+    }
+    const char_type* cend_chars() const { return (const char_type*)&packed_integers; }
+
+    char_type* begin() const {
+        std::cout << "iterator not supported for PackedInteger\n";
+        exit(1);
+        return (char_type*)&packed_integers;
+    }
+    char_type* end() const { return (char_type*)&packed_integers; }
+    size_t size() const { return 0; }
+
+
+    std::string to_string() const {
+        std::string out = "";
+        for (size_t k = 0; k < K; k++) {
+            out += packed_integers[k].to_string();
+        }
+        return out;
+    }
+
+    static constexpr bool IS_PACKED = true;
+    std::array<PackedIntegerType, K> packed_integers;
+};

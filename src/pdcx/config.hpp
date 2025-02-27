@@ -36,6 +36,7 @@ struct PDCXConfig {
     uint64_t avg_chunks_pe = 1000;
     uint64_t seed = 0;
     uint64_t container_variant = 0;
+    uint64_t pack_extra_words = 0;
     double packing_ratio = 1;
     double discarding_threshold = 0.7;
     double min_imbalance = 0.25;
@@ -89,6 +90,7 @@ struct PDCXConfig {
         std::cout << V(rearrange_buckets_balanced) << "\n";
         std::cout << V(use_robust_tie_break) << "\n";
         std::cout << V(use_compressed_buckets) << "\n";
+        std::cout << V(pack_extra_words) << "\n";
         std::cout << std::endl;
 
         sample_sort_config.print_config();
