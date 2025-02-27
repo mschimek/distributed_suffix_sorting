@@ -437,9 +437,7 @@ void run_packed_dcx_variant(kamping::Communicator<>& comm) {
         // 3-bit variant
         constexpr uint64_t BITS_CHAR = 3;
         constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
-        // constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
-        // TODO only for this experiment
-        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS + 1;
+        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
         constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
         using CharContainer = KPackedInteger<NUM_WORDS, char_type, BITS_CHAR, WordType>;
         using PDCXVariant = PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>;
