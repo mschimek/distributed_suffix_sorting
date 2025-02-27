@@ -331,9 +331,10 @@ struct MergeSamplePhase {
                                       config.sample_sort_config);
     }
 
-    void sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
+    void sort_merge_samples(std::vector<MergeSamples>& merge_samples, bool use_packing) const {
         auto& timer = measurements::timer();
-        if (config.use_string_sort && !config.use_string_sort_tie_breaking) {
+        bool use_string_sort = config.use_string_sort && !use_packing;
+        if (use_string_sort && !config.use_string_sort_tie_breaking) {
             timer.synchronize_and_start("phase_04_sort_merge_samples");
             auto lcps = string_sort_merge_samples(merge_samples);
             timer.stop();
@@ -342,7 +343,7 @@ struct MergeSamplePhase {
             tie_break_ranks(merge_samples, lcps);
             timer.stop();
 
-        } else if (config.use_string_sort && config.use_string_sort_tie_breaking) {
+        } else if (use_string_sort && config.use_string_sort_tie_breaking) {
             timer.synchronize_and_start("phase_04_sort_merge_samples");
             string_sort_tie_break_merge_samples(merge_samples);
             timer.stop();
@@ -442,7 +443,7 @@ struct MergeSamplePhase {
                 timer.stop();
             }
 
-            sort_merge_samples(samples);
+            sort_merge_samples(samples, use_packing);
 
             // extract SA of block
             for (auto& sample: samples) {
@@ -690,7 +691,7 @@ struct MergeSamplePhase {
             timer.stop();
             KASSERT(samples.size() == bucket_sizes[k]);
 
-            sort_merge_samples(samples);
+            sort_merge_samples(samples, use_packing);
 
             timer.start("phase_04_space_effient_sort_wait_after_sort");
             comm.barrier();
@@ -846,7 +847,7 @@ struct MergeSamplePhase {
             timer.stop();
             KASSERT(samples.size() == bucket_sizes[k]);
 
-            sort_merge_samples(samples);
+            sort_merge_samples(samples, use_packing);
 
             timer.start("phase_04_space_effient_sort_wait_after_sort");
             comm.barrier();

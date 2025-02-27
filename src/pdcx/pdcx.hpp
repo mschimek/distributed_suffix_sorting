@@ -837,7 +837,7 @@ public:
             std::vector<MergeSamples> merge_samples =
                 phase4.construct_merge_samples(local_string, sample_ranks, use_packed_merging);
             free_memory(std::move(sample_ranks));
-            phase4.sort_merge_samples(merge_samples);
+            phase4.sort_merge_samples(merge_samples, use_packed_merging);
             local_SA = phase4.extract_SA(merge_samples);
         }
 

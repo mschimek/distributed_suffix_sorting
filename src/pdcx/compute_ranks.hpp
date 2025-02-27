@@ -144,11 +144,12 @@ struct LexicographicRankPhase {
                                 std::vector<RankIndex>& concat_rank_buckets,
                                 std::vector<uint64_t>& received_size,
                                 SampleString& prev_sample,
-                                uint64_t bucket_nr) {
+                                uint64_t bucket_nr,
+                                bool use_packing) {
         auto& timer = measurements::timer();
         // Phase 1: sort dc-samples
         timer.synchronize_and_start("phase_01_02_sort_samples");
-        phase1.sort_samples(samples);
+        phase1.sort_samples(samples, use_packing);
         timer.stop();
 
         // Phase 2: compute lexicographic ranks
@@ -274,7 +275,8 @@ struct LexicographicRankPhase {
                                    concat_rank_buckets,
                                    received_size,
                                    prev_sample,
-                                   k);
+                                   k,
+                                   use_packing);
         }
         KASSERT(mpi_util::all_reduce_sum(concat_rank_buckets.size(), comm)
                 == info.total_sample_size);
@@ -420,7 +422,8 @@ struct LexicographicRankPhase {
                                    concat_rank_buckets,
                                    received_size,
                                    prev_sample,
-                                   k);
+                                   k,
+                                   use_packing);
         }
         KASSERT(mpi_util::all_reduce_sum(concat_rank_buckets.size(), comm)
                 == info.total_sample_size);

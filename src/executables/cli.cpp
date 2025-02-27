@@ -487,44 +487,50 @@ void compute_sa(kamping::Communicator<>& comm) {
 
     if (pdcx_config.use_char_packing_merging || pdcx_config.use_char_packing_samples) {
         /*** better variant with packed integers  ***/
-
-        // string sorter is not supported with packed integers
-        pdcx_config.use_string_sort = false;
         static constexpr bool small_alphabet = true;
-        // static constexpr bool small_alphabet = false;
-
         run_packed_dcx_variant<small_alphabet>(comm);
 
     } else {
         /*** standard variant with atomic sorting or string sorting  ***/
 
-        // if (dcx_variant == "dc21") {
+        // if (dcx_variant == "dc3") {
+        //     using DCXParam = DC3Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc7") {
+        //     using DCXParam = DC7Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc13") {
+        //     using DCXParam = DC13Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc21") {
         //     using DCXParam = DC21Param;
         //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
         // } else if (dcx_variant == "dc31") {
         //     using DCXParam = DC31Param;
         //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc39") {
+        //     using DCXParam = DC39Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc57") {
+        //     using DCXParam = DC57Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc73") {
+        //     using DCXParam = DC73Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc91") {
+        //     using DCXParam = DC91Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+        // } else if (dcx_variant == "dc95") {
+        //     using DCXParam = DC95Param;
+        //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
         // } else if (dcx_variant == "dc133") {
         //     using DCXParam = DC133Param;
         //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
         // }
+
         using DCXParam = DC21Param;
         run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     }
-
-
-    // if (dcx_variant == "dc3") {
-    // run_pdcx<PDCX<char_type, index_type, DC3Param>, char_type, index_type>(comm);
-    // } else
-    // if (dcx_variant == "dc7") {
-    //     run_pdcx<PDCX<char_type, index_type, DC7Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc13") {
-    //     run_pdcx<PDCX<char_type, index_type, DC13Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc21") {
-    //     run_pdcx<PDCX<char_type, index_type, DC21Param>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc31") {
-    //     run_pdcx<PDCX<char_type, index_type, DC31Param>, char_type, index_type>(comm);
-    // }
 
     algo_timer.stop();
     algo_timer.aggregate_and_print(kamping::measurements::FlatPrinter{});

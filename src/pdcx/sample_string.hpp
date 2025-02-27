@@ -181,10 +181,10 @@ struct SampleStringPhase {
                                       config.sample_sort_config);
     }
 
-    void sort_samples(std::vector<SampleString>& local_samples) const {
+    void sort_samples(std::vector<SampleString>& local_samples, bool use_packing) const {
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_01_sort_local_samples");
-        if (config.use_string_sort) {
+        if (config.use_string_sort && !use_packing) {
             string_sort_samples(local_samples);
         } else {
             atomic_sort_samples(local_samples);
@@ -215,7 +215,7 @@ struct SampleStringPhase {
         });
 
         // sort samples
-        sort_samples(local_samples);
+        sort_samples(local_samples, use_packing);
 
         bool redist_samples = redistribute_if_imbalanced(local_samples, config.min_imbalance, comm);
         get_stats_instance().redistribute_samples.push_back(redist_samples);
