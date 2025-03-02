@@ -498,6 +498,7 @@ struct MergeSamplePhase {
         chunking::Chunking<char_type, index_type> chunking(comm, info, config.avg_chunks_pe);
         using Chunk = chunking::Chunking<char_type, index_type>::Chunk;
         std::vector<Chunk> chunks = chunking.get_random_chunks(config.seed);
+        get_stats_instance().chunk_sizes_phase4.push_back(chunking.get_chunk_size());
 
         // add padding to be able to materialize last suffix in chunk
         uint64_t chars_with_padding = chunking.get_chunk_size() + char_packing_ratio * X;
@@ -566,6 +567,7 @@ struct MergeSamplePhase {
                                          auto materialize_chars) {
         auto [chunked_chars, chunked_ranks, chunk_global_index, chunk_sizes] =
             chunked_data.get_chunked_data_ref();
+
         uint64_t chars_with_padding = chunked_data.chars_with_padding;
         uint64_t ranks_with_padding = chunked_data.ranks_with_padding;
         uint64_t received_chunks = chunk_global_index.size();

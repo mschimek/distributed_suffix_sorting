@@ -48,6 +48,8 @@ struct Statistics {
         sample_sort_avg_lcp.clear();
         sample_sort_lcp_total_reduction.clear();
         sample_sort_avg_prefix_length.clear();
+        chunk_sizes_phase1.clear();
+        chunk_sizes_phase4.clear();
         }
 
     void print() const {
@@ -134,6 +136,10 @@ struct Statistics {
         print_vector(sample_sort_lcp_total_reduction, ",");
         std::cout << "sample_sort_avg_prefix_length=";
         print_vector(sample_sort_avg_prefix_length, ",");
+        std::cout << "chunk_sizes_phase1=";
+        print_vector(chunk_sizes_phase1, ",");
+        std::cout << "chunk_sizes_phase4=";
+        print_vector(chunk_sizes_phase4, ",");
         std::cout << std::endl;    
     }
 
@@ -180,6 +186,8 @@ struct Statistics {
     std::vector<double> sample_sort_avg_lcp;
     std::vector<double> sample_sort_lcp_total_reduction;
     std::vector<double> sample_sort_avg_prefix_length;
+    std::vector<uint64_t> chunk_sizes_phase1;
+    std::vector<uint64_t> chunk_sizes_phase4;
     
 };
 

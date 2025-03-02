@@ -318,6 +318,7 @@ struct LexicographicRankPhase {
         chunking::Chunking<char_type, index_type> chunking(comm, info, config.avg_chunks_pe);
         using Chunk = chunking::Chunking<char_type, index_type>::Chunk;
         std::vector<Chunk> chunks = chunking.get_random_chunks(config.seed);
+        get_stats_instance().chunk_sizes_phase1.push_back(chunking.get_chunk_size());
 
         // add padding to be able to materialize last suffix in chunk
         uint64_t chars_with_padding = chunking.get_chunk_size() + char_packing_ratio * X;

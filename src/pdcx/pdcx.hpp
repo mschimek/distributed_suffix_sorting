@@ -888,6 +888,7 @@ public:
             std::reverse(stats.avg_segment.begin(), stats.avg_segment.end());
             std::reverse(stats.max_segment.begin(), stats.max_segment.end());
             std::reverse(stats.bucket_sizes.begin(), stats.bucket_sizes.end());
+            std::reverse(stats.chunk_sizes_phase4.begin(), stats.chunk_sizes_phase4.end());
         }
 
         KASSERT(local_string.size() == info.local_chars);
