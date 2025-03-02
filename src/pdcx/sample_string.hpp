@@ -163,6 +163,29 @@ struct SampleStringPhase {
         return local_samples;
     }
 
+    void tie_break_samples(std::vector<SampleString>& local_samples) const {
+        // assuming that chars are not split by sample sorter
+        auto cmp_index = [](const SampleString& a, const SampleString& b) {
+            return a.index < b.index;
+        };
+
+        // sort each segement with the same chars by index
+        int64_t start = 0;
+        int64_t end = 0;
+        for (int64_t i = 0; i < (int64_t)local_samples.size() - 1; i++) {
+            bool segment_ended = local_samples[i].chars != local_samples[i + 1].chars;
+            if (segment_ended) {
+                end = i + 1;
+                ips4o::sort(local_samples.begin() + start, local_samples.begin() + end, cmp_index);
+                start = end;
+            }
+        }
+        end = local_samples.size();
+        if (local_samples.size() > 1) {
+            ips4o::sort(local_samples.begin() + start, local_samples.end(), cmp_index);
+        }
+    }
+
     // sort samples using an atomic sorter
     void atomic_sort_samples(std::vector<SampleString>& local_samples) const {
         atomic_sorter.sort(local_samples, std::less<>{});
@@ -170,8 +193,6 @@ struct SampleStringPhase {
 
     // sort samples using a string sorter
     void string_sort_samples(std::vector<SampleString>& local_samples) const {
-        // mpi::sample_sort_strings(local_samples, comm, string_sorter);
-        std::vector<LcpType> lcps;
         // dummy tie break
         auto tie_break = [&](std::vector<SampleString>& merge_samples) { return; };
         sample_sort_strings_tie_break(local_samples,
@@ -181,11 +202,35 @@ struct SampleStringPhase {
                                       config.sample_sort_config);
     }
 
+    void string_sort_tie_break_samples(std::vector<SampleString>& local_samples) const {
+        // break ties by comparing index
+        auto tie_break = [&](std::vector<SampleString>& local_samples) {
+            tie_break_samples(local_samples);
+        };
+        // use full comparison function to determine splitters
+        auto cmp = [&](const SampleString& a, const SampleString& b) {
+            if (a.chars != b.chars) {
+                return a.chars < b.chars;
+            }
+            return a.index < b.index;
+        };
+        sample_sort_strings_tie_break(local_samples,
+                                      comm,
+                                      string_sorter,
+                                      tie_break,
+                                      cmp,
+                                      config.sample_sort_config);
+    }
+
     void sort_samples(std::vector<SampleString>& local_samples, bool use_packing) const {
+        const bool use_string_sort = config.use_string_sort && !use_packing;
+        const bool use_tie_break = config.use_string_sort_tie_breaking_phase1;
         auto& timer = measurements::timer();
         timer.synchronize_and_start("phase_01_sort_local_samples");
-        if (config.use_string_sort && !use_packing) {
+        if (use_string_sort && !use_tie_break) {
             string_sort_samples(local_samples);
+        } else if (use_string_sort && use_tie_break) {
+            string_sort_tie_break_samples(local_samples);
         } else {
             atomic_sort_samples(local_samples);
         }

@@ -94,11 +94,6 @@ void configure_cli() {
                   "discarding_threshold",
                   pdcx_config.discarding_threshold,
                   "Value between [0, 1], threshold when to use discarding optimization.");
-    cp.add_flag('C',
-                "use_lcps_tie_breaking",
-                pdcx_config.use_lcps_tie_breaking,
-                "Compute LCPs in string sorting and use them speedup comparison of strings in tie "
-                "breaking.");
     cp.add_bytes('m',
                  "num_samples_splitters",
                  pdcx_config.num_samples_splitters,
@@ -210,10 +205,14 @@ void configure_cli() {
                 "use_string_sort",
                 pdcx_config.use_string_sort,
                 "Use string sorting instead of atomic sorting.");
+    cp.add_flag('C',
+                "use_string_sort_tie_breaking_phase1",
+                pdcx_config.use_string_sort_tie_breaking_phase1,
+                "Use string sorting with index-tie-breaking in Phase 1.");
     cp.add_flag('K',
-                "use_string_sort_tie_breaking",
-                pdcx_config.use_string_sort_tie_breaking,
-                "Use string sorting with tie breaking in Phase 4.");
+                "use_string_sort_tie_breaking_phase4",
+                pdcx_config.use_string_sort_tie_breaking_phase4,
+                "Use string sorting with rank-tie-breaking in Phase 4.");
     cp.add_flag('L',
                 "use_loser_tree",
                 sample_sort_config.use_loser_tree,
@@ -486,19 +485,20 @@ void run_packed_dcx_variant(kamping::Communicator<>& comm) {
 void select_dcx_variant(kamping::Communicator<>& comm) {
     using namespace dcx;
 
-    // if (dcx_variant == "dc3") {
-    //     using DCXParam = DC3Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc7") {
-    //     using DCXParam = DC7Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc13") {
-    //     using DCXParam = DC13Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc21") {
-    //     using DCXParam = DC21Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
-    // } else if (dcx_variant == "dc31") {
+    if (dcx_variant == "dc3") {
+        using DCXParam = DC3Param;
+        run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc7") {
+        using DCXParam = DC7Param;
+        run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc13") {
+        using DCXParam = DC13Param;
+        run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    } else if (dcx_variant == "dc21") {
+        using DCXParam = DC21Param;
+        run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    }
+    // else if (dcx_variant == "dc31") {
     //     using DCXParam = DC31Param;
     //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     // } else if (dcx_variant == "dc39") {
@@ -521,28 +521,29 @@ void select_dcx_variant(kamping::Communicator<>& comm) {
     //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     // }
 
-    using DCXParam = DC31Param;
-    using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
-    run_pdcx<PDCXVariant, char_type, index_type>(comm);
+    // using DCXParam = DC31Param;
+    // using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
+    // run_pdcx<PDCXVariant, char_type, index_type>(comm);
 }
 
 template <uint64_t EXTRA_WORDS = 0>
 void select_packed_dcx_variant(kamping::Communicator<>& comm) {
     using namespace dcx;
 
-    // if (dcx_variant == "dc3") {
-    //     using DCXParam = DC3Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
-    // } else if (dcx_variant == "dc7") {
-    //     using DCXParam = DC7Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
-    // } else if (dcx_variant == "dc13") {
-    //     using DCXParam = DC13Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
-    // } else if (dcx_variant == "dc21") {
-    //     using DCXParam = DC21Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
-    // } else if (dcx_variant == "dc31") {
+    if (dcx_variant == "dc3") {
+        using DCXParam = DC3Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc7") {
+        using DCXParam = DC7Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc13") {
+        using DCXParam = DC13Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } else if (dcx_variant == "dc21") {
+        using DCXParam = DC21Param;
+        run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    } 
+    // else if (dcx_variant == "dc31") {
     //     using DCXParam = DC31Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
     // } else if (dcx_variant == "dc39") {
@@ -565,8 +566,8 @@ void select_packed_dcx_variant(kamping::Communicator<>& comm) {
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
     // }
 
-    using DCXParam = DC31Param;
-    run_packed_dcx_variant<DCXParam, 0>(comm);
+    // using DCXParam = DC31Param;
+    // run_packed_dcx_variant<DCXParam, 0>(comm);
 }
 
 void compute_sa(kamping::Communicator<>& comm) {
@@ -589,8 +590,8 @@ void compute_sa(kamping::Communicator<>& comm) {
             constexpr uint64_t EXTRA_WORDS = 0;
             select_packed_dcx_variant<EXTRA_WORDS>(comm);
         } else {
-            constexpr uint64_t EXTRA_WORDS = 1;
-            select_packed_dcx_variant<EXTRA_WORDS>(comm);
+            // constexpr uint64_t EXTRA_WORDS = 1;
+            // select_packed_dcx_variant<EXTRA_WORDS>(comm);
         }
 
     } else {

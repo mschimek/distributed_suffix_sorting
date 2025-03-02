@@ -324,7 +324,8 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
     };
 
     // first element has no compressed lcp
-    KASSERT(lcps.size() == uint64_t(0) || lcps[0] == LcpType(0)); // ensure this by setting lcps to 0 before sending
+    KASSERT(lcps.size() == uint64_t(0)
+            || lcps[0] == LcpType(0)); // ensure this by setting lcps to 0 before sending
 
     // PE might not receive any element
     if (local_data.size() > 0) {
@@ -393,6 +394,7 @@ void sample_sort_strings_tie_break(std::vector<DataType>& local_data,
                                    kamping::Communicator<>& comm,
                                    SeqStringSorterWrapper sorting_wrapper,
                                    auto tie_break,
+                                   auto comp,
                                    SampleSortConfig config = SampleSortConfig()) {
     auto& timer = kamping::measurements::timer();
 
@@ -420,7 +422,7 @@ void sample_sort_strings_tie_break(std::vector<DataType>& local_data,
         tie_break(local_data);
         timer.stop();
     };
-    auto comp = std::less<>{}; // < operator of MergeSample struct has tie breaking
+    // auto comp = std::less<>{}; // < operator of MergeSample struct has tie breaking
 
     auto distributed_sorter = [&](std::vector<DataType>& local_splitters) {
         SampleSortConfig config2 = config;
@@ -492,6 +494,20 @@ void sample_sort_strings_tie_break(std::vector<DataType>& local_data,
     } else {
         local_sorter(local_data);
     }
+}
+
+template <typename DataType>
+void sample_sort_strings_tie_break(std::vector<DataType>& local_data,
+                                   kamping::Communicator<>& comm,
+                                   SeqStringSorterWrapper sorting_wrapper,
+                                   auto tie_break,
+                                   SampleSortConfig config = SampleSortConfig()) {
+    sample_sort_strings_tie_break(local_data,
+                                  comm,
+                                  sorting_wrapper,
+                                  tie_break,
+                                  std::less<DataType>{},
+                                  config);
 }
 
 

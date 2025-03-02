@@ -32,7 +32,7 @@ struct PDCXConfig {
     uint32_t num_samples_phase3 = 10000;
     uint64_t ams_levels = 1;
     uint64_t memory_seq_string_sorter = 0;
-    uint64_t num_samples_splitters = 1000;
+    uint64_t num_samples_splitters = 1000000;
     uint64_t avg_chunks_pe = 1000;
     uint64_t seed = 0;
     uint64_t container_variant = 0;
@@ -41,8 +41,8 @@ struct PDCXConfig {
     double discarding_threshold = 0.7;
     double min_imbalance = 0.25;
     bool use_string_sort = false;
-    bool use_string_sort_tie_breaking = false;
-    bool use_lcps_tie_breaking = false;
+    bool use_string_sort_tie_breaking_phase1 = false;
+    bool use_string_sort_tie_breaking_phase4 = false;
     bool use_random_sampling_splitters = false;
     bool balance_blocks_space_efficient_sort = false;
     bool use_randomized_chunks = false;
@@ -74,8 +74,8 @@ struct PDCXConfig {
         std::cout << V(buckets_phase3) << "\n";
         std::cout << V(num_samples_phase3) << "\n";
         std::cout << V(use_string_sort) << "\n";
-        std::cout << V(use_string_sort_tie_breaking) << "\n";
-        std::cout << V(use_lcps_tie_breaking) << "\n";
+        std::cout << V(use_string_sort_tie_breaking_phase1) << "\n";
+        std::cout << V(use_string_sort_tie_breaking_phase4) << "\n";
         std::cout << V(use_char_packing_samples) << "\n";
         std::cout << V(use_char_packing_merging) << "\n";
         std::cout << V(ams_levels) << "\n";

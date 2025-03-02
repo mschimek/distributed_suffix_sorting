@@ -310,7 +310,7 @@ struct MergeSamplePhase {
     }
 
     std::vector<LcpType> string_sort_merge_samples(std::vector<MergeSamples>& merge_samples) const {
-        bool output_lcps = config.use_lcps_tie_breaking;
+        bool output_lcps = false;
         std::vector<LcpType> lcps = mpi::sample_sort_strings(merge_samples,
                                                              comm,
                                                              string_sorter,
@@ -333,8 +333,9 @@ struct MergeSamplePhase {
 
     void sort_merge_samples(std::vector<MergeSamples>& merge_samples, bool use_packing) const {
         auto& timer = measurements::timer();
-        bool use_string_sort = config.use_string_sort && !use_packing;
-        if (use_string_sort && !config.use_string_sort_tie_breaking) {
+        const bool use_string_sort = config.use_string_sort && !use_packing;
+        const bool use_tie_break = config.use_string_sort_tie_breaking_phase4;
+        if (use_string_sort && !use_tie_break) {
             timer.synchronize_and_start("phase_04_sort_merge_samples");
             auto lcps = string_sort_merge_samples(merge_samples);
             timer.stop();
@@ -343,7 +344,7 @@ struct MergeSamplePhase {
             tie_break_ranks(merge_samples, lcps);
             timer.stop();
 
-        } else if (use_string_sort && config.use_string_sort_tie_breaking) {
+        } else if (use_string_sort && use_tie_break) {
             timer.synchronize_and_start("phase_04_sort_merge_samples");
             string_sort_tie_break_merge_samples(merge_samples);
             timer.stop();
