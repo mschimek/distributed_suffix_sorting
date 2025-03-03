@@ -722,6 +722,7 @@ struct MergeSamplePhase {
         free_memory(std::move(chunked_ranks));
         free_memory(std::move(chunk_global_index));
         free_memory(std::move(chunk_sizes));
+        free_memory(std::move(chunked_data));
 
         // log imbalance of received suffixes
         double bucket_imbalance_received =
@@ -882,6 +883,7 @@ struct MergeSamplePhase {
         free_memory(std::move(chunked_ranks));
         free_memory(std::move(chunk_global_index));
         free_memory(std::move(chunk_sizes));
+        free_memory(std::move(chunked_data));
 
         // delete last entries that do not belong to SA
         uint64_t num_idx =

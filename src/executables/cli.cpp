@@ -437,14 +437,17 @@ void run_packed_dcx_variant(kamping::Communicator<>& comm) {
         constexpr uint64_t BITS_CHAR = 3;
         constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
         constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
+        // constexpr uint64_t NUM_WORDS = 2; // TEMPORARY for dc21 and dc31
         constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
         using CharContainer = KPackedInteger<NUM_WORDS, char_type, BITS_CHAR, WordType>;
         using PDCXVariant = PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>;
+
 
         pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
         packed_chars = PACKED_CHARS;
         bits_per_char = BITS_CHAR;
         packing_ratio = pdcx_config.packing_ratio;
+
         run_pdcx<PDCXVariant, char_type, index_type>(comm);
     } else if (input_alphabet_size <= (1 << 5) - 1) {
         // 5-bit variant
@@ -521,7 +524,7 @@ void select_dcx_variant(kamping::Communicator<>& comm) {
     //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     // }
 
-    using DCXParam = DC31Param;
+    using DCXParam = DC21Param;
     using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
     run_pdcx<PDCXVariant, char_type, index_type>(comm);
 }
@@ -539,14 +542,15 @@ void select_packed_dcx_variant(kamping::Communicator<>& comm) {
     // } else if (dcx_variant == "dc13") {
     //     using DCXParam = DC13Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
-    // } else if (dcx_variant == "dc21") {
+    // } else
+    // if (dcx_variant == "dc21") {
     //     using DCXParam = DC21Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
-    // } 
-    // else if (dcx_variant == "dc31") {
+    // } else if (dcx_variant == "dc31") {
     //     using DCXParam = DC31Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
-    // } else if (dcx_variant == "dc39") {
+    // }
+    // else if (dcx_variant == "dc39") {
     //     using DCXParam = DC39Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
     // } else if (dcx_variant == "dc57") {
@@ -566,8 +570,8 @@ void select_packed_dcx_variant(kamping::Communicator<>& comm) {
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
     // }
 
-    using DCXParam = DC31Param;
-    run_packed_dcx_variant<DCXParam, 0>(comm);
+    using DCXParam = DC21Param;
+    run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
 }
 
 void compute_sa(kamping::Communicator<>& comm) {
