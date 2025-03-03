@@ -855,7 +855,6 @@ public:
         if constexpr (DEBUG_SIZE)
             print_concatenated_size(local_SA, comm, "local_SA");
 
-
         //******* End Phase 4: Merge Suffixes  ********
 
         // logging

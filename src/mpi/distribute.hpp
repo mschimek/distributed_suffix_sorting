@@ -14,7 +14,7 @@
 #include "kamping/named_parameters.hpp"
 #include "mpi/alltoall.hpp"
 #include "mpi/reduce.hpp"
-#include "util/printing.hpp"
+#include "util/memory.hpp"
 
 namespace dsss::mpi_util {
 
@@ -165,12 +165,11 @@ std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
     return mpi_util::alltoallv_combined(local_data, send_cnts, comm);
 }
 
-
 /*
 Rearranges data that result from space efficient bucket sorting.
 Data is distributed equally amoung the PEs.
-Additional bookkeeping information (#PEs x #blocks) is required to correctly reorder the received data locally in an
-output buffer.
+Additional bookkeeping information (#PEs x #blocks) is required to correctly reorder the received
+data locally in an output buffer.
 */
 template <typename DataType>
 std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_data,
@@ -250,7 +249,6 @@ std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_dat
 
     local_data = mpi_util::alltoallv_combined(local_data, send_cnts, comm);
     std::vector<uint64_t> block_size_rcv = comm.alltoall(send_buf(block_size_send));
-
     KASSERT(local_data.size() == target_size);
 
     // rearrange data
@@ -259,6 +257,7 @@ std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_dat
     std::inclusive_scan(block_size_rcv.begin(),
                         block_size_rcv.end(),
                         pref_block_size_rcv.begin() + 1);
+
 
     // copy each received region in correct order into output buffer
     uint64_t write_index = 0;
@@ -275,8 +274,8 @@ std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_dat
         }
     }
 
-    std::swap(output_buffer, local_data);
-    return local_data;
+    free_memory(std::move(local_data));
+    return output_buffer;
 }
 
 template <typename DataType>
