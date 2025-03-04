@@ -94,7 +94,7 @@ std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
 // divide PEs into equal sized groups that will receive one block
 template <typename DataType>
 std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
-                                       std::vector<uint64_t> block_size,
+                                       std::vector<uint64_t> &block_size,
                                        Communicator<>& comm) {
     int64_t num_blocks = block_size.size();
     KASSERT(num_blocks <= (int64_t)comm.size());
@@ -173,7 +173,7 @@ data locally in an output buffer.
 */
 template <typename DataType>
 std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_data,
-                                                std::vector<uint64_t> block_size,
+                                                std::vector<uint64_t> &block_size,
                                                 Communicator<>& comm) {
     KASSERT(local_data.size()
             == std::accumulate(block_size.begin(), block_size.end(), uint64_t(0)));
@@ -280,7 +280,7 @@ std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_dat
 
 template <typename DataType>
 std::vector<DataType> transpose_blocks_wrapper(std::vector<DataType>& local_data,
-                                               std::vector<uint64_t> block_size,
+                                               std::vector<uint64_t> &block_size,
                                                Communicator<>& comm,
                                                bool balanced) {
     if (balanced) {

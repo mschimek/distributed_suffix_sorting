@@ -779,6 +779,10 @@ public:
             auto cmp_splitters = phase4.get_splitter_comparator();
 
             if (config.use_random_sampling_splitters || global_samples_splitters.empty()) {
+                report_on_root("--> using random samples for merging",
+                               comm,
+                               recursion_depth,
+                               config.print_phases);
                 SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort(comm, config);
                 timer.synchronize_and_start("phase_04_random_sample_splitters");
                 bucket_splitter = space_efficient_sort
@@ -791,6 +795,11 @@ public:
                 timer.stop();
             } else {
                 // convert uniform splitters
+                report_on_root("--> using uniform samples for merging",
+                               comm,
+                               recursion_depth,
+                               config.print_phases);
+
                 std::vector<MergePhaseSplitter> local_splitters;
                 for (auto& s: global_samples_splitters) {
                     int64_t local_index = int64_t(s.index) - int64_t(info.chars_before);

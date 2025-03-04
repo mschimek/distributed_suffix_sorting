@@ -32,7 +32,7 @@ struct PDCXConfig {
     uint32_t num_samples_phase3 = 10000;
     uint64_t ams_levels = 1;
     uint64_t memory_seq_string_sorter = 0;
-    uint64_t num_samples_splitters = 1000000;
+    uint64_t num_samples_splitters = 1000;
     uint64_t avg_chunks_pe = 1000;
     uint64_t seed = 0;
     uint64_t pack_extra_words = 0;
