@@ -50,47 +50,6 @@ struct SortingWrapper {
     inline void sort(std::vector<DataType>& local_data, Compare comp) {
 #ifdef INCLUDE_ALL_SORTERS
         MPI_Datatype my_mpi_type = kamping::mpi_datatype<DataType>();
-
-        // enum PartitioningStrategy {
-        //     INPLACE_AND_EQUAL_BUCKET_PARTITIONING,
-        //     INPLACE_PARTITIONING
-        // };
-
-        // enum DistributionStrategy {
-        // EXCHANGE_WITHOUT_RECV_SIZES,
-        // EXCHANGE_WITH_RECV_SIZES,
-        // EXCHANGE_WITH_RECV_SIZES_AND_PORTS
-        // };
-
-
-        // AMS parameters
-        double imbalance = 1.10;
-        bool use_dma = true;
-        Ams::PartitioningStrategy part =
-            Ams::PartitioningStrategy::INPLACE_AND_EQUAL_BUCKET_PARTITIONING;
-        Ams::DistributionStrategy distr =
-            Ams::DistributionStrategy::EXCHANGE_WITH_RECV_SIZES_AND_PORTS;
-        bool use_ips4o = true;
-        bool use_two_tree = true;
-        bool ams_print = print;
-        // temp
-        /*
-        if (sample_sort_config.ams_partition_strategy == 0) {
-            part = Ams::PartitioningStrategy::INPLACE_AND_EQUAL_BUCKET_PARTITIONING;
-        } else {
-            part = Ams::PartitioningStrategy::INPLACE_PARTITIONING;
-        }
-
-        if (sample_sort_config.ams_distributiong_strategy == 0) {
-            distr = Ams::DistributionStrategy::EXCHANGE_WITHOUT_RECV_SIZES;
-        } else if (sample_sort_config.ams_distributiong_strategy == 1) {
-            distr = Ams::DistributionStrategy::EXCHANGE_WITH_RECV_SIZES;
-        } else {
-            distr = Ams::DistributionStrategy::EXCHANGE_WITH_RECV_SIZES_AND_PORTS;
-        }
-        */
-
-
         switch (sorter) {
             case SampleSort:
                 sample_sort(local_data, comp, comm, sample_sort_config);
@@ -106,40 +65,6 @@ struct SortingWrapper {
                 break;
             case Ams:
                 Ams::sortLevel(my_mpi_type, local_data, num_levels, gen, rcomm, comp);
-                
-                // this part is for debugging AMS, need to switch to debug-memory branch in AMS
-                // std::cout << comm.rank() << " "
-                //           << "calling AMS, print=" << print << "\n";
-                // Ams::sortLevel(my_mpi_type,
-                //                local_data,
-                //                num_levels,
-                //                gen,
-                //                rcomm,
-                //                comp,
-                //                imbalance,
-                //                use_dma,
-                //                part,
-                //                distr,
-                //                use_ips4o,
-                //                use_two_tree,
-                //                ams_print);
-
-                // void sortLevel(MPI_Datatype mpi_type, std::vector<T>& data, int l,
-                //                std::mt19937_64& async_gen,
-                //                const RBC::Comm& comm,
-                //                Comp comp = Comp(),
-                //                double imbalance = 1.10,
-                //                bool use_dma = true,
-                //                PartitioningStrategy part =
-                //                  PartitioningStrategy::INPLACE_AND_EQUAL_BUCKET_PARTITIONING,
-                //                DistributionStrategy distr =
-                //                  DistributionStrategy::EXCHANGE_WITH_RECV_SIZES_AND_PORTS,
-                //                bool use_ips4o = true,
-                //                bool use_two_tree = true,
-                //                bool print = false);
-
-                // Ams::sortLevel(my_mpi_type, local_data, num_levels, gen, rcomm, comp, print); //
-                // BIG BUG
                 break;
             default:
                 sample_sort(local_data, comp, comm);

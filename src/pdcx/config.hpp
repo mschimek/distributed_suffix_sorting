@@ -35,7 +35,6 @@ struct PDCXConfig {
     uint64_t num_samples_splitters = 1000000;
     uint64_t avg_chunks_pe = 1000;
     uint64_t seed = 0;
-    uint64_t container_variant = 0;
     uint64_t pack_extra_words = 0;
     double packing_ratio = 1;
     double discarding_threshold = 0.7;
@@ -86,7 +85,6 @@ struct PDCXConfig {
         std::cout << V(use_randomized_chunks) << "\n";
         std::cout << V(avg_chunks_pe) << "\n";
         std::cout << V(packing_ratio) << "\n";
-        std::cout << V(container_variant) << "\n";
         std::cout << V(rearrange_buckets_balanced) << "\n";
         std::cout << V(use_robust_tie_break) << "\n";
         std::cout << V(use_compressed_buckets) << "\n";
