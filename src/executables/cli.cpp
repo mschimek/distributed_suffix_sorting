@@ -1,6 +1,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <string>
 
 #include <tlx/cmdline_parser.hpp>
@@ -102,7 +103,8 @@ void configure_cli() {
     cp.add_flag('U',
                 "use_random_sampling_splitters",
                 pdcx_config.use_random_sampling_splitters,
-                "Use random sampling to determine block splitters in space efficient sort.");
+                "Use random sampling to determine block splitters in space efficient sort. "
+                "Currently the samples are sorted on a single PE.");
     cp.add_flag('B',
                 "balance_blocks_space_efficient_sort",
                 pdcx_config.balance_blocks_space_efficient_sort,
@@ -118,7 +120,9 @@ void configure_cli() {
                   "<F>",
                   buckets_merging,
                   "Number of buckets to use for space efficient sorting in merging phase on each "
-                  "recursion level. Missing values default to 1. Example: 16,8,4");
+                  "recursion level. Missing values default to 1. Example: 16,8,4. If you "
+                  "use large bucket sizes you should also set num_samples_splitters (-m) high "
+                  "enough. 16 b log b for b buckets should be enough.");
     cp.add_bytes('D',
                  "buckets_phase3",
                  pdcx_config.buckets_phase3,
@@ -293,7 +297,7 @@ std::vector<uint32_t> parse_list_of_ints(std::string s) {
 }
 
 void check_limit(std::vector<uint32_t>& vec,
-                 uint32_t limit,
+                 uint64_t limit,
                  std::string name,
                  kamping::Communicator<>& comm) {
     if (vec.size() == 0)
@@ -309,9 +313,9 @@ void parse_enums_and_lists(kamping::Communicator<>& comm) {
     map_strings_to_enum(comm);
     pdcx_config.buckets_samples = parse_list_of_ints(buckets_samples);
     pdcx_config.buckets_merging = parse_list_of_ints(buckets_merging);
-    // TODO adjust limit
-    check_limit(pdcx_config.buckets_samples, 255, "buckets_samples", comm);
-    check_limit(pdcx_config.buckets_merging, 255, "buckets_merging", comm);
+    uint64_t limit = std::numeric_limits<uint16_t>::max();
+    check_limit(pdcx_config.buckets_samples, limit, "buckets_samples", comm);
+    check_limit(pdcx_config.buckets_merging, limit, "buckets_merging", comm);
 }
 
 void report_arguments(kamping::Communicator<>& comm) {

@@ -571,19 +571,27 @@ public:
         uint64_t buckets_merging = config.buckets_merging_at_level(recursion_depth);
         const bool use_bucket_sorting_samples = buckets_samples > 1;
         const bool use_bucket_sorting_merging = buckets_merging > 1;
-        if (use_bucket_sorting_samples && buckets_samples > comm.size()) {
+        const bool too_many_buckets_samples =
+            buckets_samples > comm.size() && !config.rearrange_buckets_balanced;
+        const bool too_many_buckets_merging =
+            buckets_merging > comm.size() && !config.rearrange_buckets_balanced;
+        if (use_bucket_sorting_samples && too_many_buckets_samples) {
             buckets_samples = comm.size();
-            report_on_root("Warning: #buckets_samples > #PEs, setting blocks to #PEs.",
-                           comm,
-                           recursion_depth,
-                           config.print_phases);
+            report_on_root(
+                "Warning: #buckets_samples > #PEs, setting blocks to #PEs. Set "
+                "--rearrange_buckets_balanced (-E) flag to support more buckets than PEs.",
+                comm,
+                recursion_depth,
+                config.print_phases);
         }
-        if (use_bucket_sorting_merging && buckets_merging > comm.size()) {
+        if (use_bucket_sorting_merging && too_many_buckets_merging) {
             buckets_merging = comm.size();
-            report_on_root("Warning: #buckets_merging > #PEs, setting blocks to #PEs.",
-                           comm,
-                           recursion_depth,
-                           config.print_phases);
+            report_on_root(
+                "Warning: #buckets_merging > #PEs, setting blocks to #PEs. Set "
+                "--rearrange_buckets_balanced (-E) flag to support more buckets than PEs.",
+                comm,
+                recursion_depth,
+                config.print_phases);
         }
 
         // logging

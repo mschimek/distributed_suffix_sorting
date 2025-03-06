@@ -134,6 +134,7 @@ struct MergeSamplePhase {
     using SplitterType = MergeSamples;
     using CharContainerType = CharContainer;
     using RankContainerType = std::array<index_type, DC::D>;
+    using BucketMappingType = SpaceEfficientSort<char_type, index_type, DC>::BucketMappingType;
 
     static constexpr uint32_t X = DC::X;
     static constexpr uint32_t D = DC::D;
@@ -382,7 +383,7 @@ struct MergeSamplePhase {
             return materialize_merge_sample_at(local_string, local_ranks, i, materialize_chars);
         };
         std::vector<uint64_t> bucket_sizes;
-        std::vector<uint8_t> sample_to_bucket;
+        std::vector<BucketMappingType> sample_to_bucket;
         if (config.use_robust_tie_break) {
             auto cmp_splitter = MergeSamples::cmp_by_chars_and_ranks;
             std::tie(bucket_sizes, sample_to_bucket) =
@@ -559,7 +560,7 @@ struct MergeSamplePhase {
 
     struct BucketMapping {
         std::vector<uint64_t> bucket_sizes;
-        std::vector<uint8_t> sample_to_bucket;
+        std::vector<BucketMappingType> sample_to_bucket;
     };
 
     BucketMapping compute_bucket_mapping(ChunkedData& chunked_data,
@@ -575,15 +576,16 @@ struct MergeSamplePhase {
         // compute bucket sizes and mapping
         int64_t num_buckets = global_splitters.size() + 1;
         std::vector<uint64_t> bucket_sizes(num_buckets, 0);
-        std::vector<uint8_t> sample_to_bucket(chunked_chars.size(), num_buckets);
-
+        std::vector<BucketMappingType> sample_to_bucket(chunked_chars.size(), num_buckets);
+        KASSERT(num_buckets < std::numeric_limits<BucketMappingType>::max());
+        
         uint64_t num_materialized_samples = 0;
         for (uint64_t i = 0; i < received_chunks; i++) {
             uint64_t start_chunk = i * chars_with_padding;
             uint64_t rank_pos = i * ranks_with_padding;
             uint64_t global_index_chunk = chunk_global_index[i];
             for (uint64_t j = 0; j < chunk_sizes[i]; j++) {
-                uint8_t block_id = num_buckets - 1;
+                BucketMappingType block_id = num_buckets - 1;
                 uint64_t suffix_start = start_chunk + j;
                 uint64_t global_index = global_index_chunk + j;
                 if (config.use_robust_tie_break) {
@@ -643,7 +645,7 @@ struct MergeSamplePhase {
         BucketMapping bucket_mapping =
             compute_bucket_mapping(chunked_data, global_splitters, materialize_chars);
         std::vector<uint64_t>& bucket_sizes = bucket_mapping.bucket_sizes;
-        std::vector<uint8_t>& sample_to_bucket = bucket_mapping.sample_to_bucket;
+        std::vector<BucketMappingType>& sample_to_bucket = bucket_mapping.sample_to_bucket;
 
         // log imbalance
         double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
@@ -775,7 +777,7 @@ struct MergeSamplePhase {
         BucketMapping bucket_mapping =
             compute_bucket_mapping(chunked_data, global_splitters, materialize_chars);
         std::vector<uint64_t>& bucket_sizes = bucket_mapping.bucket_sizes;
-        std::vector<uint8_t>& sample_to_bucket = bucket_mapping.sample_to_bucket;
+        std::vector<BucketMappingType>& sample_to_bucket = bucket_mapping.sample_to_bucket;
 
 
         // store suffixes to be materialized in SA

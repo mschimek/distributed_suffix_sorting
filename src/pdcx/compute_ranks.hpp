@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -61,6 +62,7 @@ struct DCRankIndex {
 template <typename char_type, typename index_type, typename DC, typename SampleString>
 struct LexicographicRankPhase {
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
+    using BucketMappingType = SpaceEfficientSort<char_type, index_type, DC>::BucketMappingType;
 
     Communicator<>& comm;
     PDCXConfig& config;
@@ -222,8 +224,8 @@ struct LexicographicRankPhase {
 
         // assign dc-substrings to blocks
         std::vector<uint64_t> bucket_sizes(num_buckets, 0);
-        std::vector<uint8_t> sample_to_bucket(local_string.size(), num_buckets);
-        KASSERT(num_buckets <= 255ull);
+        std::vector<BucketMappingType> sample_to_bucket(local_string.size(), num_buckets);
+        KASSERT(num_buckets <= std::numeric_limits<BucketMappingType>::max());
 
         uint64_t offset = info.chars_before % X;
         uint64_t _local_sample_size = 0;
@@ -232,7 +234,7 @@ struct LexicographicRankPhase {
             uint64_t m = (i + offset) % X;
             if (is_in_dc<DC>(m)) {
                 _local_sample_size++;
-                uint8_t block_id = num_buckets - 1;
+                BucketMappingType block_id = num_buckets - 1;
                 for (uint64_t j = 0; j < num_buckets - 1; j++) {
                     if (cmp_index_substring(local_string, i, bucket_splitter[j], X - 1)) {
                         block_id = j;
@@ -351,15 +353,15 @@ struct LexicographicRankPhase {
         timer.synchronize_and_start("phase_01_02_chunking_mapping");
         // assign dc-substrings to blocks
         std::vector<uint64_t> bucket_sizes(num_buckets, 0);
-        std::vector<uint8_t> sample_to_bucket(chunked_chars.size(), num_buckets);
-        KASSERT(num_buckets <= 255ull);
+        std::vector<BucketMappingType> sample_to_bucket(chunked_chars.size(), num_buckets);
+        KASSERT(num_buckets <= std::numeric_limits<BucketMappingType>::max());
 
         uint64_t materialized_samples = 0;
         for (uint64_t i = 0; i < received_chunks; i++) {
             uint64_t start_chunk = i * chars_with_padding;
             uint64_t global_index_chunk = chunk_global_index[i];
             for (uint64_t j = 0; j < chunk_sizes[i]; j++) {
-                uint8_t block_id = num_buckets - 1;
+                BucketMappingType block_id = num_buckets - 1;
                 uint64_t suffix_start = start_chunk + j;
                 uint64_t global_index = global_index_chunk + j;
                 uint64_t m = global_index % X;

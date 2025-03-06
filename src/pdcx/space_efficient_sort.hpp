@@ -23,7 +23,7 @@ struct SpaceEfficientSort {
     // X chars and one 0-character
     using Splitter = std::array<char_type, DC::X + 1>;
     // using SampleString = DCSampleString<char_type, index_type, DC>;
-    // using block_id = uint8_t;
+    using BucketMappingType = uint16_t;
 
     Communicator<>& comm;
     PDCXConfig& config;
@@ -85,13 +85,13 @@ struct SpaceEfficientSort {
         std::vector<SampleString> global_splitters = comm.allgatherv(send_buf(local_splitters));
         return global_splitters;
     }
-    std::pair<std::vector<uint64_t>, std::vector<uint8_t>>
+    std::pair<std::vector<uint64_t>, std::vector<BucketMappingType>>
     compute_sample_to_block_mapping(std::vector<char_type>& local_string,
                                     uint64_t local_chars,
                                     uint64_t blocks,
                                     auto get_kth_splitter_at) {
         std::vector<uint64_t> bucket_sizes(blocks, 0);
-        std::vector<uint8_t> sample_to_block(local_string.size(), 0);
+        std::vector<BucketMappingType> sample_to_block(local_string.size(), 0);
         KASSERT(blocks <= 255ull);
 
         auto cmp_substring = [&](uint64_t local_index, uint64_t splitter_nr) {
@@ -105,7 +105,7 @@ struct SpaceEfficientSort {
 
         // assign each substring to a block
         for (uint64_t i = 0; i < local_chars; i++) {
-            uint8_t block_id = blocks - 1;
+            BucketMappingType block_id = blocks - 1;
             auto cmp = [&](int64_t k) { return (cmp_substring(i, k)); };
             block_id = util::binary_search(0, blocks - 1, cmp);
             bucket_sizes[block_id]++;
@@ -115,19 +115,19 @@ struct SpaceEfficientSort {
     }
 
     template <typename DataType>
-    std::pair<std::vector<uint64_t>, std::vector<uint8_t>>
+    std::pair<std::vector<uint64_t>, std::vector<BucketMappingType>>
     compute_sample_to_block_mapping(auto get_element_at,
                                     auto cmp_element,
                                     uint64_t local_size,
                                     std::vector<DataType>& global_splitters) {
         uint64_t blocks = global_splitters.size() + 1;
         std::vector<uint64_t> bucket_sizes(blocks, 0);
-        std::vector<uint8_t> sample_to_block(local_size, 0);
+        std::vector<BucketMappingType> sample_to_block(local_size, 0);
         KASSERT(blocks <= 255ull);
 
         // assign each substring to a block
         for (uint64_t i = 0; i < local_size; i++) {
-            uint8_t block_id = blocks - 1;
+            BucketMappingType block_id = blocks - 1;
             DataType element = get_element_at(i);
             auto cmp = [&](int64_t k) { return cmp_element(element, global_splitters[k]); };
             block_id = util::binary_search(0, blocks - 1, cmp);
