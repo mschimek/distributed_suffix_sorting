@@ -119,7 +119,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
         is_sorted &= (rts[i] <= rts[i + 1]);
     }
 
-    KASSERT(rts.size() > 0);
+    KASSERT(rts.size() > 0ull);
     auto smaller_triple = mpi_util::shift_right(rts.back(), comm);
     auto larger_triple = mpi_util::shift_left(rts.front(), comm);
 

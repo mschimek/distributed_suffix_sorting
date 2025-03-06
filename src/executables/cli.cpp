@@ -515,9 +515,9 @@ void select_dcx_variant(kamping::Communicator<>& comm) {
     //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     // }
 
-    using DCXParam = DC39Param;
-    using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
-    run_pdcx<PDCXVariant, char_type, index_type>(comm);
+    // using DCXParam = DC39Param;
+    // using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
+    // run_pdcx<PDCXVariant, char_type, index_type>(comm);
 }
 
 template <uint64_t EXTRA_WORDS = 0>

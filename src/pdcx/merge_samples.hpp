@@ -717,12 +717,12 @@ struct MergeSamplePhase {
 
         // ensure memory is freed
         free_memory(std::move(samples));
-        free_memory(std::move(sample_to_bucket));
         free_memory(std::move(chunked_chars));
         free_memory(std::move(chunked_ranks));
         free_memory(std::move(chunk_global_index));
         free_memory(std::move(chunk_sizes));
         free_memory(std::move(chunked_data));
+        free_memory(std::move(bucket_mapping));
 
         // log imbalance of received suffixes
         double bucket_imbalance_received =
@@ -806,7 +806,7 @@ struct MergeSamplePhase {
                 concat_sa_buckets[idx] = index_type(packed_chunk_and_idx);
             }
         }
-        free_memory(std::move(sample_to_bucket));
+        free_memory(std::move(bucket_mapping.sample_to_bucket));
 
         // log imbalance
         double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
@@ -880,12 +880,12 @@ struct MergeSamplePhase {
         }
         // ensure memory is freed
         free_memory(std::move(samples));
-        free_memory(std::move(sample_to_bucket));
         free_memory(std::move(chunked_chars));
         free_memory(std::move(chunked_ranks));
         free_memory(std::move(chunk_global_index));
         free_memory(std::move(chunk_sizes));
         free_memory(std::move(chunked_data));
+        free_memory(std::move(bucket_mapping));
 
         // delete last entries that do not belong to SA
         uint64_t num_idx =
