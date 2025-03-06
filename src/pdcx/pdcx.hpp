@@ -904,7 +904,7 @@ public:
         DBG("checking SA on recursion level " + std::to_string(recursion_depth));
         KASSERT(check_suffixarray(local_SA, local_string, comm),
                 "Suffix array is not sorted on level " + std::to_string(recursion_depth));
-        DBG("returing form recursion level " + std::to_string(recursion_depth));
+        DBG("returing from recursion level " + std::to_string(recursion_depth));
         return local_SA;
     }
 

@@ -777,10 +777,13 @@ struct MergeSamplePhase {
         std::vector<uint64_t>& bucket_sizes = bucket_mapping.bucket_sizes;
         std::vector<uint8_t>& sample_to_bucket = bucket_mapping.sample_to_bucket;
 
+
         // store suffixes to be materialized in SA
         uint64_t num_suffixes =
             std::accumulate(bucket_sizes.begin(), bucket_sizes.end(), uint64_t(0));
-        uint64_t estimated_size = (info.total_chars / comm.size()) * 1.25 + 10000;
+        uint64_t avg_size = (info.total_chars / comm.size());
+        uint64_t min_size = std::max(avg_size, num_suffixes);
+        uint64_t estimated_size = min_size * 1.25 + 10000;
         SA concat_sa_buckets(estimated_size, 0);
         uint64_t offset_sa_idx = estimated_size - num_suffixes;
         std::vector<uint64_t> bucket_idx(num_buckets, 0);

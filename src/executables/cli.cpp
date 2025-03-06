@@ -515,7 +515,7 @@ void select_dcx_variant(kamping::Communicator<>& comm) {
     //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     // }
 
-    using DCXParam = DC21Param;
+    using DCXParam = DC39Param;
     using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
     run_pdcx<PDCXVariant, char_type, index_type>(comm);
 }
@@ -559,8 +559,8 @@ void select_packed_dcx_variant(kamping::Communicator<>& comm) {
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
     // }
 
-    using DCXParam = DC21Param;
-    run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    using DCXParam = DC39Param;
+    run_packed_dcx_variant<DCXParam, 0>(comm);
 }
 
 void compute_sa(kamping::Communicator<>& comm) {

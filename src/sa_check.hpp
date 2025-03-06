@@ -110,12 +110,16 @@ bool check_suffixarray(std::vector<IndexType>& sa,
         return a.rank1 < b.rank1;
     });
 
+    // avoid empty PEs for small input
+    rts = mpi_util::distribute_data(rts, comm);
+
     local_size = rts.size();
     bool is_sorted = true;
-    for (size_t i = 0; i < local_size - 1; ++i) {
+    for (int64_t i = 0; i < int64_t(local_size) - 1; ++i) {
         is_sorted &= (rts[i] <= rts[i + 1]);
     }
 
+    KASSERT(rts.size() > 0);
     auto smaller_triple = mpi_util::shift_right(rts.back(), comm);
     auto larger_triple = mpi_util::shift_left(rts.front(), comm);
 
