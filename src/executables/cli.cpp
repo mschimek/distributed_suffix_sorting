@@ -534,7 +534,9 @@ void select_packed_dcx_variant(kamping::Communicator<>& comm) {
     // } else if (dcx_variant == "dc7") {
     //     using DCXParam = DC7Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
-    // } else if (dcx_variant == "dc13") {
+    // } else
+
+    // if (dcx_variant == "dc13") {
     //     using DCXParam = DC13Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
     // } else if (dcx_variant == "dc21") {
@@ -549,7 +551,9 @@ void select_packed_dcx_variant(kamping::Communicator<>& comm) {
     // } else if (dcx_variant == "dc57") {
     //     using DCXParam = DC57Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
-    // } else if (dcx_variant == "dc73") {
+    // }
+
+    // else if (dcx_variant == "dc73") {
     //     using DCXParam = DC73Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
     // } else if (dcx_variant == "dc91") {
@@ -586,10 +590,11 @@ void compute_sa(kamping::Communicator<>& comm) {
         if (pdcx_config.pack_extra_words == 0) {
             constexpr uint64_t EXTRA_WORDS = 0;
             select_packed_dcx_variant<EXTRA_WORDS>(comm);
-        } else {
-            constexpr uint64_t EXTRA_WORDS = 1;
-            select_packed_dcx_variant<EXTRA_WORDS>(comm);
         }
+        //  else {
+        //     constexpr uint64_t EXTRA_WORDS = 1;
+        //     select_packed_dcx_variant<EXTRA_WORDS>(comm);
+        // }
 
     } else {
         /*** standard variant with atomic sorting or string sorting  ***/

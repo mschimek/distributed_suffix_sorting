@@ -370,13 +370,14 @@ public:
             uint64_t local_size = local_ranks.size();
             uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
 
+            bool use_rquick = config.sample_sort_config.use_rquick_for_splitters;
             std::vector<RankRankIndex> splitters =
-                helper.template general_random_sample_splitters<RankRankIndex>(
-                    get_element_at,
-                    cmp_rri,
-                    local_size,
-                    buckets,
-                    total_random_samples);
+                helper.template general_random_sample_splitters<RankRankIndex>(get_element_at,
+                                                                               cmp_rri,
+                                                                               local_size,
+                                                                               buckets,
+                                                                               total_random_samples,
+                                                                               use_rquick);
 
 
             // 3. determine block mapping
@@ -793,13 +794,16 @@ public:
                                config.print_phases);
                 SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort(comm, config);
                 timer.synchronize_and_start("phase_04_random_sample_splitters");
+                uint64_t num_samples = config.num_samples_splitters;
+                bool use_rquick = config.sample_sort_config.use_rquick_for_splitters;
                 bucket_splitter = space_efficient_sort
                                       .template general_random_sample_splitters<MergePhaseSplitter>(
                                           get_merge_splitter_at,
                                           cmp_splitters,
                                           info.local_chars,
                                           buckets_merging,
-                                          config.num_samples_splitters);
+                                          num_samples,
+                                          use_rquick);
                 timer.stop();
             } else {
                 // convert uniform splitters

@@ -11,6 +11,7 @@
 #include "pdcx/config.hpp"
 #include "pdcx/sample_string.hpp"
 #include "sorters/sample_sort_common.hpp"
+#include "sorters/sorting_wrapper.hpp"
 #include "util/binary_search.hpp"
 #include "util/printing.hpp"
 
@@ -144,7 +145,8 @@ struct SpaceEfficientSort {
                                                           auto cmp_element,
                                                           uint64_t local_size,
                                                           uint64_t blocks,
-                                                          uint64_t total_samples) {
+                                                          uint64_t total_samples,
+                                                          bool use_rquick = false) {
         uint64_t n = comm.size();
         uint64_t local_samples = (total_samples + n - 1) / n;
         std::vector<DataType> local_splitters =
@@ -153,10 +155,17 @@ struct SpaceEfficientSort {
                                                     get_element_at,
                                                     comm);
 
-        std::vector<DataType> all_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
-        ips4o::sort(all_splitters.begin(), all_splitters.end(), cmp_element);
-
-        return mpi::sample_uniform_splitters(all_splitters, blocks - 1, comm);
+        if (use_rquick) {
+            mpi::SortingWrapper sorter(comm);
+            sorter.set_sorter(mpi::Rquick);
+            sorter.sort(local_splitters, cmp_element);
+            return get_uniform_splitters(local_splitters, blocks);
+        } else {
+            std::vector<DataType> all_splitters =
+                comm.allgatherv(kamping::send_buf(local_splitters));
+            ips4o::sort(all_splitters.begin(), all_splitters.end(), cmp_element);
+            return mpi::sample_uniform_splitters(all_splitters, blocks - 1, comm);
+        }
     }
 };
 double get_imbalance_bucket(std::vector<uint64_t>& bucket_sizes,
