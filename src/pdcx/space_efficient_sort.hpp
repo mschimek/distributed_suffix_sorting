@@ -27,9 +27,9 @@ struct SpaceEfficientSort {
     using BucketMappingType = uint16_t;
 
     Communicator<>& comm;
-    PDCXConfig& config;
+    PDCXConfig const& config;
 
-    SpaceEfficientSort(Communicator<>& _comm, PDCXConfig& _config) : comm(_comm), config(_config) {}
+    SpaceEfficientSort(Communicator<>& _comm, PDCXConfig const& _config) : comm(_comm), config(_config) {}
 
     std::array<char_type, DC::X + 1> materialize_splitter(std::vector<char_type>& local_string,
                                                           uint64_t i) const {

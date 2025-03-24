@@ -64,7 +64,7 @@ class PDCX {
     using MergePhase = MergeSamplePhase<char_type, index_type, DC, CharContainerMerging>;
 
 public:
-    PDCX(PDCXConfig& _config, Communicator<>& _comm)
+    PDCX(PDCXConfig const& _config, Communicator<>& _comm)
         : config(_config),
           atomic_sorter(_comm),
           comm(_comm),
@@ -944,7 +944,7 @@ public:
     constexpr static uint32_t D = DC::D;
 
     PDCXLengthInfo info;
-    PDCXConfig& config;
+    PDCXConfig const& config;
 
     std::array<index_type, DC::D + 1> samples_before;
 

@@ -65,11 +65,11 @@ struct LexicographicRankPhase {
     using BucketMappingType = SpaceEfficientSort<char_type, index_type, DC>::BucketMappingType;
 
     Communicator<>& comm;
-    PDCXConfig& config;
+    PDCXConfig const& config;
     PDCXLengthInfo& info;
     static constexpr uint32_t X = DC::X;
 
-    LexicographicRankPhase(Communicator<>& _comm, PDCXConfig& _config, PDCXLengthInfo& _info)
+    LexicographicRankPhase(Communicator<>& _comm, PDCXConfig const& _config, PDCXLengthInfo& _info)
         : comm(_comm),
           config(_config),
           info(_info) {}

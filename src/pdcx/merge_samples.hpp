@@ -140,14 +140,14 @@ struct MergeSamplePhase {
     static constexpr uint32_t D = DC::D;
 
     Communicator<>& comm;
-    PDCXConfig& config;
+    PDCXConfig const& config;
     PDCXLengthInfo& info;
     mpi::SortingWrapper& atomic_sorter;
     dsss::SeqStringSorterWrapper& string_sorter;
     SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort;
 
     MergeSamplePhase(Communicator<>& _comm,
-                     PDCXConfig& _config,
+                     PDCXConfig const& _config,
                      PDCXLengthInfo& _info,
                      mpi::SortingWrapper& _atomic_sorter,
                      dsss::SeqStringSorterWrapper& _string_sorter)

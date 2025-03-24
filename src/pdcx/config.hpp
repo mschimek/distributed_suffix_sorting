@@ -4,6 +4,8 @@
 #include <iostream>
 #include <limits>
 
+#include <magic_enum/magic_enum.hpp>
+
 #include "sorters/sample_sort_config.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
@@ -36,7 +38,7 @@ struct PDCXConfig {
     uint64_t avg_chunks_pe = 1000;
     uint64_t seed = 0;
     uint64_t pack_extra_words = 0;
-    double packing_ratio = 1;
+    mutable double packing_ratio = 1;
     double discarding_threshold = 0.7;
     double min_imbalance = 0.25;
     bool use_string_sort = false;
@@ -59,6 +61,50 @@ struct PDCXConfig {
 
     uint32_t buckets_merging_at_level(uint32_t level) const {
         return level < buckets_merging.size() ? buckets_merging[level] : 1;
+    }
+
+    std::vector<std::pair<std::string, std::string>> config() const {
+
+      auto join_vector = [](const std::vector<std::uint32_t>& vec) {
+        std::ostringstream oss;
+        for (std::size_t i = 0; i < vec.size(); ++i) {
+          oss << vec[i];
+          if (i + 1 != vec.size()) {
+            oss << ",";
+          }
+        }
+        return oss.str();
+      };
+
+      std::vector<std::pair<std::string, std::string>> config_vector = sample_sort_config.config();
+      config_vector.emplace_back("atomic_sorter", magic_enum::enum_name(atomic_sorter));
+      config_vector.emplace_back("string_sorter", magic_enum::enum_name(string_sorter));
+      config_vector.emplace_back("buckets_samples", join_vector(buckets_samples));
+      config_vector.emplace_back("buckets_merging", join_vector(buckets_merging));
+      config_vector.emplace_back("buckets_phase3", std::to_string(buckets_phase3));
+      config_vector.emplace_back("num_samples_phase3", std::to_string(num_samples_phase3));
+      config_vector.emplace_back("ams_levels", std::to_string(ams_levels));
+      config_vector.emplace_back("memory_seq_string_sorter", std::to_string(memory_seq_string_sorter));
+      config_vector.emplace_back("num_samples_splitters", std::to_string(num_samples_splitters));
+      config_vector.emplace_back("avg_chunks_pe", std::to_string(avg_chunks_pe));
+      config_vector.emplace_back("seed", std::to_string(seed));
+      config_vector.emplace_back("pack_extra_words", std::to_string(pack_extra_words));
+      config_vector.emplace_back("packing", std::to_string(packing_ratio));
+      config_vector.emplace_back("discarding_threshold", std::to_string(discarding_threshold));
+      config_vector.emplace_back("min_imbalance", std::to_string(min_imbalance));
+      config_vector.emplace_back("use_string_sort", std::to_string(use_string_sort));
+      config_vector.emplace_back("use_string_sort_tie_breaking_phase1", std::to_string(use_string_sort_tie_breaking_phase1));
+      config_vector.emplace_back("use_string_sort_tie_breaking_phase4", std::to_string(use_string_sort_tie_breaking_phase4));
+      config_vector.emplace_back("use_random_sampling_splitters", std::to_string(use_random_sampling_splitters));
+      config_vector.emplace_back("balance_blocks_space_efficient_sort", std::to_string(balance_blocks_space_efficient_sort));
+      config_vector.emplace_back("use_randomized_chunks", std::to_string(use_randomized_chunks));
+      config_vector.emplace_back("use_char_packing_samples", std::to_string(use_char_packing_samples));
+      config_vector.emplace_back("use_char_packing_merging", std::to_string(use_char_packing_merging));
+      config_vector.emplace_back("print_phases", std::to_string(print_phases));
+      config_vector.emplace_back("rearrange_buckets_balanced", std::to_string(rearrange_buckets_balanced));
+      config_vector.emplace_back("use_robust_tie_break", std::to_string(use_robust_tie_break));
+      config_vector.emplace_back("use_compressed_buckets", std::to_string(use_compressed_buckets));
+      return config_vector;
     }
 
     void print_config() const {

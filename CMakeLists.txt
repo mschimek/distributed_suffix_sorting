@@ -1,6 +1,46 @@
 cmake_minimum_required(VERSION 3.13)
 project(distributed_string_sorting)
 
+include(FetchContent)
+
+FetchContent_Declare(
+  kaval
+  GIT_REPOSITORY https://github.com/niklas-uhl/kaval.git
+  GIT_TAG 7750b0d
+  SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/kaval)
+
+FetchContent_Declare(
+  kamping
+  GIT_REPOSITORY https://github.com/kamping-site/kamping.git
+  GIT_TAG 1effe84
+  SYSTEM)
+
+FetchContent_Declare(
+  cli11
+  GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+  GIT_TAG v2.3.2
+  SYSTEM)
+
+FetchContent_Declare(magic-enum
+  GIT_REPOSITORY  https://github.com/Neargye/magic_enum.git
+  GIT_TAG         v0.9.7
+  SYSTEM
+)
+
+FetchContent_Declare(
+  cli11
+  GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+  GIT_TAG v2.3.2
+  SYSTEM)
+
+#FetchContent_Declare(
+#  kadis
+#  GIT_REPOSITORY https://github.com/mschimek/KaDiS.git
+#  GIT_TAG 2f2cdd2
+#  SYSTEM)
+
+FetchContent_MakeAvailable(kaval kamping cli11 magic-enum)
+
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
@@ -65,26 +105,28 @@ add_subdirectory(external/tlx)
 set(IPS4O_DISABLE_PARALLEL OFF)
 add_subdirectory(external/ips4o)
 
-add_subdirectory(external/kamping)
+#add_subdirectory(external/kamping)
 add_subdirectory(external/KaDiS)
 
 
 # Create a library containing all implementation, to be linked against by executables
-add_library(dss_base)
+add_library(dss_base INTERFACE)
 set_target_properties(dss_base PROPERTIES LINKER_LANGUAGE CXX)
-target_compile_options(dss_base PRIVATE ${DSSS_WARNING_FLAGS})
+target_compile_options(dss_base INTERFACE ${DSSS_WARNING_FLAGS})
 
-target_include_directories(dss_base PRIVATE
-  "${CMAKE_CURRENT_BINARY_DIR}/include")
+#########target_include_directories(dss_base INTERFACE
+#  "${CMAKE_CURRENT_BINARY_DIR}/include")
 
 message(STATUS "CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
 
-target_include_directories(dss_base PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(dss_base PRIVATE kamping)
-target_link_libraries(dss_base PRIVATE MPI::MPI_CXX)
-target_link_libraries(dss_base PUBLIC tlx)
-target_link_libraries(dss_base PUBLIC ips4o)
-target_link_libraries(dss_base PRIVATE kadis)
+target_include_directories(dss_base INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(dss_base INTERFACE kamping::kamping)
+target_link_libraries(dss_base INTERFACE MPI::MPI_CXX)
+target_link_libraries(dss_base INTERFACE tlx)
+target_link_libraries(dss_base INTERFACE ips4o)
+target_link_libraries(dss_base INTERFACE kadis)
+target_link_libraries(dss_base INTERFACE magic_enum::magic_enum)
+target_link_libraries(dss_base INTERFACE CLI11::CLI11)
 
 set(StringSorting "src/string_sorting")
 add_subdirectory(src)
@@ -106,9 +148,7 @@ target_include_directories(cli PRIVATE
   "${CMAKE_CURRENT_BINARY_DIR}/include")
 
 target_compile_options(cli PRIVATE ${DSSS_WARNING_FLAGS})
-target_link_libraries(cli kamping)
-target_link_libraries(cli dss_base)
-target_link_libraries(cli kadis)
+target_link_libraries(cli PRIVATE dss_base)
 
 
 # add compile flags
