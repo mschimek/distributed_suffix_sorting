@@ -607,7 +607,8 @@ public:
         //******* End Phase 0: Preparation  ********
 
         // solve sequentially on root to avoid corner cases with empty PEs
-        if (info.total_chars <= comm.size() * 2 * X) {
+        if (info.total_chars <= std::max(static_cast<std::uint64_t>(comm.size() * 2u * X),
+                                         static_cast<std::uint64_t>(10'000u))) {
             report_on_root("Solve SA sequentially on root",
                            comm,
                            recursion_depth,

@@ -27,11 +27,11 @@ FetchContent_Declare(magic-enum
   SYSTEM
 )
 
-FetchContent_Declare(
-  cli11
-  GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-  GIT_TAG v2.3.2
-  SYSTEM)
+#FetchContent_Declare(tlx
+#  GIT_REPOSITORY  https://github.com/tlx/tlx.git
+#  GIT_TAG         2dd63ab
+#  SYSTEM
+#)
 
 #FetchContent_Declare(
 #  kadis
