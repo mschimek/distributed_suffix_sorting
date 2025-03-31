@@ -6,7 +6,7 @@ include(FetchContent)
 FetchContent_Declare(
   kaval
   GIT_REPOSITORY https://github.com/niklas-uhl/kaval.git
-  GIT_TAG 7750b0d
+  GIT_TAG 1600bda
   SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/kaval)
 
 FetchContent_Declare(
