@@ -61,6 +61,7 @@ auto string_map() -> std::map<std::string, Enum> {
 struct Parameters {
     size_t textsize = 0u;
     size_t alphabet_size = 2u;
+    std::string algorithm = "DCX";
     std::string input_path = "";
     std::string output_path = "";
     std::string json_output_path = "";
@@ -79,6 +80,7 @@ struct Parameters {
         config_vector.emplace_back("output_path", output_path);
         config_vector.emplace_back("json_output_path", json_output_path);
         config_vector.emplace_back("dcx_variant", dcx_variant);
+        config_vector.emplace_back("algorithm", algorithm);
         {
             auto pdcx_confi_vector = pdcx_config.config();
             config_vector.insert(config_vector.end(),
