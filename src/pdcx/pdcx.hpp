@@ -151,13 +151,15 @@ public:
 
         redistribute_if_imbalanced(local_ranks, config.min_imbalance, comm);
 
-        uint64_t after_discarding = num_ranks_after_discarding(local_ranks);
-        uint64_t total_after_discarding = mpi_util::all_reduce_sum(after_discarding, comm);
-        double reduction = ((double)total_after_discarding / info.total_sample_size);
+        uint64_t const after_discarding = num_ranks_after_discarding(local_ranks);
+        uint64_t const total_after_discarding = mpi_util::all_reduce_sum(after_discarding, comm);
+        double const reduction = ((double)total_after_discarding / info.total_sample_size);
         stats.discarding_reduction.push_back(reduction);
+        get_local_stats_instance().discarding_reduction.push_back(reduction);
 
-        bool use_discarding = reduction <= config.discarding_threshold;
+        bool const use_discarding = reduction <= config.discarding_threshold;
         stats.use_discarding.push_back(use_discarding);
+        get_local_stats_instance().use_discarding.push_back(use_discarding);
         if (use_discarding) {
             report_on_root("using discarding, reduction: " + std::to_string(reduction),
                            comm,
@@ -393,7 +395,8 @@ public:
             report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance),
                            comm,
                            info.recursion_depth);
-
+            get_local_stats_instance().input_bucket_imbalance_rank_computation.push_back(
+                get_max_local_imbalance(bucket_sizes, total_size, comm.size()));
 
             // 5. allocate datastructures to store results
             std::vector<index_type> concat_sa_buckets;
@@ -437,7 +440,8 @@ public:
                                + std::to_string(bucket_imbalance_received),
                            comm,
                            info.recursion_depth);
-
+            get_local_stats_instance().output_bucket_imbalance_rank_computation.push_back(
+                get_max_local_imbalance(sa_bucket_size, total_size, comm.size()));
 
             timer.synchronize_and_start("phase_03_space_efficient_sort_alltoall");
             SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
@@ -540,6 +544,8 @@ public:
 
         bool redist_chars = redistribute_if_imbalanced(local_string, config.min_imbalance, comm);
         stats.redistribute_chars.push_back(redist_chars);
+        get_local_stats_instance().redistribute_chars.push_back(redist_chars);
+
 
         info = compute_length_info(local_string);
 
@@ -602,6 +608,12 @@ public:
         stats.local_string_sizes.push_back(info.local_chars);
         stats.string_sizes.push_back(info.total_chars);
         stats.char_type_used.push_back(8 * sizeof(char_type));
+        get_local_stats_instance().algo = "DC" + std::to_string(X);
+        get_local_stats_instance().num_processors = comm.size();
+        get_local_stats_instance().max_depth = std::max(stats.max_depth, recursion_depth);
+        get_local_stats_instance().local_text_size.push_back(info.local_chars);
+        get_local_stats_instance().text_size.push_back(info.total_chars);
+        get_local_stats_instance().char_type_used.push_back(8 * sizeof(char_type));
 
         timer.stop();
         //******* End Phase 0: Preparation  ********
@@ -631,6 +643,8 @@ public:
         if (info.recursion_depth == 0) {
             get_stats_instance().packed_chars_samples.push_back(char_packing_ratio_samples);
             get_stats_instance().packed_chars_merging.push_back(char_packing_ratio_merging);
+            get_local_stats_instance().packed_chars_samples.push_back(char_packing_ratio_samples);
+            get_local_stats_instance().packed_chars_merging.push_back(char_packing_ratio_merging);
         }
         phase1.make_padding_and_shifts(local_string, char_packing_ratio);
 
@@ -728,6 +742,7 @@ public:
         index_type last_rank = local_ranks.empty() ? index_type(0) : local_ranks.back().rank;
         comm.bcast_single(send_recv_buf(last_rank), root(comm.size() - 1));
         stats.highest_ranks.push_back(last_rank);
+        get_local_stats_instance().highest_ranks.push_back(last_rank);
         bool chars_distinct = last_rank >= index_type(info.total_sample_size);
 
         if (chars_distinct) {
@@ -884,6 +899,9 @@ public:
         stats.sample_imbalance.push_back(
             mpi_util::compute_max_imbalance(info.local_sample_size, comm));
         stats.sa_imbalance.push_back(mpi_util::compute_max_imbalance(local_SA.size(), comm));
+        get_local_stats_instance().local_text_size_exit.push_back(info.local_chars);
+        get_local_stats_instance().local_sample_size_exit.push_back(info.local_sample_size);
+        get_local_stats_instance().local_sa_size.push_back(local_SA.size());
 
         clean_up(local_string);
 

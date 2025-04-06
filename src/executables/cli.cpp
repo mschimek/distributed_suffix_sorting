@@ -113,7 +113,7 @@ std::string json_output_path = "";
 std::string dcx_variant = "dc3";
 bool check = false;
 
-dcx::PDCXConfig pdcx_config;
+//dcx::PDCXConfig pdcx_config;
 
 std::string atomic_sorter = "SampleSort";
 std::string string_sorter = "RadixSortCI3";
@@ -132,187 +132,187 @@ std::vector<index_type> local_sa;
 uint64_t input_alphabet_size = 0;
 
 void configure_cli() {
-    // basic information
-    cp.set_description("Distributed Suffix Array Construction using pDCX");
-    cp.set_author("Manuel Haag <uozeb@student.kit.edu>");
+    //// basic information
+    //cp.set_description("Distributed Suffix Array Construction using pDCX");
+    //cp.set_author("Manuel Haag <uozeb@student.kit.edu>");
 
-    // input and output
-    cp.add_param_string("input",
-                        input_path,
-                        "Path to input file. The special input 'random' generates a random text of "
-                        "the size given by parameter '-s'.");
-    cp.add_bytes('s',
-                 "size",
-                 string_size,
-                 "Size (in bytes unless stated "
-                 "otherwise) of the string that use to test our suffix array "
-                 "construction algorithms.");
-    cp.add_bytes('a', "alphabet_size", alphabet_size, "Size of the alphbet used for random.");
-    cp.add_bytes('e', "seed", seed, "Seed to be used for random. PE i uses seed: seed + i");
-    pdcx_config.seed = seed;
-    cp.add_string('o',
-                  "output",
-                  "<F>",
-                  output_path,
-                  "Filename for the output (SA). Note that the output is five times larger than "
-                  "the input file.");
+    //// input and output
+    //cp.add_param_string("input",
+    //                    input_path,
+    //                    "Path to input file. The special input 'random' generates a random text of "
+    //                    "the size given by parameter '-s'.");
+    //cp.add_bytes('s',
+    //             "size",
+    //             string_size,
+    //             "Size (in bytes unless stated "
+    //             "otherwise) of the string that use to test our suffix array "
+    //             "construction algorithms.");
+    //cp.add_bytes('a', "alphabet_size", alphabet_size, "Size of the alphbet used for random.");
+    //cp.add_bytes('e', "seed", seed, "Seed to be used for random. PE i uses seed: seed + i");
+    //pdcx_config.seed = seed;
+    //cp.add_string('o',
+    //              "output",
+    //              "<F>",
+    //              output_path,
+    //              "Filename for the output (SA). Note that the output is five times larger than "
+    //              "the input file.");
 
-    cp.add_string("--json-output-path", json_output_path, "path to json output");
+    //cp.add_string("--json-output-path", json_output_path, "path to json output");
 
-    // pdcx configuration
-    cp.add_flag('c', "check", check, "Check if the SA has been constructed correctly.");
-    cp.add_string('x',
-                  "dcx",
-                  "<F>",
-                  dcx_variant,
-                  "pDCX variant to use. Available options: dc3, dc7, dc13.");
-    cp.add_double('t',
-                  "discarding_threshold",
-                  pdcx_config.discarding_threshold,
-                  "Value between [0, 1], threshold when to use discarding optimization.");
-    cp.add_bytes('m',
-                 "num_samples_splitters",
-                 pdcx_config.num_samples_splitters,
-                 "Total number of random samples to use to determine block splitters in space "
-                 "efficient sort.");
-    cp.add_flag('U',
-                "use_random_sampling_splitters",
-                pdcx_config.use_random_sampling_splitters,
-                "Use random sampling to determine block splitters in space efficient sort. "
-                "Currently the samples are sorted on a single PE.");
-    cp.add_flag('B',
-                "balance_blocks_space_efficient_sort",
-                pdcx_config.balance_blocks_space_efficient_sort,
-                "Balance blocks after materialization in space efficient sorting.");
-    cp.add_string('P',
-                  "buckets_samples",
-                  "<F>",
-                  buckets_samples,
-                  "Number of buckets to use for space efficient sorting of samples on each "
-                  "recursion level. Missing values default to 1. Example: 16,8,4");
-    cp.add_string('M',
-                  "buckets_merging",
-                  "<F>",
-                  buckets_merging,
-                  "Number of buckets to use for space efficient sorting in merging phase on each "
-                  "recursion level. Missing values default to 1. Example: 16,8,4. If you "
-                  "use large bucket sizes you should also set num_samples_splitters (-m) high "
-                  "enough. 16 b log b for b buckets should be enough.");
-    cp.add_bytes('D',
-                 "buckets_phase3",
-                 pdcx_config.buckets_phase3,
-                 "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
-    cp.add_bytes('d',
-                 "samples_buckets_phase3",
-                 pdcx_config.num_samples_phase3,
-                 "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
-    cp.add_flag('Z',
-                "use_randomized_chunks",
-                pdcx_config.use_randomized_chunks,
-                "Use randomized chunks in bucket sorting to distribute work.");
-    cp.add_bytes('z',
-                 "avg_chunks_pe",
-                 pdcx_config.avg_chunks_pe,
-                 "Average number of chunks on a PE.");
-    cp.add_flag(
-        'g',
-        "use_char_packing_samples",
-        pdcx_config.use_char_packing_samples,
-        "Pack multiple characters in the same datatype for phase 1 (samples) on the first level.");
-    cp.add_flag(
-        'G',
-        "use_char_packing_merging",
-        pdcx_config.use_char_packing_merging,
-        "Pack multiple characters in the same datatype for phase 4 (merging) on the first level.");
-    cp.add_flag('E',
-                "rearrange_buckets_balanced",
-                pdcx_config.rearrange_buckets_balanced,
-                "Balances the buckets in a balanced way, which needs an additional output buffer "
-                "and some bookkeeping information.");
-    cp.add_flag('k',
-                "use_robust_tie_break",
-                pdcx_config.use_robust_tie_break,
-                "Use ranks as a tie break in space efficient sorting in Phase 4. Is slower but "
-                "splits equal strings amoung buckets.");
-    cp.add_flag('u',
-                "use_compressed_buckets",
-                pdcx_config.use_compressed_buckets,
-                "Store the bucket mapping compressed in the same memory as the SA.");
-    cp.add_bytes('A',
-                 "pack_extra_words",
-                 pdcx_config.pack_extra_words,
-                 "Use specificed number of extra words when packing characters into words. "
-                 "Currently supports 0 and 1.");
+    //// pdcx configuration
+    //cp.add_flag('c', "check", check, "Check if the SA has been constructed correctly.");
+    //cp.add_string('x',
+    //              "dcx",
+    //              "<F>",
+    //              dcx_variant,
+    //              "pDCX variant to use. Available options: dc3, dc7, dc13.");
+    //cp.add_double('t',
+    //              "discarding_threshold",
+    //              pdcx_config.discarding_threshold,
+    //              "Value between [0, 1], threshold when to use discarding optimization.");
+    //cp.add_bytes('m',
+    //             "num_samples_splitters",
+    //             pdcx_config.num_samples_splitters,
+    //             "Total number of random samples to use to determine block splitters in space "
+    //             "efficient sort.");
+    //cp.add_flag('U',
+    //            "use_random_sampling_splitters",
+    //            pdcx_config.use_random_sampling_splitters,
+    //            "Use random sampling to determine block splitters in space efficient sort. "
+    //            "Currently the samples are sorted on a single PE.");
+    //cp.add_flag('B',
+    //            "balance_blocks_space_efficient_sort",
+    //            pdcx_config.balance_blocks_space_efficient_sort,
+    //            "Balance blocks after materialization in space efficient sorting.");
+    //cp.add_string('P',
+    //              "buckets_samples",
+    //              "<F>",
+    //              buckets_samples,
+    //              "Number of buckets to use for space efficient sorting of samples on each "
+    //              "recursion level. Missing values default to 1. Example: 16,8,4");
+    //cp.add_string('M',
+    //              "buckets_merging",
+    //              "<F>",
+    //              buckets_merging,
+    //              "Number of buckets to use for space efficient sorting in merging phase on each "
+    //              "recursion level. Missing values default to 1. Example: 16,8,4. If you "
+    //              "use large bucket sizes you should also set num_samples_splitters (-m) high "
+    //              "enough. 16 b log b for b buckets should be enough.");
+    //cp.add_bytes('D',
+    //             "buckets_phase3",
+    //             pdcx_config.buckets_phase3,
+    //             "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
+    //cp.add_bytes('d',
+    //             "samples_buckets_phase3",
+    //             pdcx_config.num_samples_phase3,
+    //             "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
+    //cp.add_flag('Z',
+    //            "use_randomized_chunks",
+    //            pdcx_config.use_randomized_chunks,
+    //            "Use randomized chunks in bucket sorting to distribute work.");
+    //cp.add_bytes('z',
+    //             "avg_chunks_pe",
+    //             pdcx_config.avg_chunks_pe,
+    //             "Average number of chunks on a PE.");
+    //cp.add_flag(
+    //    'g',
+    //    "use_char_packing_samples",
+    //    pdcx_config.use_char_packing_samples,
+    //    "Pack multiple characters in the same datatype for phase 1 (samples) on the first level.");
+    //cp.add_flag(
+    //    'G',
+    //    "use_char_packing_merging",
+    //    pdcx_config.use_char_packing_merging,
+    //    "Pack multiple characters in the same datatype for phase 4 (merging) on the first level.");
+    //cp.add_flag('E',
+    //            "rearrange_buckets_balanced",
+    //            pdcx_config.rearrange_buckets_balanced,
+    //            "Balances the buckets in a balanced way, which needs an additional output buffer "
+    //            "and some bookkeeping information.");
+    //cp.add_flag('k',
+    //            "use_robust_tie_break",
+    //            pdcx_config.use_robust_tie_break,
+    //            "Use ranks as a tie break in space efficient sorting in Phase 4. Is slower but "
+    //            "splits equal strings amoung buckets.");
+    //cp.add_flag('u',
+    //            "use_compressed_buckets",
+    //            pdcx_config.use_compressed_buckets,
+    //            "Store the bucket mapping compressed in the same memory as the SA.");
+    //cp.add_bytes('A',
+    //             "pack_extra_words",
+    //             pdcx_config.pack_extra_words,
+    //             "Use specificed number of extra words when packing characters into words. "
+    //             "Currently supports 0 and 1.");
 
 
-    // sorter configuration
-    cp.add_string('r',
-                  "atomic_sorter",
-                  "<F>",
-                  atomic_sorter,
-                  "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
-    cp.add_bytes('l', "ams_levels", pdcx_config.ams_levels, "Number of levels to be used in ams.");
+    //// sorter configuration
+    //cp.add_string('r',
+    //              "atomic_sorter",
+    //              "<F>",
+    //              atomic_sorter,
+    //              "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
+    //cp.add_bytes('l', "ams_levels", pdcx_config.ams_levels, "Number of levels to be used in ams.");
 
-    cp.add_string('p',
-                  "splitter_sampling",
-                  "<F>",
-                  splitter_sampling,
-                  "Splitter sampling method in sample sort. [uniform, random]");
-    cp.add_string('T',
-                  "splitter_sorting",
-                  "<F>",
-                  splitter_sorting,
-                  "Splitter sorting method in sample sort [central, distributed]");
-    cp.add_string('n',
-                  "string_sorter",
-                  string_sorter,
-                  "String sorter to be used. [multi_key_qsort, radix_sort_ci2, radix_sort_ci3]");
-    cp.add_bytes('y',
-                 "memory_seq_string_sorter",
-                 pdcx_config.memory_seq_string_sorter,
-                 "Memory hint for sequential string sorter.");
+    //cp.add_string('p',
+    //              "splitter_sampling",
+    //              "<F>",
+    //              splitter_sampling,
+    //              "Splitter sampling method in sample sort. [uniform, random]");
+    //cp.add_string('T',
+    //              "splitter_sorting",
+    //              "<F>",
+    //              splitter_sorting,
+    //              "Splitter sorting method in sample sort [central, distributed]");
+    //cp.add_string('n',
+    //              "string_sorter",
+    //              string_sorter,
+    //              "String sorter to be used. [multi_key_qsort, radix_sort_ci2, radix_sort_ci3]");
+    //cp.add_bytes('y',
+    //             "memory_seq_string_sorter",
+    //             pdcx_config.memory_seq_string_sorter,
+    //             "Memory hint for sequential string sorter.");
 
-    cp.add_flag('S',
-                "use_string_sort",
-                pdcx_config.use_string_sort,
-                "Use string sorting instead of atomic sorting.");
-    cp.add_flag('C',
-                "use_string_sort_tie_breaking_phase1",
-                pdcx_config.use_string_sort_tie_breaking_phase1,
-                "Use string sorting with index-tie-breaking in Phase 1.");
-    cp.add_flag('K',
-                "use_string_sort_tie_breaking_phase4",
-                pdcx_config.use_string_sort_tie_breaking_phase4,
-                "Use string sorting with rank-tie-breaking in Phase 4.");
-    cp.add_flag('L',
-                "use_loser_tree",
-                sample_sort_config.use_loser_tree,
-                "Use loser tree in merging step of sample sort.");
-    cp.add_flag('R',
-                "use_rquick_for_splitters",
-                sample_sort_config.use_rquick_for_splitters,
-                "Use Rquick to sort splitter.");
-    cp.add_flag('b',
-                "use_binary_search_for_splitters",
-                sample_sort_config.use_binary_search_for_splitters,
-                "Use binary search instead of linear scan to find intervals in sample sort.");
-    cp.add_flag('W',
-                "use_lcp_compression",
-                sample_sort_config.use_lcp_compression,
-                "Use lcp-compression in string sample sort to reduce communication volume.");
-    cp.add_double('Y',
-                  "lcp_compression_threshold",
-                  sample_sort_config.lcp_compression_threshold,
-                  "Value between [0, 1], threshold on compression ratio when to start using "
-                  "LCP-compression.");
-    cp.add_flag('X',
-                "use_prefix_doubling",
-                sample_sort_config.use_prefix_doubling,
-                "Use prefix-doubling in string sample sort to reduce communication volume.");
-    cp.add_bytes('w',
-                 "inital_prefix_length",
-                 sample_sort_config.inital_prefix_length,
-                 "Inital prefix-length to use for prefix doubling.");
+    //cp.add_flag('S',
+    //            "use_string_sort",
+    //            pdcx_config.use_string_sort,
+    //            "Use string sorting instead of atomic sorting.");
+    //cp.add_flag('C',
+    //            "use_string_sort_tie_breaking_phase1",
+    //            pdcx_config.use_string_sort_tie_breaking_phase1,
+    //            "Use string sorting with index-tie-breaking in Phase 1.");
+    //cp.add_flag('K',
+    //            "use_string_sort_tie_breaking_phase4",
+    //            pdcx_config.use_string_sort_tie_breaking_phase4,
+    //            "Use string sorting with rank-tie-breaking in Phase 4.");
+    //cp.add_flag('L',
+    //            "use_loser_tree",
+    //            sample_sort_config.use_loser_tree,
+    //            "Use loser tree in merging step of sample sort.");
+    //cp.add_flag('R',
+    //            "use_rquick_for_splitters",
+    //            sample_sort_config.use_rquick_for_splitters,
+    //            "Use Rquick to sort splitter.");
+    //cp.add_flag('b',
+    //            "use_binary_search_for_splitters",
+    //            sample_sort_config.use_binary_search_for_splitters,
+    //            "Use binary search instead of linear scan to find intervals in sample sort.");
+    //cp.add_flag('W',
+    //            "use_lcp_compression",
+    //            sample_sort_config.use_lcp_compression,
+    //            "Use lcp-compression in string sample sort to reduce communication volume.");
+    //cp.add_double('Y',
+    //              "lcp_compression_threshold",
+    //              sample_sort_config.lcp_compression_threshold,
+    //              "Value between [0, 1], threshold on compression ratio when to start using "
+    //              "LCP-compression.");
+    //cp.add_flag('X',
+    //            "use_prefix_doubling",
+    //            sample_sort_config.use_prefix_doubling,
+    //            "Use prefix-doubling in string sample sort to reduce communication volume.");
+    //cp.add_bytes('w',
+    //             "inital_prefix_length",
+    //             sample_sort_config.inital_prefix_length,
+    //             "Inital prefix-length to use for prefix doubling.");
 }
 
 void check_limit(std::vector<uint32_t>& vec,
@@ -507,25 +507,25 @@ EnumType get_enum(std::string s, std::vector<std::string> names, kamping::Commun
 }
 
 void map_strings_to_enum(kamping::Communicator<>& comm) {
-    // pdcx
-    pdcx_config.atomic_sorter = magic_enum::enum_cast<mpi::AtomicSorters>(atomic_sorter).value();
-    // get_enum<mpi::AtomicSorters>(atomic_sorter, mpi::atomic_sorter_names, comm);
-    pdcx_config.string_sorter = magic_enum::enum_cast<dsss::SeqStringSorter>(string_sorter).value();
-    // get_enum<dsss::SeqStringSorter>(string_sorter, dsss::string_sorter_names, comm);
+    //// pdcx
+    //pdcx_config.atomic_sorter = magic_enum::enum_cast<mpi::AtomicSorters>(atomic_sorter).value();
+    //// get_enum<mpi::AtomicSorters>(atomic_sorter, mpi::atomic_sorter_names, comm);
+    //pdcx_config.string_sorter = magic_enum::enum_cast<dsss::SeqStringSorter>(string_sorter).value();
+    //// get_enum<dsss::SeqStringSorter>(string_sorter, dsss::string_sorter_names, comm);
 
-    // sample sort
-    sample_sort_config.splitter_sorting =
-        magic_enum::enum_cast<dsss::mpi::SplitterSorting>(splitter_sorting).value();
-    // get_enum<dsss::mpi::SplitterSorting>(splitter_sorting,
-    //                                      dsss::mpi::splitter_sorting_names,
-    //                                      comm);
-    sample_sort_config.splitter_sampling =
-        magic_enum::enum_cast<dsss::mpi::SplitterSampling>(splitter_sampling).value();
-    // get_enum<dsss::mpi::SplitterSampling>(splitter_sampling,
-    //                                       dsss::mpi::splitter_sampling_names,
-    //                                       comm);
+    //// sample sort
+    //sample_sort_config.splitter_sorting =
+    //    magic_enum::enum_cast<dsss::mpi::SplitterSorting>(splitter_sorting).value();
+    //// get_enum<dsss::mpi::SplitterSorting>(splitter_sorting,
+    ////                                      dsss::mpi::splitter_sorting_names,
+    ////                                      comm);
+    //sample_sort_config.splitter_sampling =
+    //    magic_enum::enum_cast<dsss::mpi::SplitterSampling>(splitter_sampling).value();
+    //// get_enum<dsss::mpi::SplitterSampling>(splitter_sampling,
+    ////                                       dsss::mpi::splitter_sampling_names,
+    ////                                       comm);
 
-    pdcx_config.sample_sort_config = sample_sort_config;
+    //pdcx_config.sample_sort_config = sample_sort_config;
 }
 
 std::vector<uint32_t> parse_list_of_ints(std::string s) {
@@ -543,12 +543,12 @@ std::vector<uint32_t> parse_list_of_ints(std::string s) {
 
 
 void parse_enums_and_lists(kamping::Communicator<>& comm) {
-    map_strings_to_enum(comm);
-    pdcx_config.buckets_samples = parse_list_of_ints(buckets_samples);
-    pdcx_config.buckets_merging = parse_list_of_ints(buckets_merging);
-    uint64_t limit = std::numeric_limits<uint16_t>::max();
-    check_limit(pdcx_config.buckets_samples, limit, "buckets_samples", comm);
-    check_limit(pdcx_config.buckets_merging, limit, "buckets_merging", comm);
+    //map_strings_to_enum(comm);
+    //pdcx_config.buckets_samples = parse_list_of_ints(buckets_samples);
+    //pdcx_config.buckets_merging = parse_list_of_ints(buckets_merging);
+    //uint64_t limit = std::numeric_limits<uint16_t>::max();
+    //check_limit(pdcx_config.buckets_samples, limit, "buckets_samples", comm);
+    //check_limit(pdcx_config.buckets_merging, limit, "buckets_merging", comm);
 }
 
 void report_arguments(kamping::Communicator<>& comm) {
@@ -563,7 +563,7 @@ void report_arguments(kamping::Communicator<>& comm) {
         std::cout << V(dcx_variant) << "\n";
         std::cout << V(check) << "\n";
         std::cout << std::endl;
-        pdcx_config.print_config();
+        //pdcx_config.print_config();
     }
     comm.barrier();
 }
@@ -754,9 +754,9 @@ void select_dcx_variant(kamping::Communicator<>& comm, dsss::dcx::PDCXConfig con
     //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
     // }
 
-    // using DCXParam = DC39Param;
-    // using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
-    // run_pdcx<PDCXVariant, char_type, index_type>(comm);
+    //using DCXParam = DC39Param;
+    //using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
+    //run_pdcx<PDCXVariant, char_type, index_type>(comm, pdcx_config);
 }
 
 template <uint64_t EXTRA_WORDS = 0>
@@ -802,7 +802,6 @@ void select_packed_dcx_variant(kamping::Communicator<>& comm,
     //     using DCXParam = DC133Param;
     //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
     // }
-
     using DCXParam = DC39Param;
     run_packed_dcx_variant<DCXParam, 0>(comm, pdcx_config);
 }
@@ -937,17 +936,22 @@ int main(int32_t argc, char const* argv[]) {
                                          dsss::get_max_mem_bytes(),
                                          {kamping::measurements::GlobalAggregationMode::max,
                                           kamping::measurements::GlobalAggregationMode::gather});
+
     compute_sa(comm, params.pdcx_config);
+    dcx::get_local_stats_instance().commit();
+    dcx::get_local_stats_instance().reset();
     kamping::measurements::counter().add("mem_after_sa_construction",
                                          dsss::get_max_mem_bytes(),
                                          {kamping::measurements::GlobalAggregationMode::max,
                                           kamping::measurements::GlobalAggregationMode::gather});
     report_memory_usage(comm);
     check_sa(comm, params);
+
     kamping::measurements::counter().add("mem_after_sa_check",
                                          dsss::get_max_mem_bytes(),
                                          {kamping::measurements::GlobalAggregationMode::max,
                                           kamping::measurements::GlobalAggregationMode::gather});
+
     write_sa(comm, params);
 
     // print
@@ -960,8 +964,10 @@ int main(int32_t argc, char const* argv[]) {
     kamping::measurements::timer().aggregate_and_print(printer_timer);
     kamping::measurements::counter().aggregate_and_print(printer_counter);
 
-    print_as_jsonlist_to_file({sstream_timer.str()}, params.json_output_path + "_timer.json");
-    print_as_jsonlist_to_file({sstream_counter.str()}, params.json_output_path + "_counter.json");
+    if(comm.rank() == 0) {
+        print_as_jsonlist_to_file({sstream_timer.str()}, params.json_output_path + "_timer.json");
+        print_as_jsonlist_to_file({sstream_counter.str()}, params.json_output_path + "_counter.json");
+    }
 
     return 0;
 }

@@ -264,6 +264,7 @@ struct SampleStringPhase {
 
         bool redist_samples = redistribute_if_imbalanced(local_samples, config.min_imbalance, comm);
         get_stats_instance().redistribute_samples.push_back(redist_samples);
+        get_local_stats_instance().redistribute_samples.push_back(redist_samples);
         return local_samples;
     }
 };

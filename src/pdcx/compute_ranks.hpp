@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include <kamping/measurements/counter.hpp>
+
 #include "kamping/collectives/bcast.hpp"
 #include "kamping/communicator.hpp"
 #include "kamping/measurements/timer.hpp"
@@ -255,6 +257,9 @@ struct LexicographicRankPhase {
         // log imbalance of buckets
         double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_sample_size, comm);
         get_stats_instance().bucket_imbalance_samples.push_back(bucket_imbalance);
+        get_local_stats_instance().input_bucket_imbalance_dcx_samples.push_back(
+            get_max_local_imbalance(bucket_sizes, info.total_sample_size, comm.size()));
+
 
         SampleString prev_sample;
         // sorting in each round one blocks of materialized samples
@@ -285,6 +290,7 @@ struct LexicographicRankPhase {
         double bucket_imbalance_received =
             get_imbalance_bucket(received_size, info.total_sample_size, comm);
         get_stats_instance().bucket_imbalance_samples_received.push_back(bucket_imbalance_received);
+        get_local_stats_instance().output_bucket_imbalance_dcx_samples.push_back(get_max_local_imbalance(received_size, info.total_sample_size, comm.size()));
 
         timer.synchronize_and_start("phase_01_02_space_efficient_sort_alltoall");
         std::vector<RankIndex> local_ranks =
@@ -306,6 +312,7 @@ struct LexicographicRankPhase {
                                           const bool use_packing = false) {
         using SpaceEfficient = SpaceEfficientSort<char_type, index_type, DC>;
         using Splitter = typename SpaceEfficient::Splitter;
+
         auto& timer = measurements::timer();
 
         double char_packing_ratio = use_packing ? config.packing_ratio : 1;
@@ -321,6 +328,7 @@ struct LexicographicRankPhase {
         using Chunk = chunking::Chunking<char_type, index_type>::Chunk;
         std::vector<Chunk> chunks = chunking.get_random_chunks(config.seed);
         get_stats_instance().chunk_sizes_phase1.push_back(chunking.get_chunk_size());
+        get_local_stats_instance().chunk_sizes_phase1.push_back(chunking.get_chunk_size());
 
         // add padding to be able to materialize last suffix in chunk
         uint64_t chars_with_padding = chunking.get_chunk_size() + char_packing_ratio * X;

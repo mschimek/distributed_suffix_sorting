@@ -29,7 +29,9 @@ struct SpaceEfficientSort {
     Communicator<>& comm;
     PDCXConfig const& config;
 
-    SpaceEfficientSort(Communicator<>& _comm, PDCXConfig const& _config) : comm(_comm), config(_config) {}
+    SpaceEfficientSort(Communicator<>& _comm, PDCXConfig const& _config)
+        : comm(_comm),
+          config(_config) {}
 
     std::array<char_type, DC::X + 1> materialize_splitter(std::vector<char_type>& local_string,
                                                           uint64_t i) const {
@@ -168,13 +170,34 @@ struct SpaceEfficientSort {
         }
     }
 };
-double get_imbalance_bucket(std::vector<uint64_t>& bucket_sizes,
-                            uint64_t total_chars,
-                            Communicator<>& comm) {
+inline double get_imbalance_bucket(std::vector<uint64_t> const& bucket_sizes,
+                                   uint64_t total_chars,
+                                   Communicator<>& comm) {
     uint64_t num_buckets = bucket_sizes.size();
     uint64_t largest_bucket = mpi_util::all_reduce_max(bucket_sizes, comm);
     double avg_buckets = (double)total_chars / (num_buckets * comm.size());
     double bucket_imbalance = ((double)largest_bucket / avg_buckets) - 1.0;
+    return bucket_imbalance;
+}
+
+inline double get_max_local_bucket(std::vector<std::uint64_t> const& bucket_sizes) {
+    std::uint64_t const num_buckets = bucket_sizes.size();
+    if (bucket_sizes.empty()) {
+        return 0.;
+    }
+    return *std::max_element(bucket_sizes.begin(), bucket_sizes.end());
+}
+
+inline double get_max_local_imbalance(std::vector<std::uint64_t> const& bucket_sizes,
+                                      std::uint64_t total_elements,
+                                      std::size_t comm_size) {
+    std::uint64_t const num_buckets = bucket_sizes.size();
+    if (bucket_sizes.empty()) {
+        return 0.;
+    }
+    std::uint64_t const local_max = *std::max_element(bucket_sizes.begin(), bucket_sizes.end());
+    double const avg_bucket_load = static_cast<double>(total_elements) / (num_buckets * comm_size);
+    double const bucket_imbalance = static_cast<double>(local_max) / avg_bucket_load;
     return bucket_imbalance;
 }
 } // namespace dsss::dcx

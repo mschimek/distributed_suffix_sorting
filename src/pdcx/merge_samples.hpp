@@ -414,6 +414,14 @@ struct MergeSamplePhase {
         report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance),
                        comm,
                        info.recursion_depth);
+        get_local_stats_instance().input_all_bucket_sizes_merging_all.insert(
+            get_local_stats_instance().input_all_bucket_sizes_merging_all.end(),
+            bucket_sizes.begin(),
+            bucket_sizes.end());
+        get_local_stats_instance().input_max_bucket_merging_all.push_back(
+            get_max_local_bucket(bucket_sizes));
+        get_local_stats_instance().input_bucket_imbalance_merging_all.push_back(
+            get_max_local_imbalance(bucket_sizes, info.total_chars, comm.size()));
 
 
         // sorting in each round one blocks of materialized samples
@@ -461,7 +469,8 @@ struct MergeSamplePhase {
         report_on_root("--> Bucket Imbalance Received " + std::to_string(bucket_imbalance_received),
                        comm,
                        info.recursion_depth);
-
+        get_local_stats_instance().output_bucket_imbalance_merging_all.push_back(
+            get_max_local_imbalance(sa_bucket_size, info.total_chars, comm.size()));
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_alltoall");
         SA local_SA = mpi_util::transpose_blocks_wrapper(concat_sa_buckets,
@@ -500,6 +509,7 @@ struct MergeSamplePhase {
         using Chunk = chunking::Chunking<char_type, index_type>::Chunk;
         std::vector<Chunk> chunks = chunking.get_random_chunks(config.seed);
         get_stats_instance().chunk_sizes_phase4.push_back(chunking.get_chunk_size());
+        get_local_stats_instance().chunk_sizes_phase4.push_back(chunking.get_chunk_size());
 
         // add padding to be able to materialize last suffix in chunk
         uint64_t chars_with_padding = chunking.get_chunk_size() + char_packing_ratio * X;
@@ -507,9 +517,8 @@ struct MergeSamplePhase {
         uint64_t ranks_with_padding = num_dc_samples + D - 1;
         index_type padding_rank = std::numeric_limits<index_type>::max();
 
-        auto get_ranks_positions = [&](std::vector<index_type>& local_ranks, uint64_t chunk_start) {
-            return get_ranks_pos(chunk_start);
-        };
+        auto get_ranks_positions = [&](std::vector<index_type> const& local_ranks,
+                                       uint64_t chunk_start) { return get_ranks_pos(chunk_start); };
 
         std::vector<char_type> chunked_chars =
             chunking.get_chunked_chars(chunks, chars_with_padding, local_string);
@@ -578,7 +587,7 @@ struct MergeSamplePhase {
         std::vector<uint64_t> bucket_sizes(num_buckets, 0);
         std::vector<BucketMappingType> sample_to_bucket(chunked_chars.size(), num_buckets);
         KASSERT(num_buckets < std::numeric_limits<BucketMappingType>::max());
-        
+
         uint64_t num_materialized_samples = 0;
         for (uint64_t i = 0; i < received_chunks; i++) {
             uint64_t start_chunk = i * chars_with_padding;
@@ -653,6 +662,15 @@ struct MergeSamplePhase {
         report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
                        comm,
                        info.recursion_depth);
+
+        get_local_stats_instance().input_all_bucket_sizes_merging_all.insert(
+            get_local_stats_instance().input_all_bucket_sizes_merging_all.end(),
+            bucket_sizes.begin(),
+            bucket_sizes.end());
+        get_local_stats_instance().input_max_bucket_merging_all.push_back(
+            get_max_local_bucket(bucket_sizes));
+        get_local_stats_instance().input_bucket_imbalance_merging_all.push_back(
+            get_max_local_imbalance(bucket_sizes, info.total_chars, comm.size()));
         timer.stop();
 
         std::vector<MergeSamples> samples;
@@ -734,6 +752,8 @@ struct MergeSamplePhase {
                            + std::to_string(bucket_imbalance_received),
                        comm,
                        info.recursion_depth);
+        get_local_stats_instance().output_bucket_imbalance_merging_all.push_back(
+            get_max_local_imbalance(sa_bucket_size, info.total_chars, comm.size()));
 
         if (info.recursion_depth == 0) {
             get_stats_instance().phase_04_sa_size =
@@ -816,6 +836,14 @@ struct MergeSamplePhase {
         report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
                        comm,
                        info.recursion_depth);
+        get_local_stats_instance().input_all_bucket_sizes_merging_all.insert(
+            get_local_stats_instance().input_all_bucket_sizes_merging_all.end(),
+            bucket_sizes.begin(),
+            bucket_sizes.end());
+        get_local_stats_instance().input_max_bucket_merging_all.push_back(
+            get_max_local_bucket(bucket_sizes));
+        get_local_stats_instance().input_bucket_imbalance_merging_all.push_back(
+            get_max_local_imbalance(bucket_sizes, info.total_chars, comm.size()));
         timer.stop();
 
         std::vector<MergeSamples> samples;
@@ -902,6 +930,8 @@ struct MergeSamplePhase {
                            + std::to_string(bucket_imbalance_received),
                        comm,
                        info.recursion_depth);
+        get_local_stats_instance().output_bucket_imbalance_merging_all.push_back(
+            get_max_local_imbalance(sa_bucket_size, info.total_chars, comm.size()));
 
         if (info.recursion_depth == 0) {
             get_stats_instance().phase_04_sa_size =
