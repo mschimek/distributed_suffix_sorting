@@ -31,17 +31,21 @@ struct SortingWrapper {
         : comm(_comm),
           mpi_comm(comm.mpi_communicator()),
           data_seed(3469931 + comm.rank()),
+          gen{data_seed},
           num_levels(1),
           tag(123),
           print(false),
           sorter(AtomicSorters::SampleSort),
-          sample_sort_config(SampleSortConfig()) {
-        RBC::Create_Comm_from_MPI(mpi_comm, &rcomm);
-    }
+          sample_sort_config(SampleSortConfig()) {}
 
     void set_sorter(AtomicSorters new_sorter) { sorter = new_sorter; }
     void set_num_levels(int new_num_levels) { num_levels = new_num_levels; }
     void set_sample_sort_config(SampleSortConfig config) { sample_sort_config = config; }
+    void finalize_setting() {
+        if (sorter == AtomicSorters::Ams && num_levels == 1) {
+            RBC::Create_Comm_from_MPI(mpi_comm, &rcomm, true, true, true);
+        }
+    }
 
 
     void set_print(bool new_print) { print = new_print; }
@@ -84,8 +88,8 @@ struct SortingWrapper {
     MPI_Comm mpi_comm;
     RBC::Comm rcomm;
 
-    std::mt19937_64 gen;
     int data_seed;
+    std::mt19937_64 gen;
     int num_levels;
     int tag;
     bool print;

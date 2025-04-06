@@ -74,6 +74,7 @@ public:
         atomic_sorter.set_sorter(config.atomic_sorter);
         atomic_sorter.set_num_levels(config.ams_levels);
         atomic_sorter.set_sample_sort_config(config.sample_sort_config);
+        atomic_sorter.finalize_setting();
         string_sorter_samples.set_memory(config.memory_seq_string_sorter);
         string_sorter_merging.set_memory(config.memory_seq_string_sorter);
     }
