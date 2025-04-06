@@ -19,6 +19,37 @@
 
 namespace dsss {
 
+inline void report_memory_usage(kamping::Communicator<> const& comm, const std::string& msg, bool output_rss_from_all_pes) {
+    kamping::report_on_root("Memory Usage:" + msg, comm);
+    uint64_t max_mem = dsss::get_max_mem_bytes();
+    uint64_t max_rss = comm.allreduce_single(kamping::send_buf(max_mem), kamping::op(kamping::ops::max<>{}));
+    kamping::report_on_root("max_rss_pe=" + std::to_string(max_rss), comm);
+
+    if (output_rss_from_all_pes) {
+        auto all_mem = comm.gather(kamping::send_buf(max_mem));
+        if (comm.rank() == 0) {
+            std::cout << "max_mem_pe=";
+            kamping::print_vector(all_mem, ",");
+            std::cout << std::endl;
+        }
+    }
+}
+
+inline void report_size(kamping::Communicator<> const& comm, const std::string& msg, std::size_t size) {
+    kamping::report_on_root("Size Dist:" + msg, comm);
+    uint64_t max_rss = comm.allreduce_single(kamping::send_buf(size), kamping::op(kamping::ops::max<>{}));
+    kamping::report_on_root("max_size_pe=" + std::to_string(max_rss), comm);
+
+    if (true) {
+        auto all_mem = comm.gather(kamping::send_buf(size));
+        if (comm.rank() == 0) {
+            std::cout << "max_size_pe=";
+            kamping::print_vector(all_mem, ",");
+            std::cout << std::endl;
+        }
+    }
+}
+
 // adapated from: https://github.com/kurpicz/dsss/blob/master/dsss/suffix_sorting/sa_check.hpp
 // Roman Dementiev, Juha Kärkkäinen, Jens Mehnert, and Peter Sanders. 2008. Better external memory
 // suffix array construction.
@@ -71,11 +102,16 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     std::vector<sa_tuple> sa_tuples =
         mpi_util::zip_with_index<IndexType, sa_tuple>(sa, index_function, comm);
 
+    report_memory_usage(kamping::comm_world(), "before sort 1", false);
+
     sorting_wrapper.sort(sa_tuples,
                          [](const sa_tuple& a, const sa_tuple& b) { return a.sa < b.sa; });
 
+    report_memory_usage(kamping::comm_world(), "after sort 1", false);
     sa_tuples = mpi_util::distribute_data(sa_tuples, comm);
+    report_memory_usage(kamping::comm_world(), "after redistribute 1", false);
     text = mpi_util::distribute_data(text, comm);
+    report_memory_usage(kamping::comm_world(), "after redistribute 2", false);
     comm.barrier();
 
     size_t local_size = sa_tuples.size();
@@ -99,19 +135,26 @@ bool check_suffixarray(std::vector<IndexType>& sa,
         sa_tuples.emplace_back(sa_tuple{0, 0});
     }
 
+    report_memory_usage(kamping::comm_world(), "after shift", false);
     
+    report_size(kamping::comm_world(), "local size", local_size);
+    report_size(kamping::comm_world(), "local size sa tuples", sa_tuples.size());
     std::vector<rank_triple> rts;
     for (size_t i = 0; i < local_size; ++i) {
         rts.emplace_back(rank_triple{sa_tuples[i].rank, sa_tuples[i + 1].rank, text[i]});
     }
+    report_memory_usage(kamping::comm_world(), "before free", false);
     free_memory(std::move(sa_tuples));
+    report_size(kamping::comm_world(), "before sort rank triple", rts.size());
 
     sorting_wrapper.sort(rts, [](const rank_triple& a, const rank_triple& b) {
         return a.rank1 < b.rank1;
     });
+    report_memory_usage(kamping::comm_world(), "after sort rank triple", false);
 
     // avoid empty PEs for small input
     rts = mpi_util::distribute_data(rts, comm);
+    report_memory_usage(kamping::comm_world(), "after redistribute data", false);
 
     local_size = rts.size();
     bool is_sorted = true;
@@ -123,6 +166,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     auto smaller_triple = mpi_util::shift_right(rts.back(), comm);
     auto larger_triple = mpi_util::shift_left(rts.front(), comm);
 
+    report_memory_usage(kamping::comm_world(), "after shift 2", false);
     if (comm.rank() > 0) {
         is_sorted &= (smaller_triple < rts.front());
     }
