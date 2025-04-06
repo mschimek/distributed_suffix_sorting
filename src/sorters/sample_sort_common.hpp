@@ -51,8 +51,7 @@ std::vector<DataType> sample_random_splitters1(uint64_t total_elements,
                                                size_t nr_splitters,
                                                auto get_element_at,
                                                Communicator<>& comm) {
-    std::random_device dev;
-    std::mt19937 rng(dev());
+    std::mt19937 rng(comm.rank());
     std::uniform_int_distribution<uint64_t> dist(0, total_elements - 1);
 
     std::vector<DataType> local_splitters;
