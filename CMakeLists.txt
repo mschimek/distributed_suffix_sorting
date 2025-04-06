@@ -27,19 +27,28 @@ FetchContent_Declare(magic-enum
   SYSTEM
 )
 
-#FetchContent_Declare(tlx
-#  GIT_REPOSITORY  https://github.com/tlx/tlx.git
-#  GIT_TAG         2dd63ab
-#  SYSTEM
-#)
+FetchContent_Declare(tlx
+  GIT_REPOSITORY  https://github.com/tlx/tlx.git
+  GIT_TAG         cf83363
+  SYSTEM
+)
+FetchContent_MakeAvailable(tlx)
 
-#FetchContent_Declare(
-#  kadis
-#  GIT_REPOSITORY https://github.com/mschimek/KaDiS.git
-#  GIT_TAG 2f2cdd2
-#  SYSTEM)
+set(IPS4O_DISABLE_PARALLEL OFF)
+FetchContent_Declare(ips4o
+  GIT_REPOSITORY  https://github.com/mschimek/ips4o.git
+  GIT_TAG         eb30352
+  SYSTEM
+)
+FetchContent_MakeAvailable(ips4o)
 
-FetchContent_MakeAvailable(kaval kamping cli11 magic-enum)
+FetchContent_Declare(kadis
+  GIT_REPOSITORY  https://github.com/mschimek/KaDiS.git
+  GIT_TAG         908a9aa
+  SYSTEM
+)
+
+FetchContent_MakeAvailable(kaval kamping cli11 magic-enum kadis)
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -98,15 +107,14 @@ message(STATUS "Build Flags: ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_
 find_package(MPI REQUIRED)
 message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
 
-set(TLX_USE_LTO ON)
-add_subdirectory(external/tlx)
+#set(TLX_USE_LTO ON)
+#add_subdirectory(external/tlx)
 
 # IPS40 doesn't compile wihtout linking to TBB
-set(IPS4O_DISABLE_PARALLEL OFF)
-add_subdirectory(external/ips4o)
+#add_subdirectory(external/ips4o)
 
 #add_subdirectory(external/kamping)
-add_subdirectory(external/KaDiS)
+#add_subdirectory(external/KaDiS)
 
 
 # Create a library containing all implementation, to be linked against by executables

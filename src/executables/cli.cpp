@@ -61,6 +61,7 @@ auto string_map() -> std::map<std::string, Enum> {
 struct Parameters {
     size_t textsize = 0u;
     size_t alphabet_size = 2u;
+    size_t external_iteration = 0;
     std::string algorithm = "DCX";
     std::string input_path = "";
     std::string output_path = "";
@@ -81,6 +82,7 @@ struct Parameters {
         config_vector.emplace_back("json_output_path", json_output_path);
         config_vector.emplace_back("dcx_variant", dcx_variant);
         config_vector.emplace_back("algorithm", algorithm);
+        config_vector.emplace_back("external_iteration", std::to_string(external_iteration));
         {
             auto pdcx_confi_vector = pdcx_config.config();
             config_vector.insert(config_vector.end(),
@@ -339,6 +341,8 @@ Parameters read_cli_parameters(int argc, char const** argv) {
                    parameters.textsize,
                    "Size (in bytes unless stated otherwise) of the string that use to test our "
                    "suffix array construction algorithms.");
+    app.add_option("--iteration",
+                   parameters.external_iteration, "Helper Argument for benchmarking.");
     app.add_option("--alphabet_size",
                    parameters.alphabet_size,
                    "Size of the alphbet used for random.");
