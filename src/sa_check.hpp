@@ -61,6 +61,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
 
     mpi::SortingWrapper sorting_wrapper(comm);
     sorting_wrapper.set_sorter(mpi::AtomicSorters::Ams);
+    sorting_wrapper.finalize_setting();
 
     bool is_correct = true;
     size_t local_size_sa = sa.size();
