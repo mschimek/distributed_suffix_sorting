@@ -6,7 +6,7 @@
 	url = https://github.com/tlx/tlx
 [submodule "external/ips4o"]
 	path = external/ips4o
-	url = https://github.com/ips4o/ips4o
+	url = https://github.com/mschimek/ips4o
 [submodule "external/KaDiS"]
 	path = external/KaDiS
 	url = https://github.com/MichaelAxtmann/KaDiS.git

@@ -43,7 +43,11 @@ struct SortingWrapper {
     void set_sample_sort_config(SampleSortConfig config) { sample_sort_config = config; }
     void finalize_setting() {
         if (sorter == AtomicSorters::Ams && num_levels == 1) {
+            is_init = true;
             RBC::Create_Comm_from_MPI(mpi_comm, &rcomm, true, true, true);
+        } else {
+            is_init = true;
+            RBC::Create_Comm_from_MPI(mpi_comm, &rcomm);
         }
     }
 
@@ -62,12 +66,18 @@ struct SortingWrapper {
                 RQuick::sort(my_mpi_type, local_data, tag, gen, mpi_comm, comp);
                 break;
             case Bitonic:
+                if(!is_init) {
+                std::cout << "is init: " << is_init << std::endl;
+                }
                 Bitonic::Sort(local_data, my_mpi_type, tag, rcomm, comp);
                 break;
             case RFis:
                 RFis::Sort(my_mpi_type, local_data, rcomm, comp);
                 break;
             case Ams:
+                if(!is_init) {
+                std::cout << "is init: " << is_init << std::endl;
+                }
                 Ams::sortLevel(my_mpi_type, local_data, num_levels, gen, rcomm, comp);
                 break;
             default:
@@ -93,6 +103,7 @@ struct SortingWrapper {
     int num_levels;
     int tag;
     bool print;
+    bool is_init = false;
 
     AtomicSorters sorter;
     SampleSortConfig sample_sort_config;
