@@ -6,7 +6,7 @@ Implementation of our lightweight distributed Difference Cover Modulo X (DCX) su
 
 To compile the code use the following instructions:
 ```
-git clone --recursive git@github.com:HaagManuel/distributed_suffix_sorting.git
+git clone --recursive git@github.com:mschimek/distributed_suffix_sorting.git
 cmake -B release -DCMAKE_BUILD_TYPE=Release -DINCLUDE_ALL_SORTERS=ON -DOPTIMIZE_DATA_TYPES=OFF -DIPS4O_DISABLE_PARALLEL=ON
 cmake --build build --parallel --target cli
 ```
