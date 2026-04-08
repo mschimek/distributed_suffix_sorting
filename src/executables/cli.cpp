@@ -101,11 +101,6 @@ struct Parameters {
     }
 };
 
-using char_type = uint8_t;
-// using char_type = uint16_t;
-// using char_type = uint32_t;
-using index_type = uint40;
-
 size_t string_size = {0};
 size_t alphabet_size = {2};
 size_t seed = {0};
@@ -128,10 +123,6 @@ std::string splitter_sampling = "Uniform";
 std::string splitter_sorting = "Central";
 
 tlx::CmdlineParser cp;
-std::vector<char_type> local_string;
-std::vector<index_type> local_sa;
-
-uint64_t input_alphabet_size = 0;
 
 void configure_cli() {
     //// basic information
@@ -572,31 +563,34 @@ void report_arguments(kamping::Communicator<>& comm) {
     comm.barrier();
 }
 
-void read_input(kamping::Communicator<>& comm, Parameters const& parameters) {
+template <typename char_t>
+std::vector<char_t> read_input(kamping::Communicator<>& comm, Parameters const& parameters) {
     if (parameters.input_path != "random" && !mpi::file_exists(parameters.input_path)) {
         if (comm.rank() == 0) {
             std::cerr << "File " << parameters.input_path << " does not exist!" << std::endl;
         }
         exit(1);
     }
+    std::vector<char_t> local_string;
     auto& timer = kamping::measurements::timer();
     timer.synchronize_and_start("io");
-    if (!input_path.compare("random")) {
-        string_size /= comm.size();
+    if (parameters.input_path == "random") {
         uint64_t local_seed = seed + comm.rank();
-        local_string = random::generate_random_data<char_type>(parameters.textsize,
-                                                               parameters.alphabet_size,
-                                                               local_seed);
+        local_string = random::generate_random_data<char_t>(parameters.textsize,
+                                                            parameters.alphabet_size,
+                                                            local_seed);
     } else {
-        local_string = mpi::read_and_distribute_string<char_type>(parameters.input_path,
-                                                                  comm,
-                                                                  parameters.textsize);
+        local_string = mpi::read_and_distribute_string<char_t>(parameters.input_path,
+                                                               comm,
+                                                               parameters.textsize);
     }
     timer.stop();
     kamping::report_on_root("\n", comm);
+    return local_string;
 }
 
-void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& comm) {
+template <typename char_t>
+uint64_t compress_alphabet(std::vector<char_t>& input, kamping::Communicator<>& comm) {
     uint64_t max_alphabet_size = 256;
 
     // should not happen, because we read characters as bytes
@@ -604,7 +598,7 @@ void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& c
     if (max_char > max_alphabet_size) {
         kamping::report_on_root(
             "Can only process alphabets with not more than 255 distinct "
-            "characters. 0 is reserved for special characters. Change char_type.",
+            "characters. 0 is reserved for special characters. Change char_t.",
             comm);
         exit(1);
     }
@@ -622,7 +616,7 @@ void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& c
     if (alphabet_size == local_counts.size()) {
         kamping::report_on_root(
             "Can only process alphabets with not more than 255 distinct "
-            "characters. 0 is reserved for special characters. Change char_type.",
+            "characters. 0 is reserved for special characters. Change char_t.",
             comm);
         exit(1);
     }
@@ -641,12 +635,15 @@ void compress_alphabet(std::vector<char_type>& input, kamping::Communicator<>& c
         input[i] = map_char[input[i]];
     }
     kamping::report_on_root("input_alphabet_size=" + std::to_string(alphabet_size), comm);
-    input_alphabet_size = alphabet_size;
+    return alphabet_size;
 }
 
-template <typename PDCX, typename char_type, typename index_type>
-void run_pdcx(kamping::Communicator<>& comm, const dsss::dcx::PDCXConfig& pdcx_config) {
-    auto algo = PDCX(pdcx_config, comm);
+template <typename PDCXType, typename char_t, typename index_t>
+void run_pdcx(kamping::Communicator<>& comm,
+              const dsss::dcx::PDCXConfig& pdcx_config,
+              std::vector<char_t>& local_string,
+              std::vector<index_t>& local_sa) {
+    auto algo = PDCXType(pdcx_config, comm);
     local_sa = algo.compute_sa(local_string);
     algo.report_time();
     kamping::report_on_root("\n", comm);
@@ -654,9 +651,12 @@ void run_pdcx(kamping::Communicator<>& comm, const dsss::dcx::PDCXConfig& pdcx_c
 }
 
 
-template <typename DCXParam, uint64_t EXTRA_WORDS = 0>
+template <typename char_t, typename index_t, typename DCXParam, uint64_t EXTRA_WORDS = 0>
 void run_packed_dcx_variant(kamping::Communicator<>& comm,
-                            dsss::dcx::PDCXConfig const& pdcx_config) {
+                            dsss::dcx::PDCXConfig const& pdcx_config,
+                            uint64_t input_alphabet_size,
+                            std::vector<char_t>& local_string,
+                            std::vector<index_t>& local_sa) {
     using namespace dcx;
     using WordType = uint64_t;
     constexpr uint64_t X = DCXParam::X;
@@ -674,8 +674,8 @@ void run_packed_dcx_variant(kamping::Communicator<>& comm,
         constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
         // constexpr uint64_t NUM_WORDS = 2; // TEMPORARY for dc21 and dc31
         constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
-        using CharContainer = KPackedInteger<NUM_WORDS, char_type, BITS_CHAR, WordType>;
-        using PDCXVariant = PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>;
+        using CharContainer = KPackedInteger<NUM_WORDS, char_t, BITS_CHAR, WordType>;
+        using PDCXVariant = PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
 
 
         pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
@@ -683,35 +683,35 @@ void run_packed_dcx_variant(kamping::Communicator<>& comm,
         bits_per_char = BITS_CHAR;
         packing_ratio = pdcx_config.packing_ratio;
 
-        run_pdcx<PDCXVariant, char_type, index_type>(comm, pdcx_config);
+        run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     } else if (input_alphabet_size <= (1 << 5) - 1) {
         // 5-bit variant
         constexpr uint64_t BITS_CHAR = 5;
         constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
         constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
         constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
-        using CharContainer = KPackedInteger<NUM_WORDS, char_type, BITS_CHAR, WordType>;
-        using PDCXVariant = PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>;
+        using CharContainer = KPackedInteger<NUM_WORDS, char_t, BITS_CHAR, WordType>;
+        using PDCXVariant = PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
 
         pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
         packed_chars = PACKED_CHARS;
         bits_per_char = BITS_CHAR;
         packing_ratio = pdcx_config.packing_ratio;
-        run_pdcx<PDCXVariant, char_type, index_type>(comm, pdcx_config);
+        run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     } else {
         // 8-bit variant
         constexpr uint64_t BITS_CHAR = 8;
         constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
         constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
         constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
-        using CharContainer = KPackedInteger<NUM_WORDS, char_type, BITS_CHAR, WordType>;
-        using PDCXVariant = PDCX<char_type, index_type, DCXParam, CharContainer, CharContainer>;
+        using CharContainer = KPackedInteger<NUM_WORDS, char_t, BITS_CHAR, WordType>;
+        using PDCXVariant = PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
 
         pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
         packed_chars = PACKED_CHARS;
         bits_per_char = BITS_CHAR;
         packing_ratio = pdcx_config.packing_ratio;
-        run_pdcx<PDCXVariant, char_type, index_type>(comm, pdcx_config);
+        run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     }
 
     // logging
@@ -720,97 +720,108 @@ void run_packed_dcx_variant(kamping::Communicator<>& comm,
     report_on_root("bits_per_char=" + std::to_string(bits_per_char), comm);
 }
 
-void select_dcx_variant(kamping::Communicator<>& comm, dsss::dcx::PDCXConfig const& pdcx_config) {
+template <typename char_t, typename index_t>
+void select_dcx_variant(kamping::Communicator<>& comm,
+                        dsss::dcx::PDCXConfig const& pdcx_config,
+                        std::vector<char_t>& local_string,
+                        std::vector<index_t>& local_sa) {
     using namespace dcx;
 
     // if (dcx_variant == "dc3") {
     //     using DCXParam = DC3Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc7") {
     //     using DCXParam = DC7Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc13") {
     //     using DCXParam = DC13Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc21") {
     //     using DCXParam = DC21Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc31") {
     //     using DCXParam = DC31Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc39") {
     //     using DCXParam = DC39Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc57") {
     //     using DCXParam = DC57Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc73") {
     //     using DCXParam = DC73Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc91") {
     //     using DCXParam = DC91Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc95") {
     //     using DCXParam = DC95Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // } else if (dcx_variant == "dc133") {
     //     using DCXParam = DC133Param;
-    //     run_pdcx<PDCX<char_type, index_type, DCXParam>, char_type, index_type>(comm);
+    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
     // }
 
     //using DCXParam = DC39Param;
-    //using PDCXVariant = PDCX<char_type, index_type, DCXParam>;
-    //run_pdcx<PDCXVariant, char_type, index_type>(comm, pdcx_config);
+    //using PDCXVariant = PDCX<char_t, index_t, DCXParam>;
+    //run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
 }
 
-template <uint64_t EXTRA_WORDS = 0>
+template <typename char_t, typename index_t, uint64_t EXTRA_WORDS = 0>
 void select_packed_dcx_variant(kamping::Communicator<>& comm,
-                               dsss::dcx::PDCXConfig const& pdcx_config) {
+                               dsss::dcx::PDCXConfig const& pdcx_config,
+                               uint64_t input_alphabet_size,
+                               std::vector<char_t>& local_string,
+                               std::vector<index_t>& local_sa) {
     using namespace dcx;
 
     // if (dcx_variant == "dc3") {
     //     using DCXParam = DC3Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // } else if (dcx_variant == "dc7") {
     //     using DCXParam = DC7Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // } else
 
     // if (dcx_variant == "dc13") {
     //     using DCXParam = DC13Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // } else if (dcx_variant == "dc21") {
     //     using DCXParam = DC21Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // } else if (dcx_variant == "dc31") {
     //     using DCXParam = DC31Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // } else if (dcx_variant == "dc39") {
     //     using DCXParam = DC39Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // } else if (dcx_variant == "dc57") {
     //     using DCXParam = DC57Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // }
 
     // else if (dcx_variant == "dc73") {
     //     using DCXParam = DC73Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // } else if (dcx_variant == "dc91") {
     //     using DCXParam = DC91Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // } else if (dcx_variant == "dc95") {
     //     using DCXParam = DC95Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // } else if (dcx_variant == "dc133") {
     //     using DCXParam = DC133Param;
-    //     run_packed_dcx_variant<DCXParam, EXTRA_WORDS>(comm);
+    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
     // }
     using DCXParam = DC39Param;
-    run_packed_dcx_variant<DCXParam, 0>(comm, pdcx_config);
+    run_packed_dcx_variant<char_t, index_t, DCXParam, 0>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
 }
 
-void compute_sa(kamping::Communicator<>& comm, dsss::dcx::PDCXConfig const& pdcx_config) {
+template <typename char_t, typename index_t>
+void compute_sa(kamping::Communicator<>& comm,
+                dsss::dcx::PDCXConfig const& pdcx_config,
+                std::vector<char_t>& local_string,
+                std::vector<index_t>& local_sa) {
     using namespace dcx;
 
     measurements::Timer<Communicator<>> algo_timer;
@@ -820,7 +831,7 @@ void compute_sa(kamping::Communicator<>& comm, dsss::dcx::PDCXConfig const& pdcx
 
 
     timer.synchronize_and_start("compress_alphabet");
-    compress_alphabet(local_string, comm);
+    uint64_t input_alphabet_size = compress_alphabet(local_string, comm);
     timer.stop();
 
 
@@ -828,16 +839,16 @@ void compute_sa(kamping::Communicator<>& comm, dsss::dcx::PDCXConfig const& pdcx
         /*** better variant with packed integers  ***/
         if (pdcx_config.pack_extra_words == 0) {
             constexpr uint64_t EXTRA_WORDS = 0;
-            select_packed_dcx_variant<EXTRA_WORDS>(comm, pdcx_config);
+            select_packed_dcx_variant<char_t, index_t, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
         }
         //  else {
         //     constexpr uint64_t EXTRA_WORDS = 1;
-        //     select_packed_dcx_variant<EXTRA_WORDS>(comm);
+        //     select_packed_dcx_variant<char_t, index_t, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
         // }
 
     } else {
         /*** standard variant with atomic sorting or string sorting  ***/
-        select_dcx_variant(comm, pdcx_config);
+        select_dcx_variant(comm, pdcx_config, local_string, local_sa);
     }
 
     algo_timer.stop();
@@ -846,7 +857,10 @@ void compute_sa(kamping::Communicator<>& comm, dsss::dcx::PDCXConfig const& pdcx
     kamping::report_on_root("\n", comm);
 }
 
-void write_sa(kamping::Communicator<>& comm, Parameters const& params) {
+template <typename index_t>
+void write_sa(kamping::Communicator<>& comm,
+              Parameters const& params,
+              std::vector<index_t>& local_sa) {
     if (!params.output_path.empty()) {
         kamping::report_on_root("Writing the SA to " + params.output_path + "\n", comm);
         mpi::write_data(local_sa, params.output_path, comm);
@@ -855,7 +869,11 @@ void write_sa(kamping::Communicator<>& comm, Parameters const& params) {
     }
 }
 
-void check_sa(kamping::Communicator<>& comm, Parameters const& params) {
+template <typename char_t, typename index_t>
+void check_sa(kamping::Communicator<>& comm,
+              Parameters const& params,
+              std::vector<char_t>& local_string,
+              std::vector<index_t>& local_sa) {
     using namespace kamping;
     if (params.check) {
         measurements::Timer<Communicator<>> check_timer;
@@ -863,7 +881,7 @@ void check_sa(kamping::Communicator<>& comm, Parameters const& params) {
         check_timer.synchronize_and_start("check_SA");
 
         // TODO maybe read again
-        read_input(comm, params);
+        local_string = read_input<char_t>(comm, params);
 
         kamping::report_on_root("Checking SA ... ", comm);
         // assuming algorithm did not change local string
@@ -884,7 +902,10 @@ void check_sa(kamping::Communicator<>& comm, Parameters const& params) {
     }
 }
 
-void report_memory_usage(kamping::Communicator<>& comm, bool output_rss_from_all_pes = false) {
+template <typename char_t>
+void report_memory_usage(kamping::Communicator<>& comm,
+                         std::vector<char_t> const& local_string,
+                         bool output_rss_from_all_pes = false) {
     kamping::report_on_root("Memory Usage:", comm);
     uint64_t max_mem = dsss::get_max_mem_bytes();
     uint64_t max_rss = mpi_util::all_reduce_max(max_mem, comm);
@@ -900,6 +921,40 @@ void report_memory_usage(kamping::Communicator<>& comm, bool output_rss_from_all
             std::cout << std::endl;
         }
     }
+}
+
+template <typename char_t, typename index_t>
+void run_pipeline(kamping::Communicator<>& comm, Parameters const& params) {
+    uint64_t max_mem_before_input = dsss::get_max_mem_bytes();
+    auto& timer = kamping::measurements::timer();
+    timer.clear();
+    kamping::measurements::counter().add("mem_before_reading_input",
+                                         max_mem_before_input,
+                                         {kamping::measurements::GlobalAggregationMode::max,
+                                          kamping::measurements::GlobalAggregationMode::gather});
+    std::vector<char_t> local_string = read_input<char_t>(comm, params);
+    std::vector<index_t> local_sa;
+    kamping::measurements::counter().add("mem_before_sa_construction",
+                                         dsss::get_max_mem_bytes(),
+                                         {kamping::measurements::GlobalAggregationMode::max,
+                                          kamping::measurements::GlobalAggregationMode::gather});
+
+    compute_sa(comm, params.pdcx_config, local_string, local_sa);
+    dcx::get_local_stats_instance().commit();
+    dcx::get_local_stats_instance().reset();
+    kamping::measurements::counter().add("mem_after_sa_construction",
+                                         dsss::get_max_mem_bytes(),
+                                         {kamping::measurements::GlobalAggregationMode::max,
+                                          kamping::measurements::GlobalAggregationMode::gather});
+    report_memory_usage(comm, local_string);
+    check_sa(comm, params, local_string, local_sa);
+
+    kamping::measurements::counter().add("mem_after_sa_check",
+                                         dsss::get_max_mem_bytes(),
+                                         {kamping::measurements::GlobalAggregationMode::max,
+                                          kamping::measurements::GlobalAggregationMode::gather});
+
+    write_sa(comm, params, local_sa);
 }
 
 int main(int32_t argc, char const* argv[]) {
@@ -927,36 +982,7 @@ int main(int32_t argc, char const* argv[]) {
     // parse_enums_and_lists(comm);
     // report_arguments(comm);
 
-
-    uint64_t max_mem_before_input = dsss::get_max_mem_bytes();
-    auto& timer = kamping::measurements::timer();
-    timer.clear();
-    kamping::measurements::counter().add("mem_before_reading_input",
-                                         max_mem_before_input,
-                                         {kamping::measurements::GlobalAggregationMode::max,
-                                          kamping::measurements::GlobalAggregationMode::gather});
-    read_input(comm, params);
-    kamping::measurements::counter().add("mem_before_sa_construction",
-                                         dsss::get_max_mem_bytes(),
-                                         {kamping::measurements::GlobalAggregationMode::max,
-                                          kamping::measurements::GlobalAggregationMode::gather});
-
-    compute_sa(comm, params.pdcx_config);
-    dcx::get_local_stats_instance().commit();
-    dcx::get_local_stats_instance().reset();
-    kamping::measurements::counter().add("mem_after_sa_construction",
-                                         dsss::get_max_mem_bytes(),
-                                         {kamping::measurements::GlobalAggregationMode::max,
-                                          kamping::measurements::GlobalAggregationMode::gather});
-    report_memory_usage(comm);
-    check_sa(comm, params);
-
-    kamping::measurements::counter().add("mem_after_sa_check",
-                                         dsss::get_max_mem_bytes(),
-                                         {kamping::measurements::GlobalAggregationMode::max,
-                                          kamping::measurements::GlobalAggregationMode::gather});
-
-    write_sa(comm, params);
+    run_pipeline<uint8_t, uint40>(comm, params);
 
     // print
     auto config_vector = params.config();
