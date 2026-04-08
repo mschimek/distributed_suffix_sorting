@@ -87,10 +87,12 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -march=native")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -DDEBUG -march=native -ggdb")
 
 # compile options
-option(OPTIMIZE_DATA_TYPES "use smallest data type possible for ranks in pdcx" OFF)
-option(INCLUDE_ALL_SORTERS "include all axtmann sorters" OFF)
-message(STATUS "---> OPTIMIZE_DATA_TYPES: ${OPTIMIZE_DATA_TYPES}")
-message(STATUS "---> INCLUDE_ALL_SORTERS: ${INCLUDE_ALL_SORTERS}")
+option(DCX_OPTIMIZE_DATA_TYPES "use smallest data type possible for ranks in pdcx" OFF)
+option(DCX_INCLUDE_ALL_SORTERS "include all axtmann sorters" ON)
+option(DCX_BUILD_EXAMPLES "Build example executables" ON)
+message(STATUS "---> DCX_OPTIMIZE_DATA_TYPES: ${DCX_OPTIMIZE_DATA_TYPES}")
+message(STATUS "---> DCX_INCLUDE_ALL_SORTERS: ${DCX_INCLUDE_ALL_SORTERS}")
+message(STATUS "---> DCX_BUILD_EXAMPLES: ${DCX_BUILD_EXAMPLES}")
 
 
 
@@ -167,7 +169,7 @@ target_link_libraries(cli PRIVATE dss_base)
 
 
 # add compile flags
-if(OPTIMIZE_DATA_TYPES)
+if(DCX_OPTIMIZE_DATA_TYPES)
   message(STATUS "setting OPTIMIZE_DATA_TYPES in main")
   message(STATUS "setting OPTIMIZE_DATA_TYPES in cli")
   message(STATUS "setting OPTIMIZE_DATA_TYPES in dcx_lib")
@@ -176,7 +178,7 @@ if(OPTIMIZE_DATA_TYPES)
   target_compile_definitions(dcx_lib PRIVATE OPTIMIZE_DATA_TYPES)
 endif()
 
-if(INCLUDE_ALL_SORTERS)
+if(DCX_INCLUDE_ALL_SORTERS)
   message(STATUS "setting INCLUDE_ALL_SORTERS in main")
   message(STATUS "setting INCLUDE_ALL_SORTERS in cli")
   message(STATUS "setting INCLUDE_ALL_SORTERS in dcx_lib")
@@ -186,5 +188,7 @@ if(INCLUDE_ALL_SORTERS)
 endif()
 
 # examples
-add_executable(example_simple examples/simple.cpp)
-target_link_libraries(example_simple PRIVATE dcx::dcx)
+if(DCX_BUILD_EXAMPLES)
+  add_executable(dcx_lib_example_usage examples/dcx_lib_example_usage.cpp)
+  target_link_libraries(dcx_lib_example_usage PRIVATE dcx::dcx)
+endif()
