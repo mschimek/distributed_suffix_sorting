@@ -184,3 +184,7 @@ if(INCLUDE_ALL_SORTERS)
   target_compile_definitions(cli PRIVATE INCLUDE_ALL_SORTERS)
   target_compile_definitions(dcx_lib PRIVATE INCLUDE_ALL_SORTERS)
 endif()
+
+# examples
+add_executable(example_simple examples/simple.cpp)
+target_link_libraries(example_simple PRIVATE dcx::dcx)
