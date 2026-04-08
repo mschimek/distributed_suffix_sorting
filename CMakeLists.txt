@@ -139,6 +139,13 @@ target_link_libraries(dss_base INTERFACE CLI11::CLI11)
 set(StringSorting "src/string_sorting")
 add_subdirectory(src)
 
+# dcx static library
+add_library(dcx_lib STATIC src/dcx/dcx.cpp)
+target_include_directories(dcx_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(dcx_lib PUBLIC dss_base)
+set_target_properties(dcx_lib PROPERTIES OUTPUT_NAME dcx)
+add_library(dcx::dcx ALIAS dcx_lib)
+
 # main
 # add_executable(main src/main.cpp)
 add_executable(main src/executables/main.cpp)
@@ -163,13 +170,17 @@ target_link_libraries(cli PRIVATE dss_base)
 if(OPTIMIZE_DATA_TYPES)
   message(STATUS "setting OPTIMIZE_DATA_TYPES in main")
   message(STATUS "setting OPTIMIZE_DATA_TYPES in cli")
+  message(STATUS "setting OPTIMIZE_DATA_TYPES in dcx_lib")
   target_compile_definitions(main PRIVATE OPTIMIZE_DATA_TYPES)
   target_compile_definitions(cli PRIVATE OPTIMIZE_DATA_TYPES)
+  target_compile_definitions(dcx_lib PRIVATE OPTIMIZE_DATA_TYPES)
 endif()
-  
+
 if(INCLUDE_ALL_SORTERS)
   message(STATUS "setting INCLUDE_ALL_SORTERS in main")
   message(STATUS "setting INCLUDE_ALL_SORTERS in cli")
+  message(STATUS "setting INCLUDE_ALL_SORTERS in dcx_lib")
   target_compile_definitions(main PRIVATE INCLUDE_ALL_SORTERS)
   target_compile_definitions(cli PRIVATE INCLUDE_ALL_SORTERS)
+  target_compile_definitions(dcx_lib PRIVATE INCLUDE_ALL_SORTERS)
 endif()

@@ -1,7 +1,5 @@
 
-#include <algorithm>
 #include <cstdint>
-#include <limits>
 #include <string>
 
 #include <CLI/App.hpp>
@@ -11,27 +9,16 @@
 #include <kamping/measurements/counter.hpp>
 #include <kamping/measurements/printer.hpp>
 #include <kamping/named_parameters.hpp>
-#include <magic_enum/magic_enum.hpp>
-#include <tlx/cmdline_parser.hpp>
-
 #include "CLI_mpi.hpp"
+#include "dcx_common.hpp"
 #include "mpi/io.hpp"
 #include "mpi/reduce.hpp"
 #include "options.hpp"
-#include "pdcx/config.hpp"
-#include "pdcx/difference_cover.hpp"
-#include "pdcx/pdcx.hpp"
 #include "sa_check.hpp"
-#include "sorters/sample_sort_config.hpp"
-#include "sorters/seq_string_sorter_wrapper.hpp"
-#include "sorters/sorting_wrapper.hpp"
-#include "strings/char_container.hpp"
 #include "util/memory.hpp"
 #include "util/printing.hpp"
 #include "util/random.hpp"
 #include "util/uint_types.hpp"
-
-#define V(x) std::string(#x "=") << (x) << " " //"x=...
 
 using namespace dsss;
 
@@ -46,17 +33,6 @@ inline void print_as_jsonlist_to_file(std::vector<std::string> objects, std::str
     }
     outstream << std::endl << "]" << std::endl;
 }
-
-template <typename Enum>
-auto string_map() -> std::map<std::string, Enum> {
-    std::map<std::string, Enum> result;
-    auto entries = magic_enum::enum_entries<Enum>();
-    for (auto const& entry: entries) {
-        result.emplace(entry.second, entry.first);
-    }
-    return result;
-}
-
 
 struct Parameters {
     size_t textsize = 0u;
@@ -101,225 +77,6 @@ struct Parameters {
     }
 };
 
-size_t string_size = {0};
-size_t alphabet_size = {2};
-size_t seed = {0};
-std::string input_path = "";
-std::string output_path = "";
-std::string json_output_path = "";
-std::string dcx_variant = "dc3";
-bool check = false;
-
-//dcx::PDCXConfig pdcx_config;
-
-std::string atomic_sorter = "SampleSort";
-std::string string_sorter = "RadixSortCI3";
-
-std::string buckets_samples;
-std::string buckets_merging;
-
-dsss::mpi::SampleSortConfig sample_sort_config;
-std::string splitter_sampling = "Uniform";
-std::string splitter_sorting = "Central";
-
-tlx::CmdlineParser cp;
-
-void configure_cli() {
-    //// basic information
-    //cp.set_description("Distributed Suffix Array Construction using pDCX");
-    //cp.set_author("Manuel Haag <uozeb@student.kit.edu>");
-
-    //// input and output
-    //cp.add_param_string("input",
-    //                    input_path,
-    //                    "Path to input file. The special input 'random' generates a random text of "
-    //                    "the size given by parameter '-s'.");
-    //cp.add_bytes('s',
-    //             "size",
-    //             string_size,
-    //             "Size (in bytes unless stated "
-    //             "otherwise) of the string that use to test our suffix array "
-    //             "construction algorithms.");
-    //cp.add_bytes('a', "alphabet_size", alphabet_size, "Size of the alphbet used for random.");
-    //cp.add_bytes('e', "seed", seed, "Seed to be used for random. PE i uses seed: seed + i");
-    //pdcx_config.seed = seed;
-    //cp.add_string('o',
-    //              "output",
-    //              "<F>",
-    //              output_path,
-    //              "Filename for the output (SA). Note that the output is five times larger than "
-    //              "the input file.");
-
-    //cp.add_string("--json-output-path", json_output_path, "path to json output");
-
-    //// pdcx configuration
-    //cp.add_flag('c', "check", check, "Check if the SA has been constructed correctly.");
-    //cp.add_string('x',
-    //              "dcx",
-    //              "<F>",
-    //              dcx_variant,
-    //              "pDCX variant to use. Available options: dc3, dc7, dc13.");
-    //cp.add_double('t',
-    //              "discarding_threshold",
-    //              pdcx_config.discarding_threshold,
-    //              "Value between [0, 1], threshold when to use discarding optimization.");
-    //cp.add_bytes('m',
-    //             "num_samples_splitters",
-    //             pdcx_config.num_samples_splitters,
-    //             "Total number of random samples to use to determine block splitters in space "
-    //             "efficient sort.");
-    //cp.add_flag('U',
-    //            "use_random_sampling_splitters",
-    //            pdcx_config.use_random_sampling_splitters,
-    //            "Use random sampling to determine block splitters in space efficient sort. "
-    //            "Currently the samples are sorted on a single PE.");
-    //cp.add_flag('B',
-    //            "balance_blocks_space_efficient_sort",
-    //            pdcx_config.balance_blocks_space_efficient_sort,
-    //            "Balance blocks after materialization in space efficient sorting.");
-    //cp.add_string('P',
-    //              "buckets_samples",
-    //              "<F>",
-    //              buckets_samples,
-    //              "Number of buckets to use for space efficient sorting of samples on each "
-    //              "recursion level. Missing values default to 1. Example: 16,8,4");
-    //cp.add_string('M',
-    //              "buckets_merging",
-    //              "<F>",
-    //              buckets_merging,
-    //              "Number of buckets to use for space efficient sorting in merging phase on each "
-    //              "recursion level. Missing values default to 1. Example: 16,8,4. If you "
-    //              "use large bucket sizes you should also set num_samples_splitters (-m) high "
-    //              "enough. 16 b log b for b buckets should be enough.");
-    //cp.add_bytes('D',
-    //             "buckets_phase3",
-    //             pdcx_config.buckets_phase3,
-    //             "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
-    //cp.add_bytes('d',
-    //             "samples_buckets_phase3",
-    //             pdcx_config.num_samples_phase3,
-    //             "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
-    //cp.add_flag('Z',
-    //            "use_randomized_chunks",
-    //            pdcx_config.use_randomized_chunks,
-    //            "Use randomized chunks in bucket sorting to distribute work.");
-    //cp.add_bytes('z',
-    //             "avg_chunks_pe",
-    //             pdcx_config.avg_chunks_pe,
-    //             "Average number of chunks on a PE.");
-    //cp.add_flag(
-    //    'g',
-    //    "use_char_packing_samples",
-    //    pdcx_config.use_char_packing_samples,
-    //    "Pack multiple characters in the same datatype for phase 1 (samples) on the first level.");
-    //cp.add_flag(
-    //    'G',
-    //    "use_char_packing_merging",
-    //    pdcx_config.use_char_packing_merging,
-    //    "Pack multiple characters in the same datatype for phase 4 (merging) on the first level.");
-    //cp.add_flag('E',
-    //            "rearrange_buckets_balanced",
-    //            pdcx_config.rearrange_buckets_balanced,
-    //            "Balances the buckets in a balanced way, which needs an additional output buffer "
-    //            "and some bookkeeping information.");
-    //cp.add_flag('k',
-    //            "use_robust_tie_break",
-    //            pdcx_config.use_robust_tie_break,
-    //            "Use ranks as a tie break in space efficient sorting in Phase 4. Is slower but "
-    //            "splits equal strings amoung buckets.");
-    //cp.add_flag('u',
-    //            "use_compressed_buckets",
-    //            pdcx_config.use_compressed_buckets,
-    //            "Store the bucket mapping compressed in the same memory as the SA.");
-    //cp.add_bytes('A',
-    //             "pack_extra_words",
-    //             pdcx_config.pack_extra_words,
-    //             "Use specificed number of extra words when packing characters into words. "
-    //             "Currently supports 0 and 1.");
-
-
-    //// sorter configuration
-    //cp.add_string('r',
-    //              "atomic_sorter",
-    //              "<F>",
-    //              atomic_sorter,
-    //              "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]");
-    //cp.add_bytes('l', "ams_levels", pdcx_config.ams_levels, "Number of levels to be used in ams.");
-
-    //cp.add_string('p',
-    //              "splitter_sampling",
-    //              "<F>",
-    //              splitter_sampling,
-    //              "Splitter sampling method in sample sort. [uniform, random]");
-    //cp.add_string('T',
-    //              "splitter_sorting",
-    //              "<F>",
-    //              splitter_sorting,
-    //              "Splitter sorting method in sample sort [central, distributed]");
-    //cp.add_string('n',
-    //              "string_sorter",
-    //              string_sorter,
-    //              "String sorter to be used. [multi_key_qsort, radix_sort_ci2, radix_sort_ci3]");
-    //cp.add_bytes('y',
-    //             "memory_seq_string_sorter",
-    //             pdcx_config.memory_seq_string_sorter,
-    //             "Memory hint for sequential string sorter.");
-
-    //cp.add_flag('S',
-    //            "use_string_sort",
-    //            pdcx_config.use_string_sort,
-    //            "Use string sorting instead of atomic sorting.");
-    //cp.add_flag('C',
-    //            "use_string_sort_tie_breaking_phase1",
-    //            pdcx_config.use_string_sort_tie_breaking_phase1,
-    //            "Use string sorting with index-tie-breaking in Phase 1.");
-    //cp.add_flag('K',
-    //            "use_string_sort_tie_breaking_phase4",
-    //            pdcx_config.use_string_sort_tie_breaking_phase4,
-    //            "Use string sorting with rank-tie-breaking in Phase 4.");
-    //cp.add_flag('L',
-    //            "use_loser_tree",
-    //            sample_sort_config.use_loser_tree,
-    //            "Use loser tree in merging step of sample sort.");
-    //cp.add_flag('R',
-    //            "use_rquick_for_splitters",
-    //            sample_sort_config.use_rquick_for_splitters,
-    //            "Use Rquick to sort splitter.");
-    //cp.add_flag('b',
-    //            "use_binary_search_for_splitters",
-    //            sample_sort_config.use_binary_search_for_splitters,
-    //            "Use binary search instead of linear scan to find intervals in sample sort.");
-    //cp.add_flag('W',
-    //            "use_lcp_compression",
-    //            sample_sort_config.use_lcp_compression,
-    //            "Use lcp-compression in string sample sort to reduce communication volume.");
-    //cp.add_double('Y',
-    //              "lcp_compression_threshold",
-    //              sample_sort_config.lcp_compression_threshold,
-    //              "Value between [0, 1], threshold on compression ratio when to start using "
-    //              "LCP-compression.");
-    //cp.add_flag('X',
-    //            "use_prefix_doubling",
-    //            sample_sort_config.use_prefix_doubling,
-    //            "Use prefix-doubling in string sample sort to reduce communication volume.");
-    //cp.add_bytes('w',
-    //             "inital_prefix_length",
-    //             sample_sort_config.inital_prefix_length,
-    //             "Inital prefix-length to use for prefix doubling.");
-}
-
-void check_limit(std::vector<uint32_t>& vec,
-                 uint64_t limit,
-                 std::string name,
-                 kamping::Communicator<> const& comm = kamping::comm_world()) {
-    if (vec.size() == 0)
-        return;
-    uint32_t _max = *std::max_element(vec.begin(), vec.end());
-    if (_max > limit) {
-        kamping::report_on_root(name + " must be <= " + std::to_string(limit) + ".", comm);
-        exit(1);
-    }
-}
 
 Parameters read_cli_parameters(int argc, char const** argv) {
     Parameters parameters;
@@ -343,224 +100,18 @@ Parameters read_cli_parameters(int argc, char const** argv) {
                    "the input file.");
     app.add_option("--json-output-path", parameters.json_output_path, "path to json output");
 
-    // pdcx configuration
-    app.add_option("--seed",
-                   parameters.pdcx_config.seed,
-                   "Seed to be used for random. PE i uses seed: seed + i");
+    // CLI-specific options
     app.add_flag("--check", parameters.check, "Check if the SA has been constructed correctly.");
     app.add_option("--dcx",
                    parameters.dcx_variant,
                    "DCX variant to use. Available options: dc3, dc7, dc13, ..., dc133.");
-    app.add_option("--discarding-threshold",
-                   parameters.pdcx_config.discarding_threshold,
-                   "Value between [0, 1], threshold when to use discarding optimization.");
-    app.add_option("--num-samples-splitters",
-                   parameters.pdcx_config.num_samples_splitters,
-                   "Total number of random samples to use to determine bucket splitters in space "
-                   "efficient sort.");
-    app.add_flag("--use-random-sampling-splitters",
-                 parameters.pdcx_config.use_random_sampling_splitters,
-                 "Use random sampling to determine block splitters in space efficient sort. ");
-    app.add_flag("--balance-blocks-space-efficient-sort",
-                 parameters.pdcx_config.balance_blocks_space_efficient_sort,
-                 "Balance blocks after materialization in space efficient sorting.");
-    uint64_t const num_buckets_limit = std::numeric_limits<uint16_t>::max();
-    app.add_option("--buckets-sample-phase",
-                   parameters.pdcx_config.buckets_samples,
-                   "Number of buckets to use for space efficient sorting of samples on each "
-                   "recursion level. Missing values default to 1. Example: 16,8,4")
-        ->delimiter(',')
-        ->check(CLI::Range(num_buckets_limit));
-    app.add_option("--buckets-merging-phase",
-                   parameters.pdcx_config.buckets_merging,
-                   "Number of buckets to use for space efficient sorting in merging phase on each "
-                   "recursion level. Missing values default to 1. Example: 16,8,4. If you "
-                   "use large bucket sizes you should also set num_samples_splitters (-m) high "
-                   "enough. 16 b log b for b buckets should be enough.")
-        ->delimiter(',')
-        ->check(CLI::Range(num_buckets_limit));
-    app.add_option("--buckets-phase3",
-                   parameters.pdcx_config.buckets_phase3,
-                   "Number of buckets to use for space efficient sorting in Phase 3 for rri.");
-    app.add_option("--samples-buckets-phase3", parameters.pdcx_config.num_samples_phase3);
-    app.add_flag("--use-randomized-chunks",
-                 parameters.pdcx_config.use_randomized_chunks,
-                 "Use randomized chunks in bucket sorting to distribute work.");
-    app.add_option("--avg-chunks-pe",
-                   parameters.pdcx_config.avg_chunks_pe,
-                   "Average number of chunks on a PE.");
-    app.add_flag(
-        "--use-char-packing-samples",
-        parameters.pdcx_config.use_char_packing_samples,
-        "Pack multiple characters in the same datatype for phase 1 (samples) on the first level.");
-    app.add_flag(
-        "--use-char-packing-merging",
-        parameters.pdcx_config.use_char_packing_merging,
-        "Pack multiple characters in the same datatype for phase 4 (merging) on the first level.");
-    app.add_flag("--rearrange-buckets-balanced",
-                 parameters.pdcx_config.rearrange_buckets_balanced,
-                 "Balances the buckets in a balanced way, which needs an additional output buffer "
-                 "and some bookkeeping information.");
-    app.add_flag("--use-robust-tie-break",
-                 parameters.pdcx_config.use_robust_tie_break,
-                 "Use ranks as a tie break in space efficient sorting in Phase 4. Is slower but "
-                 "splits equal strings amoung buckets.");
-    app.add_flag("--use-compressed-buckets",
-                 parameters.pdcx_config.use_compressed_buckets,
-                 "Store the bucket mapping compressed in the same memory as the SA.");
-    app.add_option("--pack-extra-words",
-                   parameters.pdcx_config.pack_extra_words,
-                   "Use specificed number of extra words when packing characters into words. "
-                   "Currently supports 0 and 1.");
 
-
-    // sorter configuration
-    app.add_option("--atomic-sorter",
-                   parameters.pdcx_config.atomic_sorter,
-                   "Atomic sorter to be used. [sample_sort, rquick, ams, bitonic, rfis]")
-        ->transform(CLI::CheckedTransformer(string_map<mpi::AtomicSorters>(), CLI::ignore_case));
-    app.add_option("--ams-levels",
-                   parameters.pdcx_config.ams_levels,
-                   "Number of levels to be used in ams.");
-
-    app.add_option("--splitter-sampling",
-                   parameters.pdcx_config.sample_sort_config.splitter_sampling,
-                   "Splitter sampling method in sample sort. [uniform, random]")
-        ->transform(
-            CLI::CheckedTransformer(string_map<dsss::mpi::SplitterSampling>(), CLI::ignore_case));
-    app.add_option("--splitter-sorting",
-                   parameters.pdcx_config.sample_sort_config.splitter_sorting,
-                   "Splitter sorting method in sample sort [central, distributed]")
-        ->transform(
-            CLI::CheckedTransformer(string_map<dsss::mpi::SplitterSorting>(), CLI::ignore_case));
-    app.add_option("--string-sorter",
-                   parameters.pdcx_config.string_sorter,
-                   "String sorter to be used. [multi_key_qsort, radix_sort_ci2, radix_sort_ci3]")
-        ->transform(CLI::CheckedTransformer(string_map<dsss::SeqStringSorter>(), CLI::ignore_case));
-    app.add_option("--memory_seq_string_sorter",
-                   parameters.pdcx_config.memory_seq_string_sorter,
-                   "Memory hint for sequential string sorter.");
-
-    app.add_flag("--use-string-sort",
-                 parameters.pdcx_config.use_string_sort,
-                 "Use string sorting instead of atomic sorting.");
-    app.add_flag("--use-string-sort-tie-breaking-phase1",
-                 parameters.pdcx_config.use_string_sort_tie_breaking_phase1,
-                 "Use string sorting with index-tie-breaking in Phase 1.");
-    app.add_flag("--use-string-sort-tie-breaking-phase4",
-                 parameters.pdcx_config.use_string_sort_tie_breaking_phase4,
-                 "Use string sorting with rank-tie-breaking in Phase 4.");
-    app.add_flag("--use-loser-tree",
-                 parameters.pdcx_config.sample_sort_config.use_loser_tree,
-                 "Use loser tree in merging step of sample sort.");
-    app.add_flag("--use-rquick-for-splitters",
-                 parameters.pdcx_config.sample_sort_config.use_rquick_for_splitters,
-                 "Use Rquick to sort splitter.");
-    app.add_flag("--use-binary-search-for-splitters",
-                 parameters.pdcx_config.sample_sort_config.use_binary_search_for_splitters,
-                 "Use binary search instead of linear scan to find intervals in sample sort.");
-    app.add_flag("--use-lcp-compression",
-                 parameters.pdcx_config.sample_sort_config.use_lcp_compression,
-                 "Use lcp-compression in string sample sort to reduce communication volume.");
-    app.add_option("--lcp-compression-threshold",
-                   parameters.pdcx_config.sample_sort_config.lcp_compression_threshold,
-                   "Value between [0, 1], threshold on compression ratio when to start using "
-                   "LCP-compression.");
-    app.add_flag("--use-prefix-doubling",
-                 parameters.pdcx_config.sample_sort_config.use_prefix_doubling,
-                 "Use prefix-doubling in string sample sort to reduce communication volume.");
-    app.add_option("--inital-prefix-length",
-                   parameters.pdcx_config.sample_sort_config.inital_prefix_length,
-                   "Inital prefix-length to use for prefix doubling.");
+    // PDCXConfig options (shared with library)
+    dcx::common::add_pdcx_options(app, parameters.pdcx_config);
 
     CLI11_PARSE_MPI(app, argc, argv);
     parameters.num_pe = kamping::comm_world().size();
     return parameters;
-}
-
-template <typename EnumType>
-EnumType get_enum(std::string s, std::vector<std::string> names, kamping::Communicator<>& comm) {
-    for (uint i = 0; i < names.size(); i++) {
-        if (s == names[i]) {
-            return static_cast<EnumType>(i);
-        }
-    }
-    if (comm.rank() == 0) {
-        std::cout << "Invalid enum: " << s << std::endl;
-        std::cout << "Available options: ";
-        bool is_first = true;
-        for (std::string& s: names) {
-            if (!is_first) {
-                std::cout << ", ";
-            }
-            std::cout << s;
-            is_first = false;
-        }
-        std::cout << std::endl;
-    }
-    exit(1);
-}
-
-void map_strings_to_enum(kamping::Communicator<>& comm) {
-    //// pdcx
-    //pdcx_config.atomic_sorter = magic_enum::enum_cast<mpi::AtomicSorters>(atomic_sorter).value();
-    //// get_enum<mpi::AtomicSorters>(atomic_sorter, mpi::atomic_sorter_names, comm);
-    //pdcx_config.string_sorter = magic_enum::enum_cast<dsss::SeqStringSorter>(string_sorter).value();
-    //// get_enum<dsss::SeqStringSorter>(string_sorter, dsss::string_sorter_names, comm);
-
-    //// sample sort
-    //sample_sort_config.splitter_sorting =
-    //    magic_enum::enum_cast<dsss::mpi::SplitterSorting>(splitter_sorting).value();
-    //// get_enum<dsss::mpi::SplitterSorting>(splitter_sorting,
-    ////                                      dsss::mpi::splitter_sorting_names,
-    ////                                      comm);
-    //sample_sort_config.splitter_sampling =
-    //    magic_enum::enum_cast<dsss::mpi::SplitterSampling>(splitter_sampling).value();
-    //// get_enum<dsss::mpi::SplitterSampling>(splitter_sampling,
-    ////                                       dsss::mpi::splitter_sampling_names,
-    ////                                       comm);
-
-    //pdcx_config.sample_sort_config = sample_sort_config;
-}
-
-std::vector<uint32_t> parse_list_of_ints(std::string s) {
-    char separator = ',';
-    std::replace(s.begin(), s.end(), separator, ' ');
-
-    std::vector<uint32_t> numbers;
-    std::stringstream ss(s);
-    uint32_t temp;
-    while (ss >> temp) {
-        numbers.push_back(temp);
-    }
-    return numbers;
-}
-
-
-void parse_enums_and_lists(kamping::Communicator<>& comm) {
-    //map_strings_to_enum(comm);
-    //pdcx_config.buckets_samples = parse_list_of_ints(buckets_samples);
-    //pdcx_config.buckets_merging = parse_list_of_ints(buckets_merging);
-    //uint64_t limit = std::numeric_limits<uint16_t>::max();
-    //check_limit(pdcx_config.buckets_samples, limit, "buckets_samples", comm);
-    //check_limit(pdcx_config.buckets_merging, limit, "buckets_merging", comm);
-}
-
-void report_arguments(kamping::Communicator<>& comm) {
-    comm.barrier();
-    if (comm.rank() == 0) {
-        std::cout << "Arguments:\n";
-        std::cout << V(string_size) << "\n";
-        std::cout << V(alphabet_size) << "\n";
-        std::cout << V(seed) << "\n";
-        std::cout << V(input_path) << "\n";
-        std::cout << V(output_path) << "\n";
-        std::cout << V(dcx_variant) << "\n";
-        std::cout << V(check) << "\n";
-        std::cout << std::endl;
-        //pdcx_config.print_config();
-    }
-    comm.barrier();
 }
 
 template <typename char_t>
@@ -575,7 +126,7 @@ std::vector<char_t> read_input(kamping::Communicator<>& comm, Parameters const& 
     auto& timer = kamping::measurements::timer();
     timer.synchronize_and_start("io");
     if (parameters.input_path == "random") {
-        uint64_t local_seed = seed + comm.rank();
+        uint64_t local_seed = parameters.pdcx_config.seed + comm.rank();
         local_string = random::generate_random_data<char_t>(parameters.textsize,
                                                             parameters.alphabet_size,
                                                             local_seed);
@@ -589,273 +140,9 @@ std::vector<char_t> read_input(kamping::Communicator<>& comm, Parameters const& 
     return local_string;
 }
 
-template <typename char_t>
-uint64_t compress_alphabet(std::vector<char_t>& input, kamping::Communicator<>& comm) {
-    uint64_t max_alphabet_size = 256;
-
-    // should not happen, because we read characters as bytes
-    uint64_t max_char = mpi_util::all_reduce_max(input, comm);
-    if (max_char > max_alphabet_size) {
-        kamping::report_on_root(
-            "Can only process alphabets with not more than 255 distinct "
-            "characters. 0 is reserved for special characters. Change char_t.",
-            comm);
-        exit(1);
-    }
-
-    // determine character frequencies
-    std::vector<uint64_t> local_counts(max_alphabet_size, 0);
-    for (auto c: input) {
-        local_counts[c]++;
-    }
-    std::vector<uint64_t> global_counts =
-        comm.allreduce(kamping::send_buf(local_counts), kamping::op(kamping::ops::plus<>{}));
-    uint64_t alphabet_size =
-        local_counts.size() - std::count(global_counts.begin(), global_counts.end(), 0);
-
-    if (alphabet_size == local_counts.size()) {
-        kamping::report_on_root(
-            "Can only process alphabets with not more than 255 distinct "
-            "characters. 0 is reserved for special characters. Change char_t.",
-            comm);
-        exit(1);
-    }
-
-    // reserve character 0 for padding
-    uint64_t next_char = 1;
-    std::vector<uint64_t> map_char(max_alphabet_size);
-    for (uint64_t i = 0; i < max_alphabet_size; i++) {
-        if (global_counts[i] > 0) {
-            map_char[i] = next_char++;
-        }
-    }
-
-    // map input alphabet to compressed alphabet
-    for (uint64_t i = 0; i < input.size(); i++) {
-        input[i] = map_char[input[i]];
-    }
-    kamping::report_on_root("input_alphabet_size=" + std::to_string(alphabet_size), comm);
-    return alphabet_size;
-}
-
-template <typename PDCXType, typename char_t, typename index_t>
-void run_pdcx(kamping::Communicator<>& comm,
-              const dsss::dcx::PDCXConfig& pdcx_config,
-              std::vector<char_t>& local_string,
-              std::vector<index_t>& local_sa) {
-    auto algo = PDCXType(pdcx_config, comm);
-    local_sa = algo.compute_sa(local_string);
-    algo.report_time();
-    kamping::report_on_root("\n", comm);
-    algo.report_stats();
-}
-
-
-template <typename char_t, typename index_t, typename DCXParam, uint64_t EXTRA_WORDS = 0>
-void run_packed_dcx_variant(kamping::Communicator<>& comm,
-                            dsss::dcx::PDCXConfig const& pdcx_config,
-                            uint64_t input_alphabet_size,
-                            std::vector<char_t>& local_string,
-                            std::vector<index_t>& local_sa) {
-    using namespace dcx;
-    using WordType = uint64_t;
-    constexpr uint64_t X = DCXParam::X;
-    constexpr uint64_t BITS_WORD = 8 * sizeof(WordType);
-
-    // logging
-    uint64_t packed_chars;
-    uint64_t bits_per_char;
-    double packing_ratio;
-
-    if (input_alphabet_size <= (1 << 3) - 1) {
-        // 3-bit variant
-        constexpr uint64_t BITS_CHAR = 3;
-        constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
-        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
-        // constexpr uint64_t NUM_WORDS = 2; // TEMPORARY for dc21 and dc31
-        constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
-        using CharContainer = KPackedInteger<NUM_WORDS, char_t, BITS_CHAR, WordType>;
-        using PDCXVariant = PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
-
-
-        pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
-        packed_chars = PACKED_CHARS;
-        bits_per_char = BITS_CHAR;
-        packing_ratio = pdcx_config.packing_ratio;
-
-        run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    } else if (input_alphabet_size <= (1 << 5) - 1) {
-        // 5-bit variant
-        constexpr uint64_t BITS_CHAR = 5;
-        constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
-        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
-        constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
-        using CharContainer = KPackedInteger<NUM_WORDS, char_t, BITS_CHAR, WordType>;
-        using PDCXVariant = PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
-
-        pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
-        packed_chars = PACKED_CHARS;
-        bits_per_char = BITS_CHAR;
-        packing_ratio = pdcx_config.packing_ratio;
-        run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    } else {
-        // 8-bit variant
-        constexpr uint64_t BITS_CHAR = 8;
-        constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
-        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
-        constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
-        using CharContainer = KPackedInteger<NUM_WORDS, char_t, BITS_CHAR, WordType>;
-        using PDCXVariant = PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
-
-        pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
-        packed_chars = PACKED_CHARS;
-        bits_per_char = BITS_CHAR;
-        packing_ratio = pdcx_config.packing_ratio;
-        run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    }
-
-    // logging
-    report_on_root("packed_chars=" + std::to_string(packed_chars), comm);
-    report_on_root("_packing_ratio=" + std::to_string(packing_ratio), comm);
-    report_on_root("bits_per_char=" + std::to_string(bits_per_char), comm);
-}
-
-template <typename char_t, typename index_t>
-void select_dcx_variant(kamping::Communicator<>& comm,
-                        dsss::dcx::PDCXConfig const& pdcx_config,
-                        std::vector<char_t>& local_string,
-                        std::vector<index_t>& local_sa) {
-    using namespace dcx;
-
-    // if (dcx_variant == "dc3") {
-    //     using DCXParam = DC3Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc7") {
-    //     using DCXParam = DC7Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc13") {
-    //     using DCXParam = DC13Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc21") {
-    //     using DCXParam = DC21Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc31") {
-    //     using DCXParam = DC31Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc39") {
-    //     using DCXParam = DC39Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc57") {
-    //     using DCXParam = DC57Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc73") {
-    //     using DCXParam = DC73Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc91") {
-    //     using DCXParam = DC91Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc95") {
-    //     using DCXParam = DC95Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc133") {
-    //     using DCXParam = DC133Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // }
-
-    //using DCXParam = DC39Param;
-    //using PDCXVariant = PDCX<char_t, index_t, DCXParam>;
-    //run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-}
-
-template <typename char_t, typename index_t, uint64_t EXTRA_WORDS = 0>
-void select_packed_dcx_variant(kamping::Communicator<>& comm,
-                               dsss::dcx::PDCXConfig const& pdcx_config,
-                               uint64_t input_alphabet_size,
-                               std::vector<char_t>& local_string,
-                               std::vector<index_t>& local_sa) {
-    using namespace dcx;
-
-    // if (dcx_variant == "dc3") {
-    //     using DCXParam = DC3Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // } else if (dcx_variant == "dc7") {
-    //     using DCXParam = DC7Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // } else
-
-    // if (dcx_variant == "dc13") {
-    //     using DCXParam = DC13Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // } else if (dcx_variant == "dc21") {
-    //     using DCXParam = DC21Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // } else if (dcx_variant == "dc31") {
-    //     using DCXParam = DC31Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // } else if (dcx_variant == "dc39") {
-    //     using DCXParam = DC39Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // } else if (dcx_variant == "dc57") {
-    //     using DCXParam = DC57Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // }
-
-    // else if (dcx_variant == "dc73") {
-    //     using DCXParam = DC73Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // } else if (dcx_variant == "dc91") {
-    //     using DCXParam = DC91Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // } else if (dcx_variant == "dc95") {
-    //     using DCXParam = DC95Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // } else if (dcx_variant == "dc133") {
-    //     using DCXParam = DC133Param;
-    //     run_packed_dcx_variant<char_t, index_t, DCXParam, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-    // }
-    using DCXParam = DC39Param;
-    run_packed_dcx_variant<char_t, index_t, DCXParam, 0>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-}
-
-template <typename char_t, typename index_t>
-void compute_sa(kamping::Communicator<>& comm,
-                dsss::dcx::PDCXConfig const& pdcx_config,
-                std::vector<char_t>& local_string,
-                std::vector<index_t>& local_sa) {
-    using namespace dcx;
-
-    measurements::Timer<Communicator<>> algo_timer;
-    auto& timer = kamping::measurements::timer();
-    timer.synchronize_and_start("total_time");
-    algo_timer.synchronize_and_start("total_time");
-
-
-    timer.synchronize_and_start("compress_alphabet");
-    uint64_t input_alphabet_size = compress_alphabet(local_string, comm);
-    timer.stop();
-
-
-    if (pdcx_config.use_char_packing_merging || pdcx_config.use_char_packing_samples) {
-        /*** better variant with packed integers  ***/
-        if (pdcx_config.pack_extra_words == 0) {
-            constexpr uint64_t EXTRA_WORDS = 0;
-            select_packed_dcx_variant<char_t, index_t, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-        }
-        //  else {
-        //     constexpr uint64_t EXTRA_WORDS = 1;
-        //     select_packed_dcx_variant<char_t, index_t, EXTRA_WORDS>(comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-        // }
-
-    } else {
-        /*** standard variant with atomic sorting or string sorting  ***/
-        select_dcx_variant(comm, pdcx_config, local_string, local_sa);
-    }
-
-    algo_timer.stop();
-    timer.stop();
-    algo_timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
-    kamping::report_on_root("\n", comm);
-}
+// compress_alphabet, run_pdcx, run_packed_dcx_variant, select_dcx_variant,
+// select_packed_dcx_variant, and compute_sa are provided by dcx_common.hpp
+using dcx::common::compute_sa;
 
 template <typename index_t>
 void write_sa(kamping::Communicator<>& comm,
@@ -974,13 +261,7 @@ int main(int32_t argc, char const* argv[]) {
                                           kamping::measurements::GlobalAggregationMode::gather});
     options::report_compile_flags(comm);
 
-    // configure_cli();
     Parameters const params = read_cli_parameters(argc, argv);
-    // if (!cp.process(argc, argv)) {
-    //     return -1;
-    // }
-    // parse_enums_and_lists(comm);
-    // report_arguments(comm);
 
     run_pipeline<uint8_t, uint40>(comm, params);
 
