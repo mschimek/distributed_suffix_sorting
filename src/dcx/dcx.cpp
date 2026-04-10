@@ -21,7 +21,7 @@ std::vector<dsss::UIntPair<uint8_t>> get_sa(
     int32_t argc,
     char const* argv[]) {
     PDCXConfig config = common::parse_pdcx_config(argc, argv, /*allow_extras=*/true);
-    DC39Algorithm_uint40_unpacked algo(config);
+    DC39_u40 algo(config);
     return algo.compute_suffix_array(input, comm);
 }
 

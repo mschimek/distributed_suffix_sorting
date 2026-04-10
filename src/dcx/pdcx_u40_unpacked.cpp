@@ -2,11 +2,11 @@
 
 #include "pdcx/pdcx.hpp"
 
-std::vector<DC39Algorithm_uint40_unpacked::index_t>
-DC39Algorithm_uint40_unpacked::compute_suffix_array(std::vector<char_t>& local_string,
-                                                    kamping::Communicator<>& comm) {
-    using DCXParam = dsss::dcx::DC39Param;
-    using PDCXVariant = dsss::dcx::PDCX<char_t, index_t, DCXParam>;
+template <>
+std::vector<DC39_u40::index_t>
+DC39_u40::compute_suffix_array(std::vector<dsss::UIntPair<uint8_t>>& local_string,
+                               kamping::Communicator<>& comm) {
+    using PDCXVariant = dsss::dcx::PDCX<dsss::UIntPair<uint8_t>, index_t, dsss::dcx::DC39Param>;
 
     auto algo = PDCXVariant(pdcx_config, comm);
     auto local_suffix_array = algo.compute_sa(local_string);

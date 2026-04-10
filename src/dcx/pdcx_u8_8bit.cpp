@@ -3,12 +3,12 @@
 #include "pdcx/pdcx.hpp"
 #include "strings/char_container.hpp"
 
-std::vector<DC39Algorithm_uint8_8bit_packing::index_t>
-DC39Algorithm_uint8_8bit_packing::compute_suffix_array(std::vector<char_t>& local_string,
-                                                       kamping::Communicator<>& comm) {
-    using DCXParam = dsss::dcx::DC39Param;
-    using CharContainer = KPackedInteger<5, char_t, BITS_CHAR, uint64_t>;
-    using PDCXVariant = dsss::dcx::PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
+template <>
+std::vector<DC39_u8_8bit::index_t>
+DC39_u8_8bit::compute_suffix_array(std::vector<uint8_t>& local_string,
+                                   kamping::Communicator<>& comm) {
+    using CharContainer = KPackedInteger<NUM_WORDS, uint8_t, BITS_PER_CHAR, WordType>;
+    using PDCXVariant = dsss::dcx::PDCX<uint8_t, index_t, dsss::dcx::DC39Param, CharContainer, CharContainer>;
 
     auto algo = PDCXVariant(pdcx_config, comm);
     auto local_suffix_array = algo.compute_sa(local_string);

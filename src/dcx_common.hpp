@@ -223,22 +223,22 @@ inline void run_packed_dcx_variant(kamping::Communicator<>& comm,
     double packing_ratio;
 
     if (input_alphabet_size <= (1 << 3) - 1) {
-        DC39Algorithm_uint8_3bit_packing algo(pdcx_config);
+        DC39_u8_3bit algo(pdcx_config);
         local_sa = algo.compute_suffix_array(local_string, comm);
         packed_chars = algo.PACKED_CHARS;
-        bits_per_char = algo.BITS_CHAR;
+        bits_per_char = algo.BITS_PER_CHAR;
         packing_ratio = algo.pdcx_config.packing_ratio;
     } else if (input_alphabet_size <= (1 << 5) - 1) {
-        DC39Algorithm_uint8_5bit_packing algo(pdcx_config);
+        DC39_u8_5bit algo(pdcx_config);
         local_sa = algo.compute_suffix_array(local_string, comm);
         packed_chars = algo.PACKED_CHARS;
-        bits_per_char = algo.BITS_CHAR;
+        bits_per_char = algo.BITS_PER_CHAR;
         packing_ratio = algo.pdcx_config.packing_ratio;
     } else {
-        DC39Algorithm_uint8_8bit_packing algo(pdcx_config);
+        DC39_u8_8bit algo(pdcx_config);
         local_sa = algo.compute_suffix_array(local_string, comm);
         packed_chars = algo.PACKED_CHARS;
-        bits_per_char = algo.BITS_CHAR;
+        bits_per_char = algo.BITS_PER_CHAR;
         packing_ratio = algo.pdcx_config.packing_ratio;
     }
 
@@ -271,7 +271,7 @@ inline void compute_sa(kamping::Communicator<>& comm,
             throw std::runtime_error("currently not instantiated");
         }
     } else {
-        DC39Algorithm_uint8_unpacked algo(pdcx_config);
+        DC39_u8 algo(pdcx_config);
         local_sa = algo.compute_suffix_array(local_string, comm);
     }
 
