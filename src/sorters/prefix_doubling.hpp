@@ -63,7 +63,7 @@ std::vector<HashAndInt> compute_local_hashes(std::vector<CanditateIndex>& candid
     return local_hashes;
 }
 
-std::vector<HashType> local_deduplication(std::vector<HashAndInt>& local_hashes) {
+inline std::vector<HashType> local_deduplication(std::vector<HashAndInt>& local_hashes) {
     std::vector<HashType> local_unique_hashes(local_hashes.size());
     std::transform(local_hashes.begin(),
                    local_hashes.end(),
@@ -74,7 +74,7 @@ std::vector<HashType> local_deduplication(std::vector<HashAndInt>& local_hashes)
     return local_unique_hashes;
 }
 
-std::vector<HashAndInt> pair_hash_with_pe(std::vector<HashType>& local_unique_hashes,
+inline std::vector<HashAndInt> pair_hash_with_pe(std::vector<HashType>& local_unique_hashes,
                                           std::vector<int64_t>& recv_counts) {
     std::vector<HashAndInt> hash_and_pe;
     hash_and_pe.reserve(local_unique_hashes.size());
@@ -88,7 +88,7 @@ std::vector<HashAndInt> pair_hash_with_pe(std::vector<HashType>& local_unique_ha
     return hash_and_pe;
 }
 
-bool distinct_hashes(std::vector<HashAndInt>& hashes, uint64_t i) {
+inline bool distinct_hashes(std::vector<HashAndInt>& hashes, uint64_t i) {
     if (i > 0 && hashes[i] == hashes[i - 1]) {
         return false;
     }
@@ -99,7 +99,7 @@ bool distinct_hashes(std::vector<HashAndInt>& hashes, uint64_t i) {
 };
 
 
-std::vector<bool> get_unique_mask(std::vector<HashAndInt>& hash_and_pe,
+inline std::vector<bool> get_unique_mask(std::vector<HashAndInt>& hash_and_pe,
                                   std::vector<int64_t>& recv_counts,
                                   kamping::Communicator<>& comm) {
     ips4o::sort(hash_and_pe.begin(), hash_and_pe.end());
@@ -114,7 +114,7 @@ std::vector<bool> get_unique_mask(std::vector<HashAndInt>& hash_and_pe,
     return is_unique;
 }
 
-std::vector<bool> pack_and_send_mask(std::vector<bool>& is_unique,
+inline std::vector<bool> pack_and_send_mask(std::vector<bool>& is_unique,
                                      std::vector<int64_t>& send_counts,
                                      std::vector<int64_t>& recv_counts,
                                      kamping::Communicator<>& comm) {
@@ -160,7 +160,7 @@ std::vector<bool> pack_and_send_mask(std::vector<bool>& is_unique,
 }
 
 
-void update_candiates_and_prefix_length(std::vector<bool>& hash_is_unique,
+inline void update_candiates_and_prefix_length(std::vector<bool>& hash_is_unique,
                                         std::vector<HashAndInt>& local_hashes,
                                         std::vector<CanditateIndex>& candidates,
                                         std::vector<LengthType>& unique_prefix_length,
