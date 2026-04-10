@@ -2,6 +2,10 @@
 
 #include "pdcx/pdcx.hpp"
 
+#ifndef OPTIMIZE_DATA_TYPES
+extern template class dsss::dcx::PDCX<dsss::UIntPair<uint8_t>, dsss::UIntPair<uint8_t>, dsss::dcx::DC39Param>;
+#endif
+
 template <>
 std::vector<DC39_u40::index_t>
 DC39_u40::compute_suffix_array(std::vector<dsss::UIntPair<uint8_t>>& local_string,
@@ -15,3 +19,7 @@ DC39_u40::compute_suffix_array(std::vector<dsss::UIntPair<uint8_t>>& local_strin
     algo.report_stats();
     return local_suffix_array;
 }
+
+#ifndef OPTIMIZE_DATA_TYPES
+template class dsss::dcx::PDCX<dsss::UIntPair<uint8_t>, dsss::UIntPair<uint8_t>, dsss::dcx::DC39Param>;
+#endif

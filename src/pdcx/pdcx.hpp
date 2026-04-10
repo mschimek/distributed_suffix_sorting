@@ -978,4 +978,8 @@ public:
     int recursion_depth;
 }; // namespace dsss::dcx
 
+#ifndef OPTIMIZE_DATA_TYPES
+extern template class PDCX<dsss::UIntPair<uint8_t>, dsss::UIntPair<uint8_t>, DC39Param>;
+#endif
+
 } // namespace dsss::dcx
