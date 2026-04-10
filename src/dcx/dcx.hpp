@@ -15,7 +15,7 @@ namespace dsss::dcx {
 /// @param comm    KaMPIng communicator.
 /// @param argc    Number of CLI arguments (for algorithm configuration flags like --dcx, --buckets-*, etc.).
 /// @param argv    CLI argument strings.
-std::vector<dsss::UIntPair<uint8_t>> get_sa(
+std::vector<dsss::UIntPair<uint8_t>> compute_suffix_array(
     std::vector<uint8_t>& input,
     kamping::Communicator<>& comm,
     int32_t argc,
@@ -27,7 +27,7 @@ std::vector<dsss::UIntPair<uint8_t>> get_sa(
 /// @param comm    KaMPIng communicator.
 /// @param argc    Number of CLI arguments (for algorithm configuration flags like --dcx, --buckets-*, etc.).
 /// @param argv    CLI argument strings.
-std::vector<dsss::UIntPair<uint8_t>> get_sa(
+std::vector<dsss::UIntPair<uint8_t>> compute_suffix_array(
     std::vector<dsss::UIntPair<uint8_t>>& input,
     kamping::Communicator<>& comm,
     int32_t argc,

@@ -58,7 +58,7 @@ int main(int argc, char const* argv[]) {
     };
     int32_t lib_argc = static_cast<int32_t>(lib_argv.size());
 
-    auto local_sa = dsss::dcx::get_sa(local_input, comm, lib_argc, lib_argv.data());
+    auto local_sa = dsss::dcx::compute_suffix_array(local_input, comm, lib_argc, lib_argv.data());
 
     // Gather the full SA on rank 0, verify against naive SA, and print.
     auto sa = comm.gatherv(kamping::send_buf(local_sa));

@@ -4,7 +4,7 @@
 
 namespace dsss::dcx {
 
-std::vector<dsss::UIntPair<uint8_t>> get_sa(
+std::vector<dsss::UIntPair<uint8_t>> compute_suffix_array(
     std::vector<uint8_t>& input,
     kamping::Communicator<>& comm,
     int32_t argc,
@@ -15,7 +15,7 @@ std::vector<dsss::UIntPair<uint8_t>> get_sa(
     return local_sa;
 }
 
-std::vector<dsss::UIntPair<uint8_t>> get_sa(
+std::vector<dsss::UIntPair<uint8_t>> compute_suffix_array(
     std::vector<dsss::UIntPair<uint8_t>>& input,
     kamping::Communicator<>& comm,
     int32_t argc,
