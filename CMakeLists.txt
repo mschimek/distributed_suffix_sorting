@@ -44,7 +44,7 @@ FetchContent_MakeAvailable(ips4o)
 
 FetchContent_Declare(kadis
   GIT_REPOSITORY  https://github.com/mschimek/KaDiS.git
-  GIT_TAG         868a0e7
+  GIT_TAG         6713a37
   SYSTEM
 )
 
