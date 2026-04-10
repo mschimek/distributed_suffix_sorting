@@ -142,7 +142,14 @@ set(StringSorting "src/string_sorting")
 add_subdirectory(src)
 
 # dcx static library
-add_library(dcx_lib STATIC src/dcx/dcx.cpp)
+add_library(dcx_lib STATIC
+  src/dcx/dcx.cpp
+  src/dcx/pdcx_u8_3bit.cpp
+  src/dcx/pdcx_u8_5bit.cpp
+  src/dcx/pdcx_u8_8bit.cpp
+  src/dcx/pdcx_u8_unpacked.cpp
+  src/dcx/pdcx_u40_unpacked.cpp
+)
 target_include_directories(dcx_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(dcx_lib PUBLIC dss_base)
 set_target_properties(dcx_lib PROPERTIES OUTPUT_NAME dcx)
@@ -166,6 +173,7 @@ target_include_directories(cli PRIVATE
 
 target_compile_options(cli PRIVATE ${DSSS_WARNING_FLAGS})
 target_link_libraries(cli PRIVATE dss_base)
+target_link_libraries(cli PRIVATE dcx::dcx)
 
 
 # add compile flags

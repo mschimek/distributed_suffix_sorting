@@ -19,13 +19,12 @@
 #include "CLI_mpi.hpp"
 #include "mpi/reduce.hpp"
 #include "pdcx/config.hpp"
-#include "pdcx/difference_cover.hpp"
-#include "pdcx/pdcx.hpp"
 #include "sorters/sample_sort_config.hpp"
 #include "sorters/seq_string_sorter_wrapper.hpp"
 #include "sorters/sorting_wrapper.hpp"
-#include "strings/char_container.hpp"
 #include "util/uint_types.hpp"
+
+#include "dcx/dcx_instantiations.hpp"
 
 namespace dsss::dcx::common {
 
@@ -214,64 +213,33 @@ void run_pdcx(kamping::Communicator<>& comm,
     algo.report_stats();
 }
 
-template <typename char_t, typename index_t, typename DCXParam, uint64_t EXTRA_WORDS = 0>
-void run_packed_dcx_variant(kamping::Communicator<>& comm,
+inline void run_packed_dcx_variant(kamping::Communicator<>& comm,
                             PDCXConfig const& pdcx_config,
                             uint64_t input_alphabet_size,
-                            std::vector<char_t>& local_string,
-                            std::vector<index_t>& local_sa) {
-    using WordType = uint64_t;
-    constexpr uint64_t X = DCXParam::X;
-    constexpr uint64_t BITS_WORD = 8 * sizeof(WordType);
-
-    // logging
+                            std::vector<uint8_t>& local_string,
+                            std::vector<dsss::UIntPair<uint8_t>>& local_sa) {
     uint64_t packed_chars;
     uint64_t bits_per_char;
     double packing_ratio;
 
     if (input_alphabet_size <= (1 << 3) - 1) {
-        // 3-bit variant
-        constexpr uint64_t BITS_CHAR = 3;
-        constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
-        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
-        constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
-        using CharContainer = KPackedInteger<NUM_WORDS, char_t, BITS_CHAR, WordType>;
-        using PDCXVariant = PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
-
-        pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
-        packed_chars = PACKED_CHARS;
-        bits_per_char = BITS_CHAR;
-        packing_ratio = pdcx_config.packing_ratio;
-
-        run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
+        DC39Algorithm_uint8_3bit_packing algo(pdcx_config);
+        local_sa = algo.compute_suffix_array(local_string, comm);
+        packed_chars = algo.PACKED_CHARS;
+        bits_per_char = algo.BITS_CHAR;
+        packing_ratio = algo.pdcx_config.packing_ratio;
     } else if (input_alphabet_size <= (1 << 5) - 1) {
-        // 5-bit variant
-        constexpr uint64_t BITS_CHAR = 5;
-        constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
-        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
-        constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
-        using CharContainer = KPackedInteger<NUM_WORDS, char_t, BITS_CHAR, WordType>;
-        using PDCXVariant = PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
-
-        pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
-        packed_chars = PACKED_CHARS;
-        bits_per_char = BITS_CHAR;
-        packing_ratio = pdcx_config.packing_ratio;
-        run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
+        DC39Algorithm_uint8_5bit_packing algo(pdcx_config);
+        local_sa = algo.compute_suffix_array(local_string, comm);
+        packed_chars = algo.PACKED_CHARS;
+        bits_per_char = algo.BITS_CHAR;
+        packing_ratio = algo.pdcx_config.packing_ratio;
     } else {
-        // 8-bit variant
-        constexpr uint64_t BITS_CHAR = 8;
-        constexpr uint64_t CHARS_PER_WORD = BITS_WORD / BITS_CHAR;
-        constexpr uint64_t NUM_WORDS = ((X + CHARS_PER_WORD - 1) / CHARS_PER_WORD) + EXTRA_WORDS;
-        constexpr uint64_t PACKED_CHARS = NUM_WORDS * CHARS_PER_WORD;
-        using CharContainer = KPackedInteger<NUM_WORDS, char_t, BITS_CHAR, WordType>;
-        using PDCXVariant = PDCX<char_t, index_t, DCXParam, CharContainer, CharContainer>;
-
-        pdcx_config.packing_ratio = (double)PACKED_CHARS / X;
-        packed_chars = PACKED_CHARS;
-        bits_per_char = BITS_CHAR;
-        packing_ratio = pdcx_config.packing_ratio;
-        run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
+        DC39Algorithm_uint8_8bit_packing algo(pdcx_config);
+        local_sa = algo.compute_suffix_array(local_string, comm);
+        packed_chars = algo.PACKED_CHARS;
+        bits_per_char = algo.BITS_CHAR;
+        packing_ratio = algo.pdcx_config.packing_ratio;
     }
 
     // logging
@@ -280,42 +248,10 @@ void run_packed_dcx_variant(kamping::Communicator<>& comm,
     kamping::report_on_root("bits_per_char=" + std::to_string(bits_per_char), comm);
 }
 
-template <typename char_t, typename index_t>
-void select_dcx_variant(kamping::Communicator<>& comm,
-                        PDCXConfig const& pdcx_config,
-                        std::vector<char_t>& local_string,
-                        std::vector<index_t>& local_sa) {
-    // if (dcx_variant == "dc3") {
-    //     using DCXParam = DC3Param;
-    //     run_pdcx<PDCX<char_t, index_t, DCXParam>, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-    // } else if (dcx_variant == "dc7") {
-    //     ...
-    // }
-
-    //using DCXParam = DC39Param;
-    //using PDCXVariant = PDCX<char_t, index_t, DCXParam>;
-    //run_pdcx<PDCXVariant, char_t, index_t>(comm, pdcx_config, local_string, local_sa);
-}
-
-template <typename char_t, typename index_t, uint64_t EXTRA_WORDS = 0>
-void select_packed_dcx_variant(kamping::Communicator<>& comm,
-                               PDCXConfig const& pdcx_config,
-                               uint64_t input_alphabet_size,
-                               std::vector<char_t>& local_string,
-                               std::vector<index_t>& local_sa) {
-    // if (dcx_variant == "dc3") {
-    //     ...
-    // }
-    using DCXParam = DC39Param;
-    run_packed_dcx_variant<char_t, index_t, DCXParam, 0>(
-        comm, pdcx_config, input_alphabet_size, local_string, local_sa);
-}
-
-template <typename char_t, typename index_t>
-void compute_sa(kamping::Communicator<>& comm,
+inline void compute_sa(kamping::Communicator<>& comm,
                 PDCXConfig const& pdcx_config,
-                std::vector<char_t>& local_string,
-                std::vector<index_t>& local_sa) {
+                std::vector<uint8_t>& local_string,
+                std::vector<dsss::UIntPair<uint8_t>>& local_sa) {
     using namespace kamping;
 
     measurements::Timer<Communicator<>> algo_timer;
@@ -328,24 +264,15 @@ void compute_sa(kamping::Communicator<>& comm,
     timer.stop();
 
     if (pdcx_config.use_char_packing_merging || pdcx_config.use_char_packing_samples) {
-        /*** better variant with packed integers  ***/
         if (pdcx_config.pack_extra_words == 0) {
-            constexpr uint64_t EXTRA_WORDS = 0;
-            select_packed_dcx_variant<char_t, index_t, EXTRA_WORDS>(comm,
-                                                                    pdcx_config,
-                                                                    input_alphabet_size,
-                                                                    local_string,
-                                                                    local_sa);
+            run_packed_dcx_variant(comm, pdcx_config, input_alphabet_size,
+                                  local_string, local_sa);
         } else {
             throw std::runtime_error("currently not instantiated");
-            //     constexpr uint64_t EXTRA_WORDS = 1;
-            //     select_packed_dcx_variant<char_t, index_t, EXTRA_WORDS>(
-            //         comm, pdcx_config, input_alphabet_size, local_string, local_sa);
         }
     } else {
-        /*** standard variant with atomic sorting or string sorting  ***/
-        throw std::runtime_error("currently not instantiated");
-        select_dcx_variant(comm, pdcx_config, local_string, local_sa);
+        DC39Algorithm_uint8_unpacked algo(pdcx_config);
+        local_sa = algo.compute_suffix_array(local_string, comm);
     }
 
     algo_timer.stop();

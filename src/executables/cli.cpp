@@ -11,6 +11,7 @@
 #include <kamping/named_parameters.hpp>
 #include "CLI_mpi.hpp"
 #include "dcx_common.hpp"
+#include "pdcx/statistics.hpp"
 #include "mpi/io.hpp"
 #include "mpi/reduce.hpp"
 #include "options.hpp"
@@ -227,8 +228,8 @@ void run_pipeline(kamping::Communicator<>& comm, Parameters const& params) {
                                           kamping::measurements::GlobalAggregationMode::gather});
 
     compute_sa(comm, params.pdcx_config, local_string, local_sa);
-    dcx::get_local_stats_instance().commit();
-    dcx::get_local_stats_instance().reset();
+    dsss::dcx::get_local_stats_instance().commit();
+    dsss::dcx::get_local_stats_instance().reset();
     kamping::measurements::counter().add("mem_after_sa_construction",
                                          dsss::get_max_mem_bytes(),
                                          {kamping::measurements::GlobalAggregationMode::max,
