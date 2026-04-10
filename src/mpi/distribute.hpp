@@ -47,7 +47,10 @@ std::vector<DataType> distribute_data(std::vector<DataType>& local_data, Communi
         local_data_size -= to_send;
         preceding_size += to_send;
     }
-    send_cnts.back() += local_data_size;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+    send_cnts.back() += local_data_size; // comm.size() >= 1 guarantees non-empty
+#pragma GCC diagnostic pop
 
     std::vector<DataType> result = mpi_util::alltoallv_combined(local_data, send_cnts, comm);
     return result;
@@ -82,7 +85,10 @@ std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
         local_data_size -= to_send;
         preceding_size += to_send;
     }
-    send_cnts.back() += local_data_size;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+    send_cnts.back() += local_data_size; // comm.size() >= 1 guarantees non-empty
+#pragma GCC diagnostic pop
 
     std::vector<DataType> result = mpi_util::alltoallv_combined(local_data, send_cnts, comm);
     return result;

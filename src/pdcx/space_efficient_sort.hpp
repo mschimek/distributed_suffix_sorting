@@ -181,7 +181,6 @@ inline double get_imbalance_bucket(std::vector<uint64_t> const& bucket_sizes,
 }
 
 inline double get_max_local_bucket(std::vector<std::uint64_t> const& bucket_sizes) {
-    std::uint64_t const num_buckets = bucket_sizes.size();
     if (bucket_sizes.empty()) {
         return 0.;
     }

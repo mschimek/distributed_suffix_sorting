@@ -98,7 +98,7 @@ struct SortingWrapper {
     MPI_Comm mpi_comm;
     RBC::Comm rcomm;
 
-    int data_seed;
+    std::size_t data_seed;
     std::mt19937_64 gen;
     int num_levels;
     int tag;
