@@ -9,12 +9,13 @@
 #include <kamping/measurements/counter.hpp>
 #include <kamping/measurements/printer.hpp>
 #include <kamping/named_parameters.hpp>
+
 #include "CLI_mpi.hpp"
 #include "dcx_common.hpp"
-#include "pdcx/statistics.hpp"
 #include "mpi/io.hpp"
 #include "mpi/reduce.hpp"
 #include "options.hpp"
+#include "pdcx/statistics.hpp"
 #include "sa_check.hpp"
 #include "util/memory.hpp"
 #include "util/printing.hpp"
@@ -91,7 +92,8 @@ Parameters read_cli_parameters(int argc, char const** argv) {
                    "Size (in bytes unless stated otherwise) of the string that use to test our "
                    "suffix array construction algorithms.");
     app.add_option("--iteration",
-                   parameters.external_iteration, "Helper Argument for benchmarking.");
+                   parameters.external_iteration,
+                   "Helper Argument for benchmarking.");
     app.add_option("--alphabet_size",
                    parameters.alphabet_size,
                    "Size of the alphbet used for random.");
@@ -126,16 +128,8 @@ std::vector<char_t> read_input(kamping::Communicator<>& comm, Parameters const& 
     std::vector<char_t> local_string;
     auto& timer = kamping::measurements::timer();
     timer.synchronize_and_start("io");
-    if (parameters.input_path == "random") {
-        uint64_t local_seed = parameters.pdcx_config.seed + comm.rank();
-        local_string = random::generate_random_data<char_t>(parameters.textsize,
-                                                            parameters.alphabet_size,
-                                                            local_seed);
-    } else {
-        local_string = mpi::read_and_distribute_string<char_t>(parameters.input_path,
-                                                               comm,
-                                                               parameters.textsize);
-    }
+    local_string =
+        mpi::read_and_distribute_string<char_t>(parameters.input_path, comm, parameters.textsize);
     timer.stop();
     kamping::report_on_root("\n", comm);
     return local_string;
@@ -276,9 +270,10 @@ int main(int32_t argc, char const* argv[]) {
     kamping::measurements::timer().aggregate_and_print(printer_timer);
     kamping::measurements::counter().aggregate_and_print(printer_counter);
 
-    if(comm.rank() == 0) {
+    if (comm.rank() == 0) {
         print_as_jsonlist_to_file({sstream_timer.str()}, params.json_output_path + "_timer.json");
-        print_as_jsonlist_to_file({sstream_counter.str()}, params.json_output_path + "_counter.json");
+        print_as_jsonlist_to_file({sstream_counter.str()},
+                                  params.json_output_path + "_counter.json");
     }
 
     return 0;
