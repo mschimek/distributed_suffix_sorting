@@ -2,6 +2,8 @@
 
 #include "pdcx/pdcx.hpp"
 
+using namespace dsss::dcx;
+
 #ifndef OPTIMIZE_DATA_TYPES
 extern template class dsss::dcx::PDCX<dsss::UIntPair<uint8_t>, dsss::UIntPair<uint8_t>, dsss::dcx::DC39Param>;
 #endif

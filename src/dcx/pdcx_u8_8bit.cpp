@@ -3,6 +3,8 @@
 #include "pdcx/pdcx.hpp"
 #include "strings/char_container.hpp"
 
+using namespace dsss::dcx;
+
 template <>
 std::vector<DC39_u8_8bit::index_t>
 DC39_u8_8bit::compute_suffix_array(std::vector<uint8_t>& local_string,

@@ -2,6 +2,8 @@
 
 #include "pdcx/pdcx.hpp"
 
+using namespace dsss::dcx;
+
 template <>
 std::vector<DC39_u8::index_t>
 DC39_u8::compute_suffix_array(std::vector<uint8_t>& local_string,
