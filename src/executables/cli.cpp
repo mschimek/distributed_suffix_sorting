@@ -117,7 +117,7 @@ Parameters read_cli_parameters(int argc, char const** argv) {
 
 template <typename char_t>
 std::vector<char_t> read_input(kamping::Communicator<>& comm, Parameters const& parameters) {
-    if (parameters.input_path != "random" && !mpi::file_exists(parameters.input_path)) {
+    if (!mpi::file_exists(parameters.input_path)) {
         if (comm.rank() == 0) {
             std::cerr << "File " << parameters.input_path << " does not exist!" << std::endl;
         }
