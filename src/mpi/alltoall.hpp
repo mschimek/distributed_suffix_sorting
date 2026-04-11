@@ -136,7 +136,7 @@ auto alltoallv_combined(SendBuf&& send_buffer,
     return alltoallv_combined(std::forward<SendBuf>(send_buffer), send_counts, recv_counts, comm);
 }
 
-std::vector<bool> alltoallv_packed_bits(std::vector<bool>& bits,
+inline std::vector<bool> alltoallv_packed_bits(std::vector<bool>& bits,
                                         std::vector<int64_t>& send_counts,
                                         std::vector<int64_t>& recv_counts,
                                         kamping::Communicator<>& comm) {

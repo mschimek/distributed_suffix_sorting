@@ -107,7 +107,7 @@ void print_concatenated(T const& local_data,
 }
 
 
-void print_concatenated_string(std::string const& local_str,
+inline void print_concatenated_string(std::string const& local_str,
                                Communicator<> const& comm,
                                std::string msg = "") {
     std::vector<char> chars(local_str.begin(), local_str.end());
@@ -152,7 +152,7 @@ void print_vector(auto& vec, std::string sep = " ") {
     std::cout << std::endl;
 }
 
-void report_min_max_avg(uint64_t local_size,
+inline void report_min_max_avg(uint64_t local_size,
                         Communicator<>& comm,
                         std::string str = "",
                         uint64_t level = 0) {
@@ -167,7 +167,7 @@ void report_min_max_avg(uint64_t local_size,
     }
 }
 
-void report_on_root(std::string const& str,
+inline void report_on_root(std::string const& str,
                     Communicator<> const& comm,
                     uint64_t level = 0,
                     bool print = true) {

@@ -150,11 +150,11 @@ inline std::vector<LcpType> sample_sort_strings(std::vector<DataType>& local_dat
     return lcps;
 }
 
-bool need_lcps(SampleSortConfig& config) {
+inline bool need_lcps(SampleSortConfig& config) {
     return config.use_loser_tree || config.use_lcp_compression || config.use_prefix_doubling;
 }
 
-void exchange_lcps(std::vector<LcpType>& lcps,
+inline void exchange_lcps(std::vector<LcpType>& lcps,
                    std::vector<int64_t> interval_sizes,
                    Communicator<>& comm) {
     auto& timer = kamping::measurements::timer();
