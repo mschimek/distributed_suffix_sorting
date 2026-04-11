@@ -34,7 +34,6 @@ FetchContent_Declare(tlx
 )
 FetchContent_MakeAvailable(tlx)
 
-set(IPS4O_DISABLE_PARALLEL OFF)
 FetchContent_Declare(ips4o
   GIT_REPOSITORY  https://github.com/mschimek/ips4o.git
   GIT_TAG         eb30352

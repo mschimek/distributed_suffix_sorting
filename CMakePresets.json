@@ -1,0 +1,37 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "dev",
+            "displayName": "Development",
+            "binaryDir": "${sourceDir}/build/dev",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "DCX_INCLUDE_ALL_SORTERS": "ON",
+                "DCX_OPTIMIZE_DATA_TYPES": "OFF",
+                "IPS4O_DISABLE_PARALLEL": "ON"
+            }
+        },
+        {
+            "name": "experiments",
+            "displayName": "Experiments",
+            "binaryDir": "${sourceDir}/build/experiments",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "DCX_INCLUDE_ALL_SORTERS": "ON",
+                "DCX_OPTIMIZE_DATA_TYPES": "OFF",
+                "IPS4O_DISABLE_PARALLEL": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "dev",
+            "configurePreset": "dev"
+        },
+        {
+            "name": "experiments",
+            "configurePreset": "experiments"
+        }
+    ]
+}
