@@ -1,6 +1,8 @@
 
 #include <cstdint>
+#include <iostream>
 #include <string>
+#include <vector>
 
 #include <CLI/App.hpp>
 #include <CLI/Config.hpp>
@@ -19,7 +21,6 @@
 #include "sa_check.hpp"
 #include "util/memory.hpp"
 #include "util/printing.hpp"
-#include "util/random.hpp"
 #include "util/uint_types.hpp"
 
 using namespace dsss;
@@ -83,10 +84,7 @@ struct Parameters {
 Parameters read_cli_parameters(int argc, char const** argv) {
     Parameters parameters;
     CLI::App app{"Suffix Sorting Benchmark"};
-    app.add_option("--input",
-                   parameters.input_path,
-                   "Path to input file. The special input 'random' generates a random text of the "
-                   "size given by parameter '-s'.");
+    app.add_option("--input", parameters.input_path, "Path to input file");
     app.add_option("--textsize",
                    parameters.textsize,
                    "Size (in bytes unless stated otherwise) of the string that use to test our "

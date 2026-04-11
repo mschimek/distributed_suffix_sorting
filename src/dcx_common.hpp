@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <span>
 
 #include <CLI/App.hpp>
 #include <CLI/Config.hpp>
