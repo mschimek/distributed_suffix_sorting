@@ -108,16 +108,6 @@ message(STATUS "Build Flags: ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_
 find_package(MPI REQUIRED)
 message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
 
-#set(TLX_USE_LTO ON)
-#add_subdirectory(external/tlx)
-
-# IPS40 doesn't compile wihtout linking to TBB
-#add_subdirectory(external/ips4o)
-
-#add_subdirectory(external/kamping)
-#add_subdirectory(external/KaDiS)
-
-
 # Create a library containing all implementation, to be linked against by executables
 add_library(dss_base INTERFACE)
 set_target_properties(dss_base PROPERTIES LINKER_LANGUAGE CXX)
