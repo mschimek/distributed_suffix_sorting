@@ -115,29 +115,6 @@ message(STATUS "Build Flags: ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_
 find_package(MPI REQUIRED)
 message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
 
-# Create a library containing all implementation, to be linked against by executables
-add_library(dss_base INTERFACE)
-set_target_properties(dss_base PROPERTIES LINKER_LANGUAGE CXX)
-target_compile_options(dss_base INTERFACE ${DSSS_WARNING_FLAGS})
-target_compile_definitions(dss_base INTERFACE KASSERT_ASSERTION_LEVEL=${KASSERT_ASSERTION_LEVEL})
-
-#########target_include_directories(dss_base INTERFACE
-#  "${CMAKE_CURRENT_BINARY_DIR}/include")
-
-message(STATUS "CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
-
-target_include_directories(dss_base INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(dss_base INTERFACE kamping::kamping kassert::kassert)
-target_link_libraries(dss_base INTERFACE MPI::MPI_CXX)
-target_link_libraries(dss_base INTERFACE tlx)
-target_link_libraries(dss_base INTERFACE ips4o)
-target_link_libraries(dss_base INTERFACE kadis)
-target_link_libraries(dss_base INTERFACE magic_enum::magic_enum)
-target_link_libraries(dss_base INTERFACE CLI11::CLI11)
-
-set(StringSorting "src/string_sorting")
-add_subdirectory(src)
-
 # dcx static library
 add_library(dcx_lib STATIC
   src/dcx/dcx.cpp
@@ -148,49 +125,43 @@ add_library(dcx_lib STATIC
   src/dcx/pdcx_u40_unpacked.cpp
 )
 target_include_directories(dcx_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(dcx_lib PUBLIC dss_base)
+target_compile_options(dcx_lib PRIVATE ${DSSS_WARNING_FLAGS})
+target_compile_definitions(dcx_lib PUBLIC KASSERT_ASSERTION_LEVEL=${KASSERT_ASSERTION_LEVEL})
+target_link_libraries(dcx_lib PUBLIC
+  kamping::kamping
+  kassert::kassert
+  MPI::MPI_CXX
+  tlx
+  ips4o
+  kadis
+  magic_enum::magic_enum
+)
+target_link_libraries(dcx_lib PRIVATE CLI11::CLI11)
 set_target_properties(dcx_lib PROPERTIES OUTPUT_NAME dcx)
 add_library(dcx::dcx ALIAS dcx_lib)
 
-# main
-# add_executable(main src/main.cpp)
-add_executable(main src/executables/main.cpp)
-target_include_directories(main PRIVATE
-  "${CMAKE_CURRENT_BINARY_DIR}/include")
-
-target_compile_options(main PRIVATE ${DSSS_WARNING_FLAGS})
-target_link_libraries(main kamping)
-target_link_libraries(main dss_base)
-target_link_libraries(main kadis)
-
-# cli
-add_executable(cli src/executables/cli.cpp)
-target_include_directories(cli PRIVATE
-  "${CMAKE_CURRENT_BINARY_DIR}/include")
-
-target_compile_options(cli PRIVATE ${DSSS_WARNING_FLAGS})
-target_link_libraries(cli PRIVATE dss_base)
-target_link_libraries(cli PRIVATE dcx::dcx)
-
-
-# add compile flags
 if(DCX_OPTIMIZE_DATA_TYPES)
-  message(STATUS "setting OPTIMIZE_DATA_TYPES in main")
-  message(STATUS "setting OPTIMIZE_DATA_TYPES in cli")
   message(STATUS "setting OPTIMIZE_DATA_TYPES in dcx_lib")
-  target_compile_definitions(main PRIVATE OPTIMIZE_DATA_TYPES)
-  target_compile_definitions(cli PRIVATE OPTIMIZE_DATA_TYPES)
-  target_compile_definitions(dcx_lib PRIVATE OPTIMIZE_DATA_TYPES)
+  target_compile_definitions(dcx_lib PUBLIC OPTIMIZE_DATA_TYPES)
 endif()
 
 if(DCX_INCLUDE_ALL_SORTERS)
-  message(STATUS "setting INCLUDE_ALL_SORTERS in main")
-  message(STATUS "setting INCLUDE_ALL_SORTERS in cli")
   message(STATUS "setting INCLUDE_ALL_SORTERS in dcx_lib")
-  target_compile_definitions(main PRIVATE INCLUDE_ALL_SORTERS)
-  target_compile_definitions(cli PRIVATE INCLUDE_ALL_SORTERS)
-  target_compile_definitions(dcx_lib PRIVATE INCLUDE_ALL_SORTERS)
+  target_compile_definitions(dcx_lib PUBLIC INCLUDE_ALL_SORTERS)
 endif()
+
+# add header sources for IDE integration
+add_subdirectory(src)
+
+# main
+add_executable(main src/executables/main.cpp)
+target_compile_options(main PRIVATE ${DSSS_WARNING_FLAGS})
+target_link_libraries(main PRIVATE dcx::dcx)
+
+# cli
+add_executable(cli src/executables/cli.cpp)
+target_compile_options(cli PRIVATE ${DSSS_WARNING_FLAGS})
+target_link_libraries(cli PRIVATE dcx::dcx CLI11::CLI11)
 
 # examples
 if(DCX_BUILD_EXAMPLES)

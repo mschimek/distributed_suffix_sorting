@@ -1,4 +1,4 @@
-target_sources(dss_base
+target_sources(dcx_lib
     PUBLIC
        sample_sort.hpp
        sample_sort_common.hpp

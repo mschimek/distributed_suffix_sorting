@@ -1,4 +1,4 @@
-target_sources(dss_base
+target_sources(dcx_lib
     PUBLIC
         division.hpp
         macros.hpp

@@ -1,4 +1,4 @@
-target_sources(dss_base
+target_sources(dcx_lib
     PUBLIC
         bingmann-lcp_losertree.hpp
         char_container.hpp
