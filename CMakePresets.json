@@ -9,7 +9,8 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "DCX_INCLUDE_ALL_SORTERS": "ON",
                 "DCX_OPTIMIZE_DATA_TYPES": "OFF",
-                "IPS4O_DISABLE_PARALLEL": "ON"
+                "IPS4O_DISABLE_PARALLEL": "ON",
+                "KASSERT_ASSERTION_LEVEL": "30"
             }
         },
         {
@@ -20,7 +21,8 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "DCX_INCLUDE_ALL_SORTERS": "ON",
                 "DCX_OPTIMIZE_DATA_TYPES": "OFF",
-                "IPS4O_DISABLE_PARALLEL": "ON"
+                "IPS4O_DISABLE_PARALLEL": "ON",
+                "KASSERT_ASSERTION_LEVEL": "0"
             }
         }
     ],

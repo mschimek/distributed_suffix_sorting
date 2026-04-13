@@ -11,13 +11,12 @@
 
 namespace dsss::dcx {
 
-using namespace kamping;
-
 
 template <typename char_type, typename index_type>
 std::vector<index_type> compute_sa_on_root(std::vector<char_type>& local_string,
-                                           Communicator<>& comm) {
-    std::vector<char_type> global_string = comm.gatherv(send_buf(local_string));
+                                           kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
+    std::vector<char_type> global_string = comm.gatherv(kmp::send_buf(local_string));
     std::vector<index_type> SA;
     if (comm.rank() == 0) {
         SA = slow_suffixarray<char_type, index_type>(global_string);
@@ -32,10 +31,11 @@ template <typename char_type, typename index_type, typename DC>
 void sequential_sa_on_local_ranks(std::vector<DCRankIndex<char_type, index_type, DC>>& local_ranks,
                                   uint64_t local_sample_size,
                                   auto map_back_func,
-                                  Communicator<>& comm) {
+                                  kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
 
-    std::vector<RankIndex> global_ranks = comm.gatherv(send_buf(local_ranks));
+    std::vector<RankIndex> global_ranks = comm.gatherv(kmp::send_buf(local_ranks));
     std::vector<index_type> SA;
     if (comm.rank() == 0) {
         std::sort(global_ranks.begin(), global_ranks.end(), RankIndex::cmp_mod_div);

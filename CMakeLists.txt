@@ -12,7 +12,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   kamping
   GIT_REPOSITORY https://github.com/kamping-site/kamping.git
-  GIT_TAG 1effe84
+  GIT_TAG 685c5ab#5c8e84f
   SYSTEM)
 
 FetchContent_Declare(
@@ -47,7 +47,12 @@ FetchContent_Declare(kadis
   SYSTEM
 )
 
-FetchContent_MakeAvailable(kaval kamping cli11 magic-enum kadis)
+FetchContent_Declare(kassert
+  GIT_REPOSITORY https://github.com/kamping-site/kassert.git
+  GIT_TAG v1.0.0
+  SYSTEM)
+
+FetchContent_MakeAvailable(kaval kamping kassert cli11 magic-enum kadis)
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -89,9 +94,11 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -DDEBUG -march=native -ggdb")
 option(DCX_OPTIMIZE_DATA_TYPES "use smallest data type possible for ranks in pdcx" OFF)
 option(DCX_INCLUDE_ALL_SORTERS "include all axtmann sorters" ON)
 option(DCX_BUILD_EXAMPLES "Build example executables" ON)
+set(KASSERT_ASSERTION_LEVEL 0 CACHE STRING "KAssert assertion level (0=off, 30=normal, 60=light, 90=heavy)")
 message(STATUS "---> DCX_OPTIMIZE_DATA_TYPES: ${DCX_OPTIMIZE_DATA_TYPES}")
 message(STATUS "---> DCX_INCLUDE_ALL_SORTERS: ${DCX_INCLUDE_ALL_SORTERS}")
 message(STATUS "---> DCX_BUILD_EXAMPLES: ${DCX_BUILD_EXAMPLES}")
+message(STATUS "---> KASSERT_ASSERTION_LEVEL: ${KASSERT_ASSERTION_LEVEL}")
 
 
 
@@ -112,6 +119,7 @@ message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} 
 add_library(dss_base INTERFACE)
 set_target_properties(dss_base PROPERTIES LINKER_LANGUAGE CXX)
 target_compile_options(dss_base INTERFACE ${DSSS_WARNING_FLAGS})
+target_compile_definitions(dss_base INTERFACE KASSERT_ASSERTION_LEVEL=${KASSERT_ASSERTION_LEVEL})
 
 #########target_include_directories(dss_base INTERFACE
 #  "${CMAKE_CURRENT_BINARY_DIR}/include")
@@ -119,7 +127,7 @@ target_compile_options(dss_base INTERFACE ${DSSS_WARNING_FLAGS})
 message(STATUS "CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
 
 target_include_directories(dss_base INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(dss_base INTERFACE kamping::kamping)
+target_link_libraries(dss_base INTERFACE kamping::kamping kassert::kassert)
 target_link_libraries(dss_base INTERFACE MPI::MPI_CXX)
 target_link_libraries(dss_base INTERFACE tlx)
 target_link_libraries(dss_base INTERFACE ips4o)

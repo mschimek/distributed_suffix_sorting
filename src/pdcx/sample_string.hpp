@@ -22,8 +22,6 @@
 
 namespace dsss::dcx {
 
-using namespace kamping;
-
 //******* Phase 1: Construct Samples  ********
 
 // substring sampled by a difference cover sample
@@ -90,13 +88,13 @@ struct SampleStringPhase {
     static constexpr uint32_t X = DC::X;
     static constexpr uint32_t D = DC::D;
 
-    Communicator<>& comm;
+    kamping::Communicator<>& comm;
     PDCXConfig const& config;
     PDCXLengthInfo& info;
     mpi::SortingWrapper& atomic_sorter;
     dsss::SeqStringSorterWrapper& string_sorter;
 
-    SampleStringPhase(Communicator<>& _comm,
+    SampleStringPhase(kamping::Communicator<>& _comm,
                       PDCXConfig const& _config,
                       PDCXLengthInfo& _info,
                       mpi::SortingWrapper& _atomic_sorter,
@@ -225,7 +223,7 @@ struct SampleStringPhase {
     void sort_samples(std::vector<SampleString>& local_samples, bool use_packing) const {
         const bool use_string_sort = config.use_string_sort && !use_packing;
         const bool use_tie_break = config.use_string_sort_tie_breaking_phase1;
-        auto& timer = measurements::timer();
+        auto& timer = kamping::measurements::timer();
         timer.synchronize_and_start("phase_01_sort_local_samples");
         if (use_string_sort && !use_tie_break) {
             string_sort_samples(local_samples);

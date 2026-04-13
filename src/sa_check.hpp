@@ -57,8 +57,6 @@ template <typename IndexType, typename CharType>
 bool check_suffixarray(std::vector<IndexType>& sa,
                        std::vector<CharType>& text,
                        kamping::Communicator<>& comm) {
-    using namespace kamping;
-
     mpi::SortingWrapper sorting_wrapper(comm);
     sorting_wrapper.set_sorter(mpi::AtomicSorters::Ams);
     sorting_wrapper.finalize_setting();
@@ -70,7 +68,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     size_t global_size_text = mpi_util::all_reduce_sum(local_size_text, comm);
 
     if (global_size_text != global_size_sa) {
-        print_on_root("SA and text size don't match: " + std::to_string(global_size_sa)
+        kamping::print_on_root("SA and text size don't match: " + std::to_string(global_size_sa)
                           + " != " + std::to_string(global_size_text),
                       comm);
         return false;
@@ -125,7 +123,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
 
     is_correct = mpi_util::all_reduce_and(is_permutation, comm);
     if (!is_correct) {
-        print_on_root("no permutation", comm);
+        kamping::print_on_root("no permutation", comm);
         return false;
     }
 
@@ -178,7 +176,7 @@ bool check_suffixarray(std::vector<IndexType>& sa,
     is_correct = mpi_util::all_reduce_and(is_sorted, comm);
 
     if (!is_correct) {
-        print_on_root("not sorted", comm);
+        kamping::print_on_root("not sorted", comm);
     }
     return is_correct;
 }
@@ -189,8 +187,6 @@ template <typename IndexType, typename CharType>
 bool check_suffixarray2(std::vector<IndexType>& sa,
                         std::vector<CharType>& text,
                         kamping::Communicator<>& comm) {
-    using namespace kamping;
-
     mpi::SortingWrapper sorting_wrapper(comm);
     sorting_wrapper.set_sorter(mpi::AtomicSorters::Ams);
 
@@ -202,7 +198,7 @@ bool check_suffixarray2(std::vector<IndexType>& sa,
     size_t global_size_text = mpi_util::all_reduce_sum(local_size_text, comm);
 
     if (global_size_text != global_size_sa) {
-        print_on_root("SA and text size don't match: " + std::to_string(global_size_sa)
+        kamping::print_on_root("SA and text size don't match: " + std::to_string(global_size_sa)
                           + " != " + std::to_string(global_size_text),
                       comm);
         return false;
@@ -257,7 +253,7 @@ bool check_suffixarray2(std::vector<IndexType>& sa,
 
     is_correct = mpi_util::all_reduce_and(is_permutation, comm);
     if (!is_correct) {
-        print_on_root("no permutation", comm);
+        kamping::print_on_root("no permutation", comm);
         return false;
     }
 
@@ -300,7 +296,7 @@ bool check_suffixarray2(std::vector<IndexType>& sa,
     is_correct = mpi_util::all_reduce_and(is_sorted, comm);
 
     if (!is_correct) {
-        print_on_root("not sorted", comm);
+        kamping::print_on_root("not sorted", comm);
     }
     return is_correct;
 }
@@ -308,11 +304,10 @@ bool check_suffixarray2(std::vector<IndexType>& sa,
 
 template <typename T>
 bool check_sorted(std::vector<T>& v, auto less, kamping::Communicator<>& comm) {
-    using namespace kamping;
-
+    namespace kmp = kamping::params;
     uint64_t total_size = mpi_util::all_reduce_sum(v.size(), comm);
     if(total_size <= 10000) {
-        auto w = comm.allgatherv(send_buf(v));
+        auto w = comm.allgatherv(kmp::send_buf(v));
         bool ok = std::is_sorted(w.begin(), w.end(), less);
         return ok;
     }

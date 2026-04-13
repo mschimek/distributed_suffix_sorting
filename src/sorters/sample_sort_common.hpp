@@ -19,10 +19,8 @@
 
 namespace dsss::mpi {
 
-using namespace kamping;
-
 template <typename DataType>
-bool input_is_small(std::vector<DataType>& local_data, Communicator<>& comm) {
+bool input_is_small(std::vector<DataType>& local_data, kamping::Communicator<>& comm) {
     const uint64_t local_size = local_data.size();
     const uint64_t total_size = mpi_util::all_reduce_sum(local_size, comm);
     const uint64_t small_size = std::max(4ull * comm.size(), 1000ull);
@@ -30,14 +28,14 @@ bool input_is_small(std::vector<DataType>& local_data, Communicator<>& comm) {
 }
 // if input is small enough, send all data to the root and locally sort
 template <typename DataType>
-void sort_on_root(std::vector<DataType>& local_data, Communicator<>& comm, auto sorter) {
+void sort_on_root(std::vector<DataType>& local_data, kamping::Communicator<>& comm, auto sorter) {
     std::vector<DataType> global_data = comm.gatherv(kamping::send_buf(local_data));
     sorter(global_data);
     local_data = global_data;
 }
 
 template <typename DataType>
-void redistribute_imbalanced_data(std::vector<DataType>& local_data, Communicator<>& comm) {
+void redistribute_imbalanced_data(std::vector<DataType>& local_data, kamping::Communicator<>& comm) {
     uint64_t min_size = mpi_util::all_reduce_min(local_data.size(), comm);
     if (min_size <= comm.size()) {
         local_data = mpi_util::distribute_data(local_data, comm);
@@ -50,7 +48,7 @@ template <typename DataType>
 std::vector<DataType> sample_random_splitters1(uint64_t total_elements,
                                                size_t nr_splitters,
                                                auto get_element_at,
-                                               Communicator<>& comm) {
+                                               kamping::Communicator<>& comm) {
     std::mt19937 rng(comm.rank());
     std::uniform_int_distribution<uint64_t> dist(0, total_elements - 1);
 
@@ -66,7 +64,7 @@ std::vector<DataType> sample_random_splitters1(uint64_t total_elements,
 template <typename DataType>
 std::vector<DataType> sample_random_splitters(std::vector<DataType>& local_data,
                                               size_t nr_splitters,
-                                              Communicator<>& comm) {
+                                              kamping::Communicator<>& comm) {
     auto get_element_at = [&](uint64_t i) { return local_data[i]; };
     return sample_random_splitters1<DataType>(local_data.size(),
                                               nr_splitters,
@@ -76,7 +74,7 @@ std::vector<DataType> sample_random_splitters(std::vector<DataType>& local_data,
 
 template <typename DataType>
 std::vector<DataType> sample_random_splitters(std::vector<DataType>& local_data,
-                                              Communicator<>& comm) {
+                                              kamping::Communicator<>& comm) {
     const size_t log_p = std::ceil(std::log2(comm.size()));
     const size_t nr_splitters = std::min(16 * log_p, local_data.size());
     return sample_random_splitters(local_data, nr_splitters, comm);
@@ -87,7 +85,7 @@ std::vector<DataType> sample_random_splitters(std::vector<DataType>& local_data,
 template <typename DataType>
 std::vector<DataType> sample_uniform_splitters(std::vector<DataType>& local_data,
                                                size_t nr_splitters,
-                                               Communicator<>& comm) {
+                                               kamping::Communicator<>& comm) {
     const size_t local_n = local_data.size();
     size_t splitter_dist = local_n / (nr_splitters + 1);
 
@@ -101,7 +99,7 @@ std::vector<DataType> sample_uniform_splitters(std::vector<DataType>& local_data
 
 template <typename DataType>
 std::vector<DataType> sample_uniform_splitters(std::vector<DataType>& local_data,
-                                               Communicator<>& comm) {
+                                               kamping::Communicator<>& comm) {
     const size_t local_n = local_data.size();
     size_t nr_splitters = std::min<size_t>(comm.size() - 1, local_n);
     return sample_uniform_splitters(local_data, nr_splitters, comm);
@@ -197,7 +195,7 @@ size_t linear_scan_splitter_position(std::vector<DataType>& local_data,
 template <typename DataType, class Compare>
 std::vector<int64_t> compute_interval_sizes(std::vector<DataType>& local_data,
                                             std::vector<DataType>& splitters,
-                                            Communicator<>& comm,
+                                            kamping::Communicator<>& comm,
                                             Compare comp,
                                             SampleSortConfig& config) {
     const size_t local_n = local_data.size();

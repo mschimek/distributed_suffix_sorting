@@ -37,8 +37,6 @@
 
 namespace dsss::dcx {
 
-using namespace kamping;
-
 //******* Start Phase 4: Merge Suffixes  ********
 
 template <typename char_type,
@@ -139,14 +137,14 @@ struct MergeSamplePhase {
     static constexpr uint32_t X = DC::X;
     static constexpr uint32_t D = DC::D;
 
-    Communicator<>& comm;
+    kamping::Communicator<>& comm;
     PDCXConfig const& config;
     PDCXLengthInfo& info;
     mpi::SortingWrapper& atomic_sorter;
     dsss::SeqStringSorterWrapper& string_sorter;
     SpaceEfficientSort<char_type, index_type, DC> space_efficient_sort;
 
-    MergeSamplePhase(Communicator<>& _comm,
+    MergeSamplePhase(kamping::Communicator<>& _comm,
                      PDCXConfig const& _config,
                      PDCXLengthInfo& _info,
                      mpi::SortingWrapper& _atomic_sorter,
@@ -333,7 +331,7 @@ struct MergeSamplePhase {
     }
 
     void sort_merge_samples(std::vector<MergeSamples>& merge_samples, bool use_packing) const {
-        auto& timer = measurements::timer();
+        auto& timer = kamping::measurements::timer();
         const bool use_string_sort = config.use_string_sort && !use_packing;
         const bool use_tie_break = config.use_string_sort_tie_breaking_phase4;
         if (use_string_sort && !use_tie_break) {
@@ -368,7 +366,7 @@ struct MergeSamplePhase {
                                                   std::vector<index_type>& local_ranks,
                                                   std::vector<SplitterType>& global_splitters,
                                                   bool use_packing = false) {
-        auto& timer = measurements::timer();
+        auto& timer = kamping::measurements::timer();
 
         using SA = std::vector<index_type>;
         int64_t num_buckets = global_splitters.size() + 1;
@@ -411,7 +409,7 @@ struct MergeSamplePhase {
         // log imbalance of buckets
         double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
-        report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance),
+        kamping::report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance),
                        comm,
                        info.recursion_depth);
         get_local_stats_instance().input_all_bucket_sizes_merging_all.insert(
@@ -466,7 +464,7 @@ struct MergeSamplePhase {
         double bucket_imbalance_received =
             get_imbalance_bucket(sa_bucket_size, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
-        report_on_root("--> Bucket Imbalance Received " + std::to_string(bucket_imbalance_received),
+        kamping::report_on_root("--> Bucket Imbalance Received " + std::to_string(bucket_imbalance_received),
                        comm,
                        info.recursion_depth);
         get_local_stats_instance().output_bucket_imbalance_merging_all.push_back(
@@ -503,7 +501,7 @@ struct MergeSamplePhase {
                                      std::vector<index_type>& local_ranks,
                                      std::vector<SplitterType>& global_splitters,
                                      double char_packing_ratio) {
-        auto& timer = measurements::timer();
+        auto& timer = kamping::measurements::timer();
         timer.synchronize_and_start("phase_04_space_effient_sort_chunking_create_chunks");
         chunking::Chunking<char_type, index_type> chunking(comm, info, config.avg_chunks_pe);
         using Chunk = chunking::Chunking<char_type, index_type>::Chunk;
@@ -636,7 +634,7 @@ struct MergeSamplePhase {
                                    std::vector<SplitterType>& global_splitters,
                                    bool use_packing = false) {
         using SA = std::vector<index_type>;
-        auto& timer = measurements::timer();
+        auto& timer = kamping::measurements::timer();
 
         int64_t num_buckets = global_splitters.size() + 1;
         double char_packing_ratio = use_packing ? config.packing_ratio : 1;
@@ -659,7 +657,7 @@ struct MergeSamplePhase {
         // log imbalance
         double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
-        report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
+        kamping::report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
                        comm,
                        info.recursion_depth);
 
@@ -748,7 +746,7 @@ struct MergeSamplePhase {
         double bucket_imbalance_received =
             get_imbalance_bucket(sa_bucket_size, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
-        report_on_root("--> Randomized Bucket Imbalance Received "
+        kamping::report_on_root("--> Randomized Bucket Imbalance Received "
                            + std::to_string(bucket_imbalance_received),
                        comm,
                        info.recursion_depth);
@@ -779,7 +777,7 @@ struct MergeSamplePhase {
                                               std::vector<SplitterType>& global_splitters,
                                               bool use_packing = false) {
         using SA = std::vector<index_type>;
-        auto& timer = measurements::timer();
+        auto& timer = kamping::measurements::timer();
 
         int64_t num_buckets = global_splitters.size() + 1;
         double char_packing_ratio = use_packing ? config.packing_ratio : 1;
@@ -833,7 +831,7 @@ struct MergeSamplePhase {
         // log imbalance
         double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging.push_back(bucket_imbalance);
-        report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
+        kamping::report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
                        comm,
                        info.recursion_depth);
         get_local_stats_instance().input_all_bucket_sizes_merging_all.insert(
@@ -892,7 +890,7 @@ struct MergeSamplePhase {
             bool ok = sa_write_idx + samples.size() < offset_sa_idx;
             bool all_ok = mpi_util::all_reduce_and(ok, comm);
             if (!all_ok) {
-                report_on_root("ERROR: sa_write_idx + samples.size() >= offset_sa_idx. Use normal "
+                kamping::report_on_root("ERROR: sa_write_idx + samples.size() >= offset_sa_idx. Use normal "
                                "chunking variant.",
                                comm,
                                info.recursion_depth);
@@ -926,7 +924,7 @@ struct MergeSamplePhase {
         double bucket_imbalance_received =
             get_imbalance_bucket(sa_bucket_size, info.total_chars, comm);
         get_stats_instance().bucket_imbalance_merging_received.push_back(bucket_imbalance_received);
-        report_on_root("--> Randomized Bucket Imbalance Received "
+        kamping::report_on_root("--> Randomized Bucket Imbalance Received "
                            + std::to_string(bucket_imbalance_received),
                        comm,
                        info.recursion_depth);

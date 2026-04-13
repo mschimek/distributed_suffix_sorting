@@ -156,7 +156,7 @@ inline bool need_lcps(SampleSortConfig& config) {
 
 inline void exchange_lcps(std::vector<LcpType>& lcps,
                    std::vector<int64_t> interval_sizes,
-                   Communicator<>& comm) {
+                   kamping::Communicator<>& comm) {
     auto& timer = kamping::measurements::timer();
     timer.synchronize_and_start("string_sample_sort_lcp_alltoall");
     lcps = mpi_util::alltoallv_combined(lcps, interval_sizes, comm);
@@ -168,7 +168,7 @@ void exchange_reduced_data_volume(std::vector<DataType>& local_data,
                                   std::vector<LcpType>& lcps,
                                   std::vector<int64_t> interval_sizes,
                                   SampleSortConfig& config,
-                                  Communicator<>& comm) {
+                                  kamping::Communicator<>& comm) {
     auto& timer = kamping::measurements::timer();
     using char_type = DataType::CharType;
     using CharContainer = DataType::CharContainerType;
@@ -365,7 +365,7 @@ void exchange_data_directly(std::vector<DataType>& local_data,
                             std::vector<LcpType>& lcps,
                             std::vector<int64_t> interval_sizes,
                             SampleSortConfig& config,
-                            Communicator<>& comm) {
+                            kamping::Communicator<>& comm) {
     auto& timer = kamping::measurements::timer();
     timer.synchronize_and_start("string_sample_sort_alltoall");
     local_data = mpi_util::alltoallv_combined(local_data, interval_sizes, comm);
@@ -380,7 +380,7 @@ void exchange_data(std::vector<DataType>& local_data,
                    std::vector<LcpType>& lcps,
                    std::vector<int64_t> interval_sizes,
                    SampleSortConfig& config,
-                   Communicator<>& comm) {
+                   kamping::Communicator<>& comm) {
     bool use_direct_exchange = !config.use_lcp_compression && !config.use_prefix_doubling;
     if (use_direct_exchange) {
         exchange_data_directly(local_data, lcps, interval_sizes, config, comm);

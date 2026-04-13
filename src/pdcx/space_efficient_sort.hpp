@@ -17,8 +17,6 @@
 
 namespace dsss::dcx {
 
-using namespace kamping;
-
 template <typename char_type, typename index_type, typename DC>
 struct SpaceEfficientSort {
     // X chars and one 0-character
@@ -26,10 +24,10 @@ struct SpaceEfficientSort {
     // using SampleString = DCSampleString<char_type, index_type, DC>;
     using BucketMappingType = uint16_t;
 
-    Communicator<>& comm;
+    kamping::Communicator<>& comm;
     PDCXConfig const& config;
 
-    SpaceEfficientSort(Communicator<>& _comm, PDCXConfig const& _config)
+    SpaceEfficientSort(kamping::Communicator<>& _comm, PDCXConfig const& _config)
         : comm(_comm),
           config(_config) {}
 
@@ -85,7 +83,7 @@ struct SpaceEfficientSort {
                 local_splitters.push_back(local_samples[x]);
             }
         }
-        std::vector<SampleString> global_splitters = comm.allgatherv(send_buf(local_splitters));
+        std::vector<SampleString> global_splitters = comm.allgatherv(kamping::send_buf(local_splitters));
         return global_splitters;
     }
     std::pair<std::vector<uint64_t>, std::vector<BucketMappingType>>
@@ -172,7 +170,7 @@ struct SpaceEfficientSort {
 };
 inline double get_imbalance_bucket(std::vector<uint64_t> const& bucket_sizes,
                                    uint64_t total_chars,
-                                   Communicator<>& comm) {
+                                   kamping::Communicator<>& comm) {
     uint64_t num_buckets = bucket_sizes.size();
     uint64_t largest_bucket = mpi_util::all_reduce_max(bucket_sizes, comm);
     double avg_buckets = (double)total_chars / (num_buckets * comm.size());

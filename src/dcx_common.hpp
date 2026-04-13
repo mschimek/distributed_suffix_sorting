@@ -264,9 +264,7 @@ inline void compute_sa(kamping::Communicator<>& comm,
                        PDCXConfig const& pdcx_config,
                        std::vector<uint8_t>& local_string,
                        std::vector<dsss::UIntPair<uint8_t>>& local_sa) {
-    using namespace kamping;
-
-    measurements::Timer<Communicator<>> algo_timer;
+    kamping::measurements::Timer<kamping::Communicator<>> algo_timer;
     auto& timer = kamping::measurements::timer();
     timer.synchronize_and_start("total_time");
     algo_timer.synchronize_and_start("total_time");

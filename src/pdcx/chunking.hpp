@@ -13,12 +13,11 @@
 
 namespace dsss::chunking {
 
-using namespace kamping;
 using namespace dcx;
 
 template <typename char_type, typename index_type>
 struct Chunking {
-    Chunking(Communicator<>& _comm, PDCXLengthInfo& _info, uint64_t _avg_chunks_pe)
+    Chunking(kamping::Communicator<>& _comm, PDCXLengthInfo& _info, uint64_t _avg_chunks_pe)
         : comm(_comm),
           info(_info) {
         uint64_t local_chars_with_dummy = info.local_chars_with_dummy;
@@ -33,7 +32,7 @@ struct Chunking {
         num_local_chunks = util::div_ceil(local_chars_with_dummy, chunk_size);
     }
 
-    Communicator<>& comm;
+    kamping::Communicator<>& comm;
     PDCXLengthInfo& info;
     uint64_t avg_chunks_pe;
     uint64_t num_local_chunks;

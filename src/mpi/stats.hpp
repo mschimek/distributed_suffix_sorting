@@ -11,7 +11,6 @@
 namespace dsss::mpi_util {
 
 inline double compute_max_imbalance(uint64_t local_size, kamping::Communicator<>& comm) {
-    using namespace kamping;
     uint64_t total_size = all_reduce_sum(local_size, comm);
     uint64_t largest_size = all_reduce_max(local_size, comm);
     double avg_size = (double)total_size / comm.size();
@@ -21,7 +20,6 @@ inline double compute_max_imbalance(uint64_t local_size, kamping::Communicator<>
 }
 
 inline double compute_min_imbalance(uint64_t local_size, kamping::Communicator<>& comm) {
-    using namespace kamping;
     uint64_t total_size = all_reduce_sum(local_size, comm);
     uint64_t smallest_size = all_reduce_min(local_size, comm);
     double avg_size = (double)total_size / comm.size();

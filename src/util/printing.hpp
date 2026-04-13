@@ -25,7 +25,7 @@
 #define DEBUG_SIZE false
 // #define DEBUG true
 #define DEBUG false
-#define DBG(x) if constexpr(DEBUG) report_on_root(x, comm)
+#define DBG(x) if constexpr(DEBUG) kamping::report_on_root(x, comm)
 
 
 namespace kamping {

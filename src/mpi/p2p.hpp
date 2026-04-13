@@ -5,10 +5,10 @@
 #include "kamping/p2p/send.hpp"
 
 namespace dsss::mpi_util {
-using namespace kamping;
 
 template <typename T>
-T send_from_to(T data, uint64_t from, uint64_t to, Communicator<>& comm) {
+T send_from_to(T data, uint64_t from, uint64_t to, kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
     KASSERT(from < comm.size());
     KASSERT(to < comm.size());
     KASSERT(from != to);
@@ -16,10 +16,10 @@ T send_from_to(T data, uint64_t from, uint64_t to, Communicator<>& comm) {
     T received_value{};
 
     if (comm.rank() == from) {
-        comm.send(send_buf(data), destination(to));
+        comm.send(kmp::send_buf(data), kmp::destination(to));
     }
     if (comm.rank() == to) {
-        comm.recv(recv_buf(received_value), recv_count(1), source(from));
+        comm.recv(kmp::recv_buf(received_value), kmp::recv_count(1), kmp::source(from));
     }
     return received_value;
 }

@@ -154,10 +154,9 @@ void check_sa(kamping::Communicator<>& comm,
               Parameters const& params,
               std::vector<char_t>& local_string,
               std::vector<index_t>& local_sa) {
-    using namespace kamping;
     if (params.check) {
-        measurements::Timer<Communicator<>> check_timer;
-        measurements::timer().synchronize_and_start("check_SA");
+        kamping::measurements::Timer<kamping::Communicator<>> check_timer;
+        kamping::measurements::timer().synchronize_and_start("check_SA");
         check_timer.synchronize_and_start("check_SA");
 
         // TODO maybe read again
@@ -176,7 +175,7 @@ void check_sa(kamping::Communicator<>& comm,
             // std::cout << "SA_ok2=" << correct2 << std::endl;
         }
         check_timer.stop();
-        measurements::timer().stop();
+        kamping::measurements::timer().stop();
         check_timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
         kamping::report_on_root("\n", comm);
     }

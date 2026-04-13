@@ -34,8 +34,6 @@
 
 namespace dsss::dcx {
 
-using namespace kamping;
-
 template <typename char_type, typename index_type, typename DC>
 struct DCRankIndex {
     index_type rank;
@@ -66,12 +64,12 @@ struct LexicographicRankPhase {
     using RankIndex = DCRankIndex<char_type, index_type, DC>;
     using BucketMappingType = SpaceEfficientSort<char_type, index_type, DC>::BucketMappingType;
 
-    Communicator<>& comm;
+    kamping::Communicator<>& comm;
     PDCXConfig const& config;
     PDCXLengthInfo& info;
     static constexpr uint32_t X = DC::X;
 
-    LexicographicRankPhase(Communicator<>& _comm, PDCXConfig const& _config, PDCXLengthInfo& _info)
+    LexicographicRankPhase(kamping::Communicator<>& _comm, PDCXConfig const& _config, PDCXLengthInfo& _info)
         : comm(_comm),
           config(_config),
           info(_info) {}
@@ -150,7 +148,7 @@ struct LexicographicRankPhase {
                                 SampleString& prev_sample,
                                 uint64_t bucket_nr,
                                 bool use_packing) {
-        auto& timer = measurements::timer();
+        auto& timer = kamping::measurements::timer();
         // Phase 1: sort dc-samples
         timer.synchronize_and_start("phase_01_02_sort_samples");
         phase1.sort_samples(samples, use_packing);
@@ -212,7 +210,7 @@ struct LexicographicRankPhase {
         using Splitter = typename SpaceEfficient::Splitter;
         const uint32_t X = DC::X;
 
-        auto& timer = measurements::timer();
+        auto& timer = kamping::measurements::timer();
         SpaceEfficient space_efficient(comm, config);
         double packing_ratio = use_packing ? config.packing_ratio : 1;
 
@@ -313,7 +311,7 @@ struct LexicographicRankPhase {
         using SpaceEfficient = SpaceEfficientSort<char_type, index_type, DC>;
         using Splitter = typename SpaceEfficient::Splitter;
 
-        auto& timer = measurements::timer();
+        auto& timer = kamping::measurements::timer();
 
         double char_packing_ratio = use_packing ? config.packing_ratio : 1;
         SpaceEfficient space_efficient(comm, config);
@@ -391,7 +389,7 @@ struct LexicographicRankPhase {
         // log imbalance of buckets
         double bucket_imbalance = get_imbalance_bucket(bucket_sizes, info.total_sample_size, comm);
         get_stats_instance().bucket_imbalance_samples.push_back(bucket_imbalance);
-        report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
+        kamping::report_on_root("--> Randomized Bucket Imbalance " + std::to_string(bucket_imbalance),
                        comm,
                        info.recursion_depth);
 
@@ -441,7 +439,7 @@ struct LexicographicRankPhase {
         double bucket_imbalance_received =
             get_imbalance_bucket(received_size, info.total_sample_size, comm);
         get_stats_instance().bucket_imbalance_samples_received.push_back(bucket_imbalance_received);
-        report_on_root("--> Randomized Bucket Imbalance Received "
+        kamping::report_on_root("--> Randomized Bucket Imbalance Received "
                            + std::to_string(bucket_imbalance_received),
                        comm,
                        info.recursion_depth);

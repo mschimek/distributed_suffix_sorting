@@ -46,8 +46,6 @@
 
 namespace dsss::dcx {
 
-using namespace kamping;
-
 
 template <typename char_type,
           typename index_type,
@@ -64,11 +62,11 @@ class PDCX {
     using MergePhase = MergeSamplePhase<char_type, index_type, DC, CharContainerMerging>;
 
 public:
-    PDCX(PDCXConfig const& _config, Communicator<>& _comm)
+    PDCX(PDCXConfig const& _config, kamping::Communicator<>& _comm)
         : config(_config),
           atomic_sorter(_comm),
           comm(_comm),
-          timer(measurements::timer()),
+          timer(kamping::measurements::timer()),
           stats(get_stats_instance()),
           recursion_depth(0) {
         atomic_sorter.set_sorter(config.atomic_sorter);
@@ -114,7 +112,7 @@ public:
         // if (total_chars <= 80u) {
         if (info.total_chars <= 80u) {
             // continue with sequential algorithm
-            report_on_root("Sequential SA on local ranks",
+            kamping::report_on_root("Sequential SA on local ranks",
                            comm,
                            recursion_depth,
                            config.print_phases);
@@ -134,7 +132,7 @@ public:
             } else if (last_rank <= std::numeric_limits<dsss::uint40>::max()) {
                 handle_recursive_call<uint40>(local_ranks, map_back_func);
             } else {
-                print_on_root("Max Rank input size that can be handled is 2^40", comm);
+                kamping::print_on_root("Max Rank input size that can be handled is 2^40", comm);
             }
 #else
             handle_recursive_call<uint40>(local_ranks, map_back_func);
@@ -162,7 +160,7 @@ public:
         stats.use_discarding.push_back(use_discarding);
         get_local_stats_instance().use_discarding.push_back(use_discarding);
         if (use_discarding) {
-            report_on_root("using discarding, reduction: " + std::to_string(reduction),
+            kamping::report_on_root("using discarding, reduction: " + std::to_string(reduction),
                            comm,
                            recursion_depth,
                            config.print_phases);
@@ -345,7 +343,7 @@ public:
             local_ranks =
                 mpi_util::zip_with_index<RankRankIndex, RankIndex>(rri, index_local_ranks, comm);
         } else {
-            report_on_root("Space efficient sort in Phase 3 with " + std::to_string(buckets)
+            kamping::report_on_root("Space efficient sort in Phase 3 with " + std::to_string(buckets)
                                + " buckets",
                            comm);
 
@@ -393,7 +391,7 @@ public:
 
             // 4. report bucket imbalance
             double bucket_imbalance = get_imbalance_bucket(bucket_sizes, total_size, comm);
-            report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance),
+            kamping::report_on_root("--> Bucket Imbalance " + std::to_string(bucket_imbalance),
                            comm,
                            info.recursion_depth);
             get_local_stats_instance().input_bucket_imbalance_rank_computation.push_back(
@@ -437,7 +435,7 @@ public:
             // log imbalance of received suffixes
             double bucket_imbalance_received =
                 get_imbalance_bucket(sa_bucket_size, total_size, comm);
-            report_on_root("--> Bucket Imbalance Received "
+            kamping::report_on_root("--> Bucket Imbalance Received "
                                + std::to_string(bucket_imbalance_received),
                            comm,
                            info.recursion_depth);
@@ -527,6 +525,7 @@ public:
     }
 
     std::vector<index_type> compute_sa(std::vector<char_type>& local_string) {
+        namespace kmp = kamping::params;
         uint64_t max_mem_pdcx_start = dsss::get_max_mem_bytes();
         auto all_max_mem_pdcx_start = comm.allgather(kamping::send_buf(max_mem_pdcx_start));
         if (recursion_depth == 0 && comm.rank() == 0) {
@@ -552,8 +551,8 @@ public:
 
         std::string msg_level = "Recursion Level: " + std::to_string(recursion_depth)
                                 + ", Total Chars: " + std::to_string(info.total_chars);
-        report_on_root(msg_level, comm, recursion_depth, config.print_phases);
-        report_on_root("Phase 0: Preparation", comm, recursion_depth, config.print_phases);
+        kamping::report_on_root(msg_level, comm, recursion_depth, config.print_phases);
+        kamping::report_on_root("Phase 0: Preparation", comm, recursion_depth, config.print_phases);
 
         // configure packing
         const bool use_packed_samples = config.use_char_packing_samples && recursion_depth == 0;
@@ -585,7 +584,7 @@ public:
             buckets_merging > comm.size() && !config.rearrange_buckets_balanced;
         if (use_bucket_sorting_samples && too_many_buckets_samples) {
             buckets_samples = comm.size();
-            report_on_root(
+            kamping::report_on_root(
                 "Warning: #buckets_samples > #PEs, setting blocks to #PEs. Set "
                 "--rearrange_buckets_balanced (-E) flag to support more buckets than PEs.",
                 comm,
@@ -594,7 +593,7 @@ public:
         }
         if (use_bucket_sorting_merging && too_many_buckets_merging) {
             buckets_merging = comm.size();
-            report_on_root(
+            kamping::report_on_root(
                 "Warning: #buckets_merging > #PEs, setting blocks to #PEs. Set "
                 "--rearrange_buckets_balanced (-E) flag to support more buckets than PEs.",
                 comm,
@@ -622,7 +621,7 @@ public:
         // solve sequentially on root to avoid corner cases with empty PEs
         if (info.total_chars <= std::max(static_cast<std::uint64_t>(comm.size() * 2u * X),
                                          static_cast<std::uint64_t>(10'000u))) {
-            report_on_root("Solve SA sequentially on root",
+            kamping::report_on_root("Solve SA sequentially on root",
                            comm,
                            recursion_depth,
                            config.print_phases);
@@ -651,7 +650,7 @@ public:
 
         if (use_bucket_sorting_samples) {
             //******* Start Phase 1 + 2: Construct Samples +   Construct Ranks********
-            report_on_root("Phase 1 + 2: Sort Samples + Compute Ranks with "
+            kamping::report_on_root("Phase 1 + 2: Sort Samples + Compute Ranks with "
                                + std::to_string(buckets_samples) + " buckets.",
                            comm,
                            recursion_depth,
@@ -659,7 +658,7 @@ public:
             timer.synchronize_and_start("phase_01_02_samples_ranks");
             RankPhase phase2(comm, config, info);
             if (config.use_randomized_chunks) {
-                report_on_root("using randomized chunks for Phase 1 + 2", comm);
+                kamping::report_on_root("using randomized chunks for Phase 1 + 2", comm);
                 local_ranks = phase2.create_ranks_space_efficient_chunking(phase1,
                                                                            local_string,
                                                                            buckets_samples,
@@ -688,7 +687,7 @@ public:
             //******* End Phase 1 + 2: Construct Samples +   Construct Ranks********
         } else {
             //******* Start Phase 1: Construct Samples  ********
-            report_on_root("Phase 1: Sort Samples", comm, recursion_depth, config.print_phases);
+            kamping::report_on_root("Phase 1: Sort Samples", comm, recursion_depth, config.print_phases);
             timer.synchronize_and_start("phase_01_samples");
             std::vector<SampleString> local_samples =
                 phase1.sorted_dc_samples(local_string, use_packed_samples);
@@ -715,7 +714,7 @@ public:
             //******* End Phase 1: Construct Samples  ********
 
             //******* Start Phase 2: Construct Ranks  ********
-            report_on_root("Phase 2: Construct Ranks", comm, recursion_depth, config.print_phases);
+            kamping::report_on_root("Phase 2: Construct Ranks", comm, recursion_depth, config.print_phases);
             timer.synchronize_and_start("phase_02_ranks");
             RankPhase phase2(comm, config, info);
             local_ranks = phase2.create_lexicographic_ranks(local_samples);
@@ -736,12 +735,12 @@ public:
         }
 
         //******* Start Phase 3: Recursive Call  ********
-        report_on_root("Phase 3: Recursion", comm, recursion_depth, config.print_phases);
+        kamping::report_on_root("Phase 3: Recursion", comm, recursion_depth, config.print_phases);
 
         timer.synchronize_and_start("phase_03_recursion");
 
         index_type last_rank = local_ranks.empty() ? index_type(0) : local_ranks.back().rank;
-        comm.bcast_single(send_recv_buf(last_rank), root(comm.size() - 1));
+        comm.bcast_single(kmp::send_recv_buf(last_rank), kmp::root(comm.size() - 1));
         stats.highest_ranks.push_back(last_rank);
         get_local_stats_instance().highest_ranks.push_back(last_rank);
         bool chars_distinct = last_rank >= index_type(info.total_sample_size);
@@ -774,7 +773,7 @@ public:
         //******* End Phase 3: Recursive Call  ********
 
         //******* Start Phase 4: Merge Suffixes  ********
-        report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth, config.print_phases);
+        kamping::report_on_root("Phase 4: Merge Suffixes", comm, recursion_depth, config.print_phases);
         timer.synchronize_and_start("phase_04_merge");
 
         auto get_rank = [](RankIndex& r) { return r.rank; };
@@ -805,7 +804,7 @@ public:
             auto cmp_splitters = phase4.get_splitter_comparator();
 
             if (config.use_random_sampling_splitters || global_samples_splitters.empty()) {
-                report_on_root("--> using random samples for merging",
+                kamping::report_on_root("--> using random samples for merging",
                                comm,
                                recursion_depth,
                                config.print_phases);
@@ -824,7 +823,7 @@ public:
                 timer.stop();
             } else {
                 // convert uniform splitters
-                report_on_root("--> using uniform samples for merging",
+                kamping::report_on_root("--> using uniform samples for merging",
                                comm,
                                recursion_depth,
                                config.print_phases);
@@ -839,14 +838,14 @@ public:
                     }
                 }
                 // splitters might not be in sorted order after redistributing the samples
-                bucket_splitter = comm.allgatherv(send_buf(local_splitters));
+                bucket_splitter = comm.allgatherv(kmp::send_buf(local_splitters));
                 ips4o::sort(bucket_splitter.begin(), bucket_splitter.end(), cmp_splitters);
                 free_memory(std::move(global_samples_splitters));
             }
             KASSERT(bucket_splitter.size() == buckets_merging - 1);
             KASSERT(std::is_sorted(bucket_splitter.begin(), bucket_splitter.end(), cmp_splitters));
 
-            report_on_root("Using " + std::to_string(buckets_merging) + " buckets for merging.",
+            kamping::report_on_root("Using " + std::to_string(buckets_merging) + " buckets for merging.",
                            comm,
                            recursion_depth,
                            config.print_phases);
@@ -912,8 +911,8 @@ public:
                << stats.sample_imbalance.back() << ", " << stats.sa_imbalance.back();
             std::string imbalance_msg = "Imbalance: string, samples, sa: " + ss.str();
             std::string end_msg = "Finished recursion Level: " + std::to_string(recursion_depth);
-            report_on_root(end_msg, comm, recursion_depth, config.print_phases);
-            report_on_root(imbalance_msg, comm, recursion_depth, config.print_phases);
+            kamping::report_on_root(end_msg, comm, recursion_depth, config.print_phases);
+            kamping::report_on_root(imbalance_msg, comm, recursion_depth, config.print_phases);
         }
 
         timer.stop(); // pdcx
@@ -942,7 +941,7 @@ public:
 
     void report_time() {
         comm.barrier();
-        timer.aggregate_and_print(measurements::FlatPrinter{});
+        timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
         comm.barrier();
     }
 
@@ -972,8 +971,8 @@ public:
     dsss::SeqStringSorterWrapper string_sorter_samples;
     dsss::SeqStringSorterWrapper string_sorter_merging;
 
-    Communicator<>& comm;
-    measurements::Timer<Communicator<>>& timer;
+    kamping::Communicator<>& comm;
+    kamping::measurements::Timer<kamping::Communicator<>>& timer;
     Statistics& stats;
     int recursion_depth;
 }; // namespace dsss::dcx

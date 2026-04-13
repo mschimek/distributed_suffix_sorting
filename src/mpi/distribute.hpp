@@ -18,20 +18,19 @@
 
 namespace dsss::mpi_util {
 
-using namespace kamping;
-
 // adapted from: https://github.com/kurpicz/dsss/blob/master/dsss/mpi/distribute_data.hpp
 // distributs data such that each process i < comm.size() has n / comm.size() elements
 // and the first process has the remaining elements.
 template <typename DataType>
-std::vector<DataType> distribute_data(std::vector<DataType>& local_data, Communicator<>& comm) {
+std::vector<DataType> distribute_data(std::vector<DataType>& local_data, kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
     int64_t num_processes = comm.size();
     int64_t cur_local_size = local_data.size();
     int64_t total_size = all_reduce_sum(cur_local_size, comm);
     int64_t local_size = std::max<int64_t>(1, total_size / num_processes);
 
     int64_t local_data_size = local_data.size();
-    int64_t preceding_size = comm.exscan(send_buf(local_data_size), op(ops::plus<>{}))[0];
+    int64_t preceding_size = comm.exscan(kmp::send_buf(local_data_size), kmp::op(kamping::ops::plus<>{}))[0];
 
     auto get_target_rank = [&](const int64_t pos) {
         return std::min(num_processes - 1, pos / local_size);
@@ -59,14 +58,15 @@ std::vector<DataType> distribute_data(std::vector<DataType>& local_data, Communi
 template <typename DataType>
 std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
                                              int64_t local_target_size,
-                                             Communicator<>& comm) {
+                                             kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
     int64_t num_processes = comm.size();
     int64_t local_size = local_data.size();
 
     KASSERT(all_reduce_sum(local_size, comm) == all_reduce_sum(local_target_size, comm),
             "total and target size don't match");
 
-    std::vector<int64_t> target_sizes = comm.allgather(send_buf(local_target_size));
+    std::vector<int64_t> target_sizes = comm.allgather(kmp::send_buf(local_target_size));
     std::vector<int64_t> preceding_target_size(num_processes);
     std::exclusive_scan(target_sizes.begin(),
                         target_sizes.end(),
@@ -74,7 +74,7 @@ std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
                         int64_t(0));
 
     int64_t local_data_size = local_data.size();
-    int64_t preceding_size = comm.exscan(send_buf(local_size), op(ops::plus<>{}))[0];
+    int64_t preceding_size = comm.exscan(kmp::send_buf(local_size), kmp::op(kamping::ops::plus<>{}))[0];
 
     std::vector<int64_t> send_cnts(num_processes, 0);
     for (int64_t cur_rank = 0; cur_rank < num_processes - 1 && local_data_size > 0; cur_rank++) {
@@ -101,7 +101,8 @@ std::vector<DataType> distribute_data_custom(std::vector<DataType>& local_data,
 template <typename DataType>
 std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
                                        std::vector<uint64_t> &block_size,
-                                       Communicator<>& comm) {
+                                       kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
     int64_t num_blocks = block_size.size();
     KASSERT(num_blocks <= (int64_t)comm.size());
 
@@ -109,8 +110,8 @@ std::vector<DataType> transpose_blocks(std::vector<DataType>& local_data,
             == std::accumulate(block_size.begin(), block_size.end(), uint64_t(0)));
 
     // compute prefix sums
-    std::vector<uint64_t> pref_sum_kth_block = comm.exscan(send_buf(block_size), op(ops::plus<>{}));
-    std::vector<uint64_t> sum_kth_block = comm.allreduce(send_buf(block_size), op(ops::plus<>{}));
+    std::vector<uint64_t> pref_sum_kth_block = comm.exscan(kmp::send_buf(block_size), kmp::op(kamping::ops::plus<>{}));
+    std::vector<uint64_t> sum_kth_block = comm.allreduce(kmp::send_buf(block_size), kmp::op(kamping::ops::plus<>{}));
 
     // sort block indices by decreasing size
     std::vector<int64_t> idx_blocks(num_blocks);
@@ -180,14 +181,15 @@ data locally in an output buffer.
 template <typename DataType>
 std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_data,
                                                 std::vector<uint64_t> &block_size,
-                                                Communicator<>& comm) {
+                                                kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
     KASSERT(local_data.size()
             == std::accumulate(block_size.begin(), block_size.end(), uint64_t(0)));
     uint64_t num_blocks = block_size.size();
 
     // compute prefix sums of blocks
-    std::vector<uint64_t> pref_sum_kth_block = comm.exscan(send_buf(block_size), op(ops::plus<>{}));
-    std::vector<uint64_t> sum_kth_block = comm.allreduce(send_buf(block_size), op(ops::plus<>{}));
+    std::vector<uint64_t> pref_sum_kth_block = comm.exscan(kmp::send_buf(block_size), kmp::op(kamping::ops::plus<>{}));
+    std::vector<uint64_t> sum_kth_block = comm.allreduce(kmp::send_buf(block_size), kmp::op(kamping::ops::plus<>{}));
     uint64_t total_size = std::accumulate(sum_kth_block.begin(), sum_kth_block.end(), uint64_t(0));
 
     std::vector<uint64_t> global_pref_sum_block(num_blocks, 0);
@@ -254,7 +256,7 @@ std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_dat
     KASSERT(local_data_size == 0ull);
 
     local_data = mpi_util::alltoallv_combined(local_data, send_cnts, comm);
-    std::vector<uint64_t> block_size_rcv = comm.alltoall(send_buf(block_size_send));
+    std::vector<uint64_t> block_size_rcv = comm.alltoall(kmp::send_buf(block_size_send));
     KASSERT(local_data.size() == target_size);
 
     // rearrange data
@@ -287,7 +289,7 @@ std::vector<DataType> transpose_blocks_balanced(std::vector<DataType>& local_dat
 template <typename DataType>
 std::vector<DataType> transpose_blocks_wrapper(std::vector<DataType>& local_data,
                                                std::vector<uint64_t> &block_size,
-                                               Communicator<>& comm,
+                                               kamping::Communicator<>& comm,
                                                bool balanced) {
     if (balanced) {
         return transpose_blocks_balanced(local_data, block_size, comm);

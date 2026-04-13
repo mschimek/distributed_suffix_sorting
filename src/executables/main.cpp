@@ -24,21 +24,20 @@
 #include "util/random.hpp"
 
 using namespace dsss;
-using namespace kamping;
 
 
-void test_sorting(Communicator<>& comm) {
+void test_sorting(kamping::Communicator<>& comm) {
     int repeats = 10;
     int n = 1e4;
     mpi::SortingWrapper sorting_wrapper(comm);
-    auto call_sorter = [&](std::vector<int>& local_data, Communicator<>& comm) {
+    auto call_sorter = [&](std::vector<int>& local_data, kamping::Communicator<>& comm) {
         sorting_wrapper.sort(local_data, std::less<>{});
     };
     test::test_sorting(repeats, n, call_sorter, comm);
 }
 
 template <typename PDCX, typename char_type, typename index_type>
-void test_pdcx(int repeats, int n, int alphabet_size, Communicator<>& comm) {
+void test_pdcx(int repeats, int n, int alphabet_size, kamping::Communicator<>& comm) {
     int cnt_correct = 0;
     int print_limit = 200;
     dcx::PDCXConfig pdcx_config;
@@ -56,17 +55,18 @@ void test_pdcx(int repeats, int n, int alphabet_size, Communicator<>& comm) {
 
         if (!sa_ok) {
             if (n <= print_limit) {
-                print_concatenated(SA, comm, "SA:");
-                std::vector<char_type> global_data = comm.gatherv(send_buf(local_data));
+                namespace kmp = kamping::params;
+                kamping::print_concatenated(SA, comm, "SA:");
+                std::vector<char_type> global_data = comm.gatherv(kmp::send_buf(local_data));
 
                 if (comm.rank() == 0) {
                     std::cout << "SA incorrect with seed " << seed << std::endl;
                     std::cout << "input: \n";
-                    print_vector(global_data);
+                    kamping::print_vector(global_data);
                     std::vector<index_type> global_sa =
                         slow_suffixarray<char_type, index_type>(global_data);
                     std::cout << "correct SA: \n";
-                    print_vector(global_sa);
+                    kamping::print_vector(global_sa);
                 }
             }
             return;
@@ -78,7 +78,7 @@ void test_pdcx(int repeats, int n, int alphabet_size, Communicator<>& comm) {
 }
 
 template <typename PDCX, typename char_type, typename index_type>
-void run_tests_pdcx(Communicator<>& comm, std::string test_name = "") {
+void run_tests_pdcx(kamping::Communicator<>& comm, std::string test_name = "") {
     if (comm.rank() == 0) {
         std::cout << "Running Tests " + test_name << std::endl;
     }
@@ -99,7 +99,7 @@ void run_tests_pdcx(Communicator<>& comm, std::string test_name = "") {
 
 // test to cover all remainders of total chars mod X
 template <typename PDCX, typename char_type, typename index_type>
-void run_alignment_tests_pdcx(Communicator<>& comm, std::string test_name = "") {
+void run_alignment_tests_pdcx(kamping::Communicator<>& comm, std::string test_name = "") {
     if (comm.rank() == 0) {
         std::cout << "Running Alignment Tests " + test_name << std::endl;
     }
@@ -122,7 +122,7 @@ void run_alignment_tests_pdcx(Communicator<>& comm, std::string test_name = "") 
     std::cout << "\n";
 }
 
-void start_tests(Communicator<>& comm) {
+void start_tests(kamping::Communicator<>& comm) {
     // using char_type = uint16_t;
     // using index_type = uint32_t;
 
@@ -151,7 +151,7 @@ void start_tests(Communicator<>& comm) {
 }
 
 template <typename PDCX, typename char_type, typename index_type>
-void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
+void run_pdcx(uint64_t n, uint32_t alphabet_size, kamping::Communicator<>& comm) {
     std::vector<char_type> local_data =
         dsss::random::generate_random_data<char_type>(n, alphabet_size, comm.rank());
 
@@ -169,7 +169,7 @@ void run_pdcx(uint64_t n, uint32_t alphabet_size, Communicator<>& comm) {
     }
 }
 
-void test_transpose_blocks_balanced(Communicator<>& comm) {
+void test_transpose_blocks_balanced(kamping::Communicator<>& comm) {
     int blocks = 4;
     // int n = 4;
     // int n = 4 + comm.rank();
@@ -200,8 +200,8 @@ void test_transpose_blocks_balanced(Communicator<>& comm) {
 }
 
 int main() {
-    Environment e;
-    Communicator comm;
+    kamping::Environment e;
+    kamping::Communicator comm;
 
     return 0;
 }

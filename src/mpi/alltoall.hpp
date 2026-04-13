@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <tlx/die/core.hpp>
+#include <kassert/kassert.hpp>
 
 #include "kamping/collectives/allreduce.hpp"
 #include "kamping/collectives/alltoall.hpp"
@@ -27,13 +28,12 @@
 
 namespace dsss::mpi_util {
 
-using namespace kamping;
-
 template <typename SendBuf>
 auto alltoallv_native(SendBuf&& send_buffer,
                       std::span<int64_t> send_counts,
                       std::span<int64_t> recv_counts,
-                      Communicator<>& comm) {
+                      kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
     KASSERT(std::all_of(send_counts.begin(), send_counts.end(), std::in_range<int, int64_t>),
             "all send counts need to fit into an int",
             kamping::assert::normal);
@@ -45,16 +45,16 @@ auto alltoallv_native(SendBuf&& send_buffer,
     std::vector<int> recv_counts_int{recv_counts.begin(), recv_counts.end()};
     DBG("call alltoallv native");
 
-    return comm.alltoallv(kamping::send_buf(send_buffer),
-                          kamping::send_counts(send_counts_int),
-                          kamping::recv_counts(recv_counts_int));
+    return comm.alltoallv(kmp::send_buf(send_buffer),
+                          kmp::send_counts(send_counts_int),
+                          kmp::recv_counts(recv_counts_int));
 }
 
 template <typename SendBuf>
 auto alltoallv_direct(SendBuf&& send_buf,
                       std::span<int64_t> send_counts,
                       std::span<int64_t> recv_counts,
-                      Communicator<>& comm) {
+                      kamping::Communicator<>& comm) {
     DBG("call alltoallv direct start");
 
     using DataType = std::remove_reference_t<SendBuf>::value_type;
@@ -107,12 +107,13 @@ template <typename SendBuf>
 auto alltoallv_combined(SendBuf&& send_buffer,
                         std::span<int64_t> send_counts,
                         std::span<int64_t> recv_counts,
-                        Communicator<>& comm) {
+                        kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
     DBG("accumlate counts");
     int64_t const send_total = std::accumulate(send_counts.begin(), send_counts.end(), int64_t{0});
     int64_t const recv_total = std::accumulate(recv_counts.begin(), recv_counts.end(), int64_t{0});
     int64_t const local_max = std::max<int64_t>(send_total, recv_total);
-    int64_t const global_max = comm.allreduce_single(send_buf(local_max), op(ops::max<>{}));
+    int64_t const global_max = comm.allreduce_single(kmp::send_buf(local_max), kmp::op(kamping::ops::max<>{}));
 
     DBG("local max: " + std::to_string(local_max) + ", global max: " + std::to_string(global_max));
 
@@ -129,9 +130,10 @@ auto alltoallv_combined(SendBuf&& send_buffer,
 template <typename SendBuf>
 auto alltoallv_combined(SendBuf&& send_buffer,
                         std::span<int64_t> send_counts,
-                        Communicator<>& comm) {
+                        kamping::Communicator<>& comm) {
+    namespace kmp = kamping::params;
     DBG("get recv counts");
-    auto recv_counts = comm.alltoall(send_buf(send_counts));
+    auto recv_counts = comm.alltoall(kmp::send_buf(send_counts));
     DBG("call alltoallv combined");
     return alltoallv_combined(std::forward<SendBuf>(send_buffer), send_counts, recv_counts, comm);
 }

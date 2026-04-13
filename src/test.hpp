@@ -20,8 +20,7 @@ void test_sorting(int repeats,
                   int local_size,
                   auto distributed_sorter,
                   kamping::Communicator<>& comm) {
-    using namespace kamping;
-
+    namespace kmp = kamping::params;
     int rank = comm.rank();
     int size = comm.size();
     int max_value = 1e6;
@@ -31,7 +30,7 @@ void test_sorting(int repeats,
             dsss::random::generate_random_data<int>(local_size, max_value, seed);
         comm.barrier();
         distributed_sorter(local_data, comm);
-        auto sorted_sequence = comm.gatherv(send_buf(local_data));
+        auto sorted_sequence = comm.gatherv(kmp::send_buf(local_data));
         KASSERT(std::is_sorted(sorted_sequence.begin(), sorted_sequence.end()));
     }
 }

@@ -20,14 +20,12 @@
 
 namespace dsss::mpi {
 
-using namespace kamping;
-
 enum AtomicSorters { SampleSort, Rquick, Ams, Bitonic, RFis };
 static std::vector<std::string> atomic_sorter_names = {
     "sample_sort", "rquick", "ams", "bitonic", "rfis"};
 
 struct SortingWrapper {
-    SortingWrapper(Communicator<>& _comm)
+    SortingWrapper(kamping::Communicator<>& _comm)
         : comm(_comm),
           mpi_comm(comm.mpi_communicator()),
           data_seed(3469931 + comm.rank()),
@@ -94,7 +92,7 @@ struct SortingWrapper {
     }
 
 
-    Communicator<>& comm;
+    kamping::Communicator<>& comm;
     MPI_Comm mpi_comm;
     RBC::Comm rcomm;
 

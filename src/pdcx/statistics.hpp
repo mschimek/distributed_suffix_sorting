@@ -54,7 +54,7 @@ struct Statistics {
     }
 
     void print() const {
-        using namespace kamping;
+        using kamping::print_vector;
         std::cout << "\nStatistics:\n";
         std::cout << V(algo) << std::endl;
         std::cout << V(num_processors) << std::endl;

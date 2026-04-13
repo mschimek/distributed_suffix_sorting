@@ -8,11 +8,9 @@
 
 namespace dsss::mpi_util {
 
-using namespace kamping;
-
 template <typename InputType, typename OutputType>
 std::vector<OutputType>
-zip_with_index(std::vector<InputType>& input, auto index_function, Communicator<>& comm) {
+zip_with_index(std::vector<InputType>& input, auto index_function, kamping::Communicator<>& comm) {
     uint64_t local_size = input.size();
     const uint64_t offset = mpi_util::ex_prefix_sum(local_size, comm);
 

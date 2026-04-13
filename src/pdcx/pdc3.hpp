@@ -30,8 +30,6 @@
 
 namespace dsss::dc3 {
 
-using namespace kamping;
-
 struct Statistics {
     void reset() {
         max_depth = 0;
@@ -141,10 +139,10 @@ class PDC3 {
     };
 
 public:
-    PDC3(Communicator<>& _comm)
+    PDC3(kamping::Communicator<>& _comm)
         : atomic_sorter(_comm),
           comm(_comm),
-          timer(measurements::timer()),
+          timer(kamping::measurements::timer()),
           memory_monitor(monitor::get_monitor_instance()),
           stats(get_stats_instance()) {
         atomic_sorter.set_sorter(mpi::AtomicSorters::SampleSort);
@@ -297,7 +295,8 @@ public:
     void sequential_sa_and_local_ranks(std::vector<RankIndex>& local_ranks,
                                        uint64_t local_sample_size,
                                        uint64_t total_chars) {
-        std::vector<RankIndex> global_ranks = comm.gatherv(send_buf(local_ranks));
+        namespace kmp = kamping::params;
+        std::vector<RankIndex> global_ranks = comm.gatherv(kmp::send_buf(local_ranks));
         std::vector<index_type> SA;
         if (comm.rank() == 0) {
             std::sort(global_ranks.begin(), global_ranks.end(), RankIndex::cmp_mod_div_3);
@@ -390,7 +389,8 @@ public:
         const int process_rank = comm.rank();
 
         // figure out lengths of the other strings
-        auto chars_at_proc = comm.allgather(send_buf(local_string.size()));
+        namespace kmp = kamping::params;
+        auto chars_at_proc = comm.allgather(kmp::send_buf(local_string.size()));
         uint64_t total_chars = std::accumulate(chars_at_proc.begin(), chars_at_proc.end(), 0);
 
         // number of chars before processor i
@@ -448,7 +448,7 @@ public:
         local_samples.shrink_to_fit();
 
         uint64_t last_rank = local_ranks.empty() ? 0 : local_ranks.back().rank;
-        comm.bcast_single(send_recv_buf(last_rank), root(comm.size() - 1));
+        comm.bcast_single(kmp::send_recv_buf(last_rank), kmp::root(comm.size() - 1));
         stats.highest_ranks.push_back(last_rank);
         bool chars_distinct = last_rank >= num_samples;
 
@@ -517,7 +517,7 @@ public:
     void report_time() {
         comm.barrier();
         // timer.aggregate_and_print(measurements::SimpleJsonPrinter<>{});
-        timer.aggregate_and_print(measurements::FlatPrinter{});
+        timer.aggregate_and_print(kamping::measurements::FlatPrinter{});
         std::cout << "\n";
         comm.barrier();
     }
@@ -526,19 +526,19 @@ public:
         comm.barrier();
         if (print_history) {
             std::string msg = "History \n" + memory_monitor.history_mb_to_string() + "\n";
-            print_result_on_root(msg, comm);
+            kamping::print_result_on_root(msg, comm);
         }
 
         monitor::MemoryKey peak_memory = memory_monitor.get_peak_memory();
         std::string msg2 = "Memory peak: " + peak_memory.to_string_mb();
-        print_result(msg2, comm);
+        kamping::print_result(msg2, comm);
 
 
         uint64_t local_string_bytes = stats.local_string_sizes.front() * sizeof(char_type);
         double blow_up_factor = (double)peak_memory.get_memory_bytes() / local_string_bytes;
         std::stringstream ss;
         ss << "Blow up factor: " << std::fixed << std::setprecision(2) << blow_up_factor << "\n";
-        print_result(ss.str(), comm);
+        kamping::print_result(ss.str(), comm);
 
         comm.barrier();
     }
@@ -549,11 +549,11 @@ public:
             std::cout << "\nStatistics:\n";
             std::cout << "max depth: " << stats.max_depth << std::endl;
             std::cout << "string sizes: ";
-            print_vector(stats.string_sizes);
+            kamping::print_vector(stats.string_sizes);
             std::cout << "highest rank: ";
-            print_vector(stats.highest_ranks);
+            kamping::print_vector(stats.highest_ranks);
             std::cout << "char type bits: ";
-            print_vector(stats.char_type_used);
+            kamping::print_vector(stats.char_type_used);
             std::cout << "\n";
         }
         comm.barrier();
@@ -571,8 +571,8 @@ public:
 
     mpi::SortingWrapper atomic_sorter;
 
-    Communicator<>& comm;
-    measurements::Timer<Communicator<>>& timer;
+    kamping::Communicator<>& comm;
+    kamping::measurements::Timer<kamping::Communicator<>>& timer;
     monitor::MemoryMonitor& memory_monitor;
     Statistics& stats;
     int recursion_depth;

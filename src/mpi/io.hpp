@@ -21,7 +21,6 @@
 
 namespace dsss::mpi {
 
-using namespace kamping;
 using Byte = unsigned char;
 
 bool file_exists(const std::string& path) {
@@ -30,7 +29,7 @@ bool file_exists(const std::string& path) {
 }
 
 static std::vector<Byte> read_and_distribute_string(const std::string& input_path,
-                                                    Communicator<>& comm,
+                                                    kamping::Communicator<>& comm,
                                                     size_t max_size = 0) {
     MPI_File mpi_file;
 
@@ -70,7 +69,7 @@ static std::vector<Byte> read_and_distribute_string(const std::string& input_pat
 // read string and cast characters into correct datatype
 template <typename char_type>
 static std::vector<char_type> read_and_distribute_string(const std::string& input_path,
-                                                    Communicator<>& comm,
+                                                    kamping::Communicator<>& comm,
                                                     size_t max_size = 0) {
     std::vector<Byte> data = read_and_distribute_string(input_path, comm, max_size);
     std::vector<char_type> casted_data(data.begin(), data.end());
@@ -79,7 +78,7 @@ static std::vector<char_type> read_and_distribute_string(const std::string& inpu
 
 template <typename DataType>
 static void
-write_data(std::vector<DataType>& local_data, const std::string file_name, Communicator<>& comm) {
+write_data(std::vector<DataType>& local_data, const std::string file_name, kamping::Communicator<>& comm) {
     MPI_File mpi_file;
 
     MPI_File_open(comm.mpi_communicator(),
