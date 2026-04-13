@@ -12,7 +12,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   kamping
   GIT_REPOSITORY https://github.com/kamping-site/kamping.git
-  GIT_TAG 685c5ab#5c8e84f
+  GIT_TAG 3bb24ce
   SYSTEM)
 
 FetchContent_Declare(
