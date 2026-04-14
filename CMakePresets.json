@@ -34,6 +34,7 @@
                 "DCX_OPTIMIZE_DATA_TYPES": "OFF",
                 "IPS4O_DISABLE_PARALLEL": "ON",
                 "DCX_BUILD_EXAMPLES": "ON",
+                "DCX_BUILD_TESTS": "ON",
                 "KASSERT_ASSERTION_LEVEL": "30"
             }
         }
@@ -50,6 +51,15 @@
         {
             "name": "github-ci",
             "configurePreset": "github-ci"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "github-ci",
+            "configurePreset": "github-ci",
+            "output": {
+                "outputOnFailure": true
+            }
         }
     ]
 }

@@ -94,10 +94,12 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -DDEBUG -march=native -ggdb")
 option(DCX_OPTIMIZE_DATA_TYPES "use smallest data type possible for ranks in pdcx" OFF)
 option(DCX_INCLUDE_ALL_SORTERS "include all axtmann sorters" ON)
 option(DCX_BUILD_EXAMPLES "Build example executables" ON)
+option(DCX_BUILD_TESTS "Build tests" OFF)
 set(KASSERT_ASSERTION_LEVEL 0 CACHE STRING "KAssert assertion level (0=off, 30=normal, 60=light, 90=heavy)")
 message(STATUS "---> DCX_OPTIMIZE_DATA_TYPES: ${DCX_OPTIMIZE_DATA_TYPES}")
 message(STATUS "---> DCX_INCLUDE_ALL_SORTERS: ${DCX_INCLUDE_ALL_SORTERS}")
 message(STATUS "---> DCX_BUILD_EXAMPLES: ${DCX_BUILD_EXAMPLES}")
+message(STATUS "---> DCX_BUILD_TESTS: ${DCX_BUILD_TESTS}")
 message(STATUS "---> KASSERT_ASSERTION_LEVEL: ${KASSERT_ASSERTION_LEVEL}")
 
 
@@ -167,4 +169,10 @@ target_link_libraries(cli PRIVATE dcx::dcx CLI11::CLI11)
 if(DCX_BUILD_EXAMPLES)
   add_executable(dcx_lib_example_usage examples/dcx_lib_example_usage.cpp)
   target_link_libraries(dcx_lib_example_usage PRIVATE dcx::dcx)
+endif()
+
+# tests
+if(DCX_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
 endif()

@@ -51,6 +51,12 @@ bool all_reduce_and(T local_data, kamping::Communicator<>& comm) {
 template <typename T>
 T ex_prefix_sum(T local_data, kamping::Communicator<>& comm) {
     namespace kmp = kamping::params;
+    if (comm.rank() == 0) {
+        if (comm.size() > 1) {
+            comm.exscan(kmp::send_buf(local_data), kmp::op(kamping::ops::plus<>{}));
+        }
+        return T{0};
+    }
     auto local_sum = comm.exscan(kmp::send_buf(local_data), kmp::op(kamping::ops::plus<>{}));
     return local_sum.front();
 }
