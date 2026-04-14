@@ -1,0 +1,28 @@
+name: cmake-build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [Debug, Release]
+        mpi_impl: [ompi]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libtbb-dev
+      - name: Setup MPI
+        uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: ${{ matrix.mpi_impl }}
+      - name: Configure CMake
+        run: cmake --preset github-ci -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build --preset github-ci --parallel
