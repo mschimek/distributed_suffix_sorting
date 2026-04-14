@@ -24,6 +24,18 @@
                 "IPS4O_DISABLE_PARALLEL": "ON",
                 "KASSERT_ASSERTION_LEVEL": "0"
             }
+        },
+        {
+            "name": "github-ci",
+            "displayName": "GitHub CI",
+            "binaryDir": "${sourceDir}/build/ci",
+            "cacheVariables": {
+                "DCX_INCLUDE_ALL_SORTERS": "ON",
+                "DCX_OPTIMIZE_DATA_TYPES": "OFF",
+                "IPS4O_DISABLE_PARALLEL": "ON",
+                "DCX_BUILD_EXAMPLES": "ON",
+                "KASSERT_ASSERTION_LEVEL": "30"
+            }
         }
     ],
     "buildPresets": [
@@ -34,6 +46,10 @@
         {
             "name": "experiments",
             "configurePreset": "experiments"
+        },
+        {
+            "name": "github-ci",
+            "configurePreset": "github-ci"
         }
     ]
 }
