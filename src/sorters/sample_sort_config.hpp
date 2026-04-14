@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include <magic_enum/magic_enum.hpp>
+
 #include "util/printing.hpp"
 
 namespace dsss::mpi {

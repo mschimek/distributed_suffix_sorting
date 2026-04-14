@@ -26,3 +26,6 @@ jobs:
 
       - name: Build
         run: cmake --build --preset github-ci --parallel
+
+      - name: Test
+        run: ctest --preset github-ci
