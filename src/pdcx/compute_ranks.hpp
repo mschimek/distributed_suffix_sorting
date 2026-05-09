@@ -149,6 +149,16 @@ struct LexicographicRankPhase {
                                 uint64_t bucket_nr,
                                 bool use_packing) {
         auto& timer = kamping::measurements::timer();
+
+        // Skip globally empty buckets: the rank computation below assumes every
+        // PE has ≥1 sample, which can be violated when splitters collide and produce
+        // an empty interval.
+        if (mpi_util::all_reduce_sum(samples.size(), comm) == 0) {
+            received_size.push_back(0);
+            samples.clear();
+            return;
+        }
+
         // Phase 1: sort dc-samples
         timer.synchronize_and_start("phase_01_02_sort_samples");
         phase1.sort_samples(samples, use_packing);
