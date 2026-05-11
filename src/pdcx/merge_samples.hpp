@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <iostream>
 #include <limits>
 #include <numeric>
 #include <sstream>
@@ -38,6 +39,53 @@
 namespace dsss::dcx {
 
 //******* Start Phase 4: Merge Suffixes  ********
+
+// Layout for packing (chunk, in-chunk-offset) into one IndexT slot during
+// space-efficient bucketed merging. Low CHUNK_IDX_BITS hold the in-chunk
+// offset, the remaining upper bits hold the chunk number.
+template <typename IndexT>
+struct ChunkLocatorPacking {
+    static constexpr uint64_t CHUNK_IDX_BITS = 20;
+    static_assert(8 * sizeof(IndexT) > CHUNK_IDX_BITS,
+                  "IndexT too narrow to hold a chunk locator with this layout");
+    static constexpr uint64_t PACK_MASK = (1ull << CHUNK_IDX_BITS) - 1;
+    static constexpr uint64_t MAX_CHUNKS =
+        1ull << (8 * sizeof(IndexT) - CHUNK_IDX_BITS);
+
+    struct Unpacked {
+        uint64_t chunk;
+        uint64_t in_chunk_offset;
+    };
+
+    static constexpr IndexT pack(uint64_t chunk, uint64_t in_chunk_offset) {
+        return IndexT((chunk << CHUNK_IDX_BITS) | in_chunk_offset);
+    }
+
+    static constexpr Unpacked unpack(uint64_t packed) {
+        return {packed >> CHUNK_IDX_BITS, packed & PACK_MASK};
+    }
+
+    // Hard-abort if a chunk locator would not fit. Silent truncation here
+    // would corrupt SA indices, so we cannot continue. Each failing PE prints
+    // its own diagnostic to stderr before calling MPI_Abort.
+    template <typename Comm>
+    static void check_fits_or_abort(uint64_t max_chunk_size,
+                                    uint64_t received_chunks,
+                                    Comm const& comm,
+                                    std::size_t recursion_depth) {
+        if (max_chunk_size > PACK_MASK || received_chunks >= MAX_CHUNKS) {
+            std::cerr << "FATAL merge_samples: chunk locator does not fit on PE "
+                      << comm.rank() << " (recursion_depth=" << recursion_depth
+                      << ", index_type=" << (8 * sizeof(IndexT))
+                      << " bits, low field=" << CHUNK_IDX_BITS
+                      << " bits): max_chunk_size=" << max_chunk_size
+                      << " (limit " << PACK_MASK
+                      << "), received_chunks=" << received_chunks
+                      << " (limit " << MAX_CHUNKS << ")" << std::endl;
+            MPI_Abort(comm.mpi_communicator(), 1);
+        }
+    }
+};
 
 template <typename char_type,
           typename index_type,
@@ -812,18 +860,23 @@ struct MergeSamplePhase {
                             bucket_idx.begin(),
                             uint64_t(0));
 
-        constexpr uint64_t PACK_MASK = (1ull << 20) - 1;
-        KASSERT(*std::max_element(chunk_sizes.begin(), chunk_sizes.end()) <= PACK_MASK);
-        KASSERT(received_chunks <= PACK_MASK);
+        using Locator = ChunkLocatorPacking<index_type>;
+        uint64_t max_chunk_size =
+            chunk_sizes.empty()
+                ? uint64_t{0}
+                : *std::max_element(chunk_sizes.begin(), chunk_sizes.end());
+        Locator::check_fits_or_abort(max_chunk_size,
+                                     received_chunks,
+                                     comm,
+                                     info.recursion_depth);
         for (uint64_t i = 0; i < received_chunks; i++) {
             uint64_t start_chunk = i * chars_with_padding;
             for (uint64_t j = 0; j < chunk_sizes[i]; j++) {
                 uint64_t char_pos = start_chunk + j;
                 uint64_t b = sample_to_bucket[char_pos];
                 uint64_t idx = offset_sa_idx + bucket_idx[b]++;
-                uint64_t packed_chunk_and_idx = (i << 20ull) | j;
                 KASSERT(idx < concat_sa_buckets.size());
-                concat_sa_buckets[idx] = index_type(packed_chunk_and_idx);
+                concat_sa_buckets[idx] = Locator::pack(i, j);
             }
         }
         free_memory(std::move(bucket_mapping.sample_to_bucket));
@@ -853,7 +906,7 @@ struct MergeSamplePhase {
         // the still-unread packed-locator tail, this PE switches to appending
         // into `overflow` for all remaining buckets and reassembles below.
         bool spilled = false;
-        std::vector<index_type> overflow;
+        std::vector<index_type> overflow_buffer;
 
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
@@ -862,9 +915,7 @@ struct MergeSamplePhase {
             // collect samples falling into kth block
             samples.reserve(bucket_sizes[k]);
             for (uint64_t i = 0; i < bucket_sizes[k]; i++) {
-                uint64_t packed_chunk_and_idx = concat_sa_buckets[offset_sa_idx + i];
-                uint64_t chunk = packed_chunk_and_idx >> 20ull;
-                uint64_t idx = packed_chunk_and_idx & PACK_MASK;
+                auto [chunk, idx] = Locator::unpack(concat_sa_buckets[offset_sa_idx + i]);
 
                 uint64_t char_pos = chunk * chars_with_padding + idx;
                 uint64_t global_index_chunk = chunk_global_index[chunk];
@@ -905,12 +956,12 @@ struct MergeSamplePhase {
                     // doesn't trigger a reallocation on a memory-pressured PE.
                     constexpr double overflow_reserve_factor = 1.25;
                     uint64_t remaining = num_suffixes - sa_write_idx;
-                    overflow.reserve(
+                    overflow_buffer.reserve(
                         static_cast<uint64_t>(static_cast<double>(remaining)
                                               * overflow_reserve_factor));
                 }
                 for (auto& sample: samples) {
-                    overflow.push_back(sample.index);
+                    overflow_buffer.push_back(sample.index);
                 }
             }
 
@@ -929,7 +980,7 @@ struct MergeSamplePhase {
         // delete last entries that do not belong to SA
         uint64_t num_idx =
             std::accumulate(sa_bucket_size.begin(), sa_bucket_size.end(), uint64_t(0));
-        KASSERT(num_idx == sa_write_idx + overflow.size());
+        KASSERT(num_idx == sa_write_idx + overflow_buffer.size());
 
         // Capture allocation-size stats BEFORE reassembly so they still
         // describe the original oversized buffer.
@@ -939,7 +990,7 @@ struct MergeSamplePhase {
             get_stats_instance().phase_04_sa_capacity =
                 comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
             get_stats_instance().phase_04_sa_overflow_size =
-                comm.allgather(kamping::send_buf(overflow.size()));
+                comm.allgather(kamping::send_buf(overflow_buffer.size()));
         }
 
         if (spilled) {
@@ -951,8 +1002,8 @@ struct MergeSamplePhase {
             // Drop the oversized buffer now so the transient peak is
             // final_sa + overflow rather than all three simultaneously.
             free_memory(std::move(concat_sa_buckets));
-            final_sa.insert(final_sa.end(), overflow.begin(), overflow.end());
-            free_memory(std::move(overflow));
+            final_sa.insert(final_sa.end(), overflow_buffer.begin(), overflow_buffer.end());
+            free_memory(std::move(overflow_buffer));
             concat_sa_buckets = std::move(final_sa);
         } else {
             concat_sa_buckets.resize(num_idx);
