@@ -899,7 +899,16 @@ struct MergeSamplePhase {
                     concat_sa_buckets[sa_write_idx++] = sample.index;
                 }
             } else {
-                spilled = true;
+                if (!spilled) {
+                    spilled = true;
+                    // Reserve with a small safety margin so a slight under-count
+                    // doesn't trigger a reallocation on a memory-pressured PE.
+                    constexpr double overflow_reserve_factor = 1.25;
+                    uint64_t remaining = num_suffixes - sa_write_idx;
+                    overflow.reserve(
+                        static_cast<uint64_t>(static_cast<double>(remaining)
+                                              * overflow_reserve_factor));
+                }
                 for (auto& sample: samples) {
                     overflow.push_back(sample.index);
                 }
