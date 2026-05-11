@@ -849,6 +849,12 @@ struct MergeSamplePhase {
         sa_bucket_size.reserve(num_buckets);
         uint64_t sa_write_idx = 0;
 
+        // Per-PE spill fallback: once the front write head would collide with
+        // the still-unread packed-locator tail, this PE switches to appending
+        // into `overflow` for all remaining buckets and reassembles below.
+        bool spilled = false;
+        std::vector<index_type> overflow;
+
         // sorting in each round one blocks of materialized samples
         for (int64_t k = 0; k < num_buckets; k++) {
             timer.synchronize_and_start("phase_04_space_effient_sort_chunking_collect_bucket");
@@ -887,20 +893,16 @@ struct MergeSamplePhase {
             comm.barrier();
             timer.stop();
 
-            bool ok = sa_write_idx + samples.size() < offset_sa_idx;
-            bool all_ok = mpi_util::all_reduce_and(ok, comm);
-            if (!all_ok) {
-                kamping::report_on_root("ERROR: sa_write_idx + samples.size() >= offset_sa_idx. Use normal "
-                               "chunking variant.",
-                               comm,
-                               info.recursion_depth);
-                exit(1);
-            }
-
-            // extract SA of block
-            for (auto& sample: samples) {
-                KASSERT(sa_write_idx < concat_sa_buckets.size());
-                concat_sa_buckets[sa_write_idx++] = sample.index;
+            bool fits = (sa_write_idx + samples.size()) < offset_sa_idx;
+            if (!spilled && fits) {
+                for (auto& sample: samples) {
+                    concat_sa_buckets[sa_write_idx++] = sample.index;
+                }
+            } else {
+                spilled = true;
+                for (auto& sample: samples) {
+                    overflow.push_back(sample.index);
+                }
             }
 
             sa_bucket_size.push_back(samples.size());
@@ -918,7 +920,48 @@ struct MergeSamplePhase {
         // delete last entries that do not belong to SA
         uint64_t num_idx =
             std::accumulate(sa_bucket_size.begin(), sa_bucket_size.end(), uint64_t(0));
-        concat_sa_buckets.resize(num_idx);
+        KASSERT(num_idx == sa_write_idx + overflow.size());
+
+        // Capture allocation-size stats BEFORE reassembly so they still
+        // describe the original oversized buffer.
+        if (info.recursion_depth == 0) {
+            get_stats_instance().phase_04_sa_size =
+                comm.allgather(kamping::send_buf(concat_sa_buckets.size()));
+            get_stats_instance().phase_04_sa_capacity =
+                comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
+            get_stats_instance().phase_04_sa_overflow_size =
+                comm.allgather(kamping::send_buf(overflow.size()));
+        }
+
+        if (spilled) {
+            SA final_sa;
+            final_sa.reserve(num_idx);
+            final_sa.insert(final_sa.end(),
+                            concat_sa_buckets.begin(),
+                            concat_sa_buckets.begin() + sa_write_idx);
+            // Drop the oversized buffer now so the transient peak is
+            // final_sa + overflow rather than all three simultaneously.
+            free_memory(std::move(concat_sa_buckets));
+            final_sa.insert(final_sa.end(), overflow.begin(), overflow.end());
+            free_memory(std::move(overflow));
+            concat_sa_buckets = std::move(final_sa);
+        } else {
+            concat_sa_buckets.resize(num_idx);
+        }
+
+        {
+            namespace kmp = kamping::params;
+            bool any_spilled = comm.allreduce_single(
+                kmp::send_buf(static_cast<int>(spilled)),
+                kmp::op(kamping::ops::bit_or<>{}));
+            if (any_spilled) {
+                kamping::report_on_root(
+                    "WARNING: compressed-bucket SA buffer spilled on at least one PE; "
+                    "running in degraded-memory fallback.",
+                    comm,
+                    info.recursion_depth);
+            }
+        }
 
         // log imbalance of received suffixes
         double bucket_imbalance_received =
@@ -930,13 +973,6 @@ struct MergeSamplePhase {
                        info.recursion_depth);
         get_local_stats_instance().output_bucket_imbalance_merging_all.push_back(
             get_max_local_imbalance(sa_bucket_size, info.total_chars, comm.size()));
-
-        if (info.recursion_depth == 0) {
-            get_stats_instance().phase_04_sa_size =
-                comm.allgather(kamping::send_buf(concat_sa_buckets.size()));
-            get_stats_instance().phase_04_sa_capacity =
-                comm.allgather(kamping::send_buf(concat_sa_buckets.capacity()));
-        }
 
         timer.synchronize_and_start("phase_04_space_efficient_sort_chunking_alltoall");
 

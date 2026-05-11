@@ -125,6 +125,8 @@ struct Statistics {
         print_vector(phase_04_sa_size, ",");
         std::cout << "phase_04_sa_capacity=";
         print_vector(phase_04_sa_capacity, ",");
+        std::cout << "phase_04_sa_overflow_size=";
+        print_vector(phase_04_sa_overflow_size, ",");
         std::cout << "phase_04_before_alltoall_chunks=";
         print_vector(phase_04_before_alltoall_chunks, ",");
         std::cout << "phase_04_after_alltoall_chunks=";
@@ -181,6 +183,7 @@ struct Statistics {
     std::vector<uint64_t> max_mem_pe_chunking_after_alltoal;
     std::vector<uint64_t> phase_04_sa_size;
     std::vector<uint64_t> phase_04_sa_capacity;
+    std::vector<uint64_t> phase_04_sa_overflow_size;
     std::vector<uint64_t> phase_04_before_alltoall_chunks;
     std::vector<uint64_t> phase_04_after_alltoall_chunks;
     std::vector<double> sample_sort_lcp_compression;
