@@ -952,13 +952,20 @@ struct MergeSamplePhase {
             } else {
                 if (!spilled) {
                     spilled = true;
-                    // Reserve with a small safety margin so a slight under-count
-                    // doesn't trigger a reallocation on a memory-pressured PE.
-                    constexpr double overflow_reserve_factor = 1.25;
-                    uint64_t remaining = num_suffixes - sa_write_idx;
-                    overflow_buffer.reserve(
-                        static_cast<uint64_t>(static_cast<double>(remaining)
-                                              * overflow_reserve_factor));
+                    // num_suffixes is the pre-sort local count (sum of
+                    // bucket_sizes). sa_write_idx accumulates post-sort
+                    // samples.size(), which the distributed sorter may have
+                    // redistributed unevenly, so sa_write_idx > num_suffixes
+                    // is possible. Guard the subtraction; skip the reservation
+                    // when we have no sensible estimate and let push_back grow
+                    // the buffer naturally.
+                    if (num_suffixes > sa_write_idx) {
+                        constexpr double overflow_reserve_factor = 1.25;
+                        uint64_t remaining = num_suffixes - sa_write_idx;
+                        overflow_buffer.reserve(
+                            static_cast<uint64_t>(static_cast<double>(remaining)
+                                                  * overflow_reserve_factor));
+                    }
                 }
                 for (auto& sample: samples) {
                     overflow_buffer.push_back(sample.index);
